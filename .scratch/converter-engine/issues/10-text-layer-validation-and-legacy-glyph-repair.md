@@ -28,3 +28,10 @@
 **Tests**
 - [ ] Synthetic fixtures cover a legacy PUA-font PDF (repaired without OCR) and a PDF with a wrong ToUnicode map (routed to OCR). The fake engine verifies the routing.
 - [ ] The harness shows zero "กำร"-style errors.
+
+## Comments
+
+**2026-10-17, finding from ticket 01 (corrected in review):**
+- A glyph with no Unicode mapping comes out as U+0000 under PyMuPDF's default text flags, because they include `TEXT_CID_FOR_UNKNOWN_UNICODE`.
+- The text-layer extractor now clears that flag, so such glyphs come out as U+FFFD instead.
+- Validation should count U+FFFD. It should also guard against U+0000, in case the flags change again.

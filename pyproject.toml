@@ -1,0 +1,36 @@
+[project]
+name = "pdf-to-doc"
+version = "0.1.0"
+description = "Convert Thai and English PDF/DOCX files to DOCX or AI-ready Markdown without broken text"
+authors = [
+    { name = "Sujirat Attawibulkul", email = "sujirat.attawibulkul@gmail.com" }
+]
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = [
+    "pymupdf==1.28.2",
+    "pythainlp==5.4.0",
+]
+
+[project.scripts]
+pdf-to-doc = "pdf_to_doc.cli:main"
+
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+# PyMuPDF ships only partial type hints.
+untyped_calls_exclude = ["pymupdf"]

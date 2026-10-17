@@ -1,5 +1,16 @@
 # pdf-to-doc-app
 
+## Commands
+
+- Tests: `uv run pytest`
+- Type checking: `uv run mypy`
+- On this Windows machine, set `UV_LINK_MODE=copy` to silence uv's hardlink warning.
+
+## Thai text rules
+
+- Never apply NFKC: it splits sara am into two characters.
+- Do not use PyThaiNLP's `normalize` on extracted text: its dangling-mark and repeated-vowel steps delete characters. Use the repair function in `thai.py`.
+
 ## Sample files
 
 `docs/example_pdf/` holds real signed contracts, and one is marked confidential. Keep them git-ignored and never upload them to an external service without asking.
