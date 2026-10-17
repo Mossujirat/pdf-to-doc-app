@@ -16,10 +16,13 @@ uv run pdf-to-doc document.pdf -o document.md
 ## Development
 
 ```sh
-uv run pytest   # tests
-uv run mypy     # type checking
+uv run pytest                            # tests
+uv run mypy                              # type checking
+uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
 ```
+
+The test corpus and the reference-text format are described in `corpus/README.md`.
 
 ## Licence
 
-AGPL-3.0-only (see `LICENSE` and `docs/adr/0002-open-source-under-agpl.md`). The test font Sarabun is under the SIL Open Font License (`tests/fonts/OFL.txt`).
+AGPL-3.0-only (see `LICENSE` and `docs/adr/0002-open-source-under-agpl.md`). The test fonts Sarabun and Niramit are under the SIL Open Font License (`corpus/fonts/`).

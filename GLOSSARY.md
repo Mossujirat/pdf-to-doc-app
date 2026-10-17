@@ -41,6 +41,10 @@ _Avoid_: tag, alt text
 The known-correct text of a test page, against which outputs are judged for broken text.
 _Avoid_: ground truth, expected output
 
+**Corpus**:
+A set of source files, each with reference text for some or all of its pages, used to measure broken text.
+_Avoid_: dataset, fixtures (when meaning the whole set)
+
 ## Pages
 
 **Text layer**:

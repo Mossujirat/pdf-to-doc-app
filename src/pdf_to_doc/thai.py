@@ -15,9 +15,12 @@ SOFT_HYPHEN = "\u00ad"
 ZERO_WIDTH = "\u200b\u200c\u200d\u2060\ufeff"
 
 _INVISIBLE = re.compile(f"[{ZERO_WIDTH}{SOFT_HYPHEN}]")
+# Thai consonants, vowels and marks: everything from ko kai to yamakkan.
+THAI_LETTER = r"[\u0e01-\u0e4e]"
 # Marks above and below a consonant (mai han-akat, sara i to phinthu,
-# maitaikhu to yamakkan) and sara am. None of them can follow a space.
-_SPACE_BEFORE_MARK = re.compile(r"(?<=[\u0e01-\u0e4e])\s+(?=[\u0e31\u0e33-\u0e3a\u0e47-\u0e4e])")
+# maitaikhu to yamakkan) and sara am. None of them can start a word.
+MARK = r"[\u0e31\u0e33-\u0e3a\u0e47-\u0e4e]"
+_SPACE_BEFORE_MARK = re.compile(rf"(?<={THAI_LETTER})\s+(?={MARK})")
 # Sara aa stored before nikhahit instead of after it.
 _SARA_AA_NIKHAHIT = "\u0e32\u0e4d"
 

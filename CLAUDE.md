@@ -4,6 +4,13 @@
 
 - Tests: `uv run pytest`
 - Type checking: `uv run mypy`
+- Quality harness: `uv run pdf-to-doc-eval corpus/synthetic` (format in `corpus/README.md`)
+- Regenerate the synthetic corpus after changing `corpus/generate.py`: `uv run python corpus/generate.py`
+- Escapes in Python source are easy to lose in this environment:
+  - The file-writing tools turn `\uXXXX` into the literal (often invisible) character.
+  - Shell heredocs collapse `\\` to `\`.
+
+  To keep `\u` escapes and regex backslashes intact, write that code through a quoted heredoc, using raw strings.
 - On this Windows machine, set `UV_LINK_MODE=copy` to silence uv's hardlink warning.
 
 ## Thai text rules

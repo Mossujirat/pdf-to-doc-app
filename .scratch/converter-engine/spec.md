@@ -215,7 +215,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - never apply NFKC
 - **Reports, per page and in total, in JSON and as a readable table:**
   - character error rate, overall and Thai-only
-  - broken text by category (orphan marks, spaces inside words, PUA characters, decomposed sara am, missing lines)
+  - broken text by category (orphan marks, spaces inside words, PUA characters, decomposed sara am, missing text)
   - page kind
   - engine
   - uncertain count

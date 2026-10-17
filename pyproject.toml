@@ -11,10 +11,12 @@ requires-python = ">=3.13"
 dependencies = [
     "pymupdf==1.28.2",
     "pythainlp==5.4.0",
+    "rapidfuzz==3.14.6",
 ]
 
 [project.scripts]
 pdf-to-doc = "pdf_to_doc.cli:main"
+pdf-to-doc-eval = "pdf_to_doc.evaluate_cli:main"
 
 [build-system]
 requires = ["hatchling==1.32.4"]
@@ -28,9 +30,11 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["corpus", "tests"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "corpus"]
+mypy_path = ["corpus", "tests"]
 # PyMuPDF ships only partial type hints.
 untyped_calls_exclude = ["pymupdf"]
