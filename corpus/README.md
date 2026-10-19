@@ -31,7 +31,7 @@ A reference file holds what a reader sees on the page, written as Markdown:
 
 - Type the text exactly as printed. Keep Thai digits as Thai digits, and do not fix the original's typos.
 - Headings may be written with `#` and list items with `- `, keeping each item's own number (`- 1. …`, `- (ก) …`). This markup is ignored when pages are compared, so plain text works too.
-- Write tables as HTML `<table>` elements, with `rowspan` and `colspan` where cells are merged.
+- Write tables as GFM pipe tables, or as HTML `<table>` elements. HTML is required where cells are merged, using `rowspan` and `colspan`.
 - Replace content that is not transcribed with a placeholder:
   - `[รูปภาพ]` for an image
   - `[ลายเซ็น]` for a signature

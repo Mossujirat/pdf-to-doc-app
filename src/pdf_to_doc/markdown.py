@@ -1,8 +1,9 @@
 """Renders the document model as Markdown for AI chats, and reads its page markers back."""
 
+import html
 import re
 
-from pdf_to_doc.model import Block, Document, Heading, ListItem
+from pdf_to_doc.model import Block, Document, Heading, ListItem, Table
 from pdf_to_doc.summary import Summary
 
 
@@ -26,7 +27,36 @@ def _render_block(block: Block) -> str:
         return f"{'#' * block.level} {block.text}"
     if isinstance(block, ListItem):
         return f"- {block.text}"
+    if isinstance(block, Table):
+        return _html_table(block) if block.has_merged_cells else _gfm_table(block)
     return block.text
+
+
+def _gfm_table(table: Table) -> str:
+    """A GitHub-flavoured Markdown table; the first row is the header."""
+    lines = []
+    for index, row in enumerate(table.rows):
+        lines.append("| " + " | ".join(cell.text.replace("|", "\\|") for cell in row) + " |")
+        if index == 0:
+            lines.append("| " + " | ".join("---" for _ in row) + " |")
+    return "\n".join(lines)
+
+
+def _html_table(table: Table) -> str:
+    """An HTML table, for merged cells that Markdown tables cannot express."""
+    lines = ["<table>"]
+    for row in table.rows:
+        cells = []
+        for cell in row:
+            spans = ""
+            if cell.rowspan > 1:
+                spans += f' rowspan="{cell.rowspan}"'
+            if cell.colspan > 1:
+                spans += f' colspan="{cell.colspan}"'
+            cells.append(f"<td{spans}>{html.escape(cell.text, quote=False)}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    lines.append("</table>")
+    return "\n".join(lines)
 
 
 _PAGE_MARKER = re.compile(r"^<!-- page (\d+) -->$", re.MULTILINE)

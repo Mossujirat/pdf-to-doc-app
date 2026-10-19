@@ -4,11 +4,11 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from pdf_to_doc.model import Block, Heading, ListItem, Paragraph
+from pdf_to_doc.model import Block, Heading, ListItem, Paragraph, Table, TableCell
 from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
-_EDGE_BAND = 0.10
+EDGE_BAND = 0.10
 _NUMBER = DIGITS
 _DASHES = r"[\s\-–—|]*"
 # A page counter at the end of a row: "หน้าที่ 2/7", "หน้า 3 จาก 9", "Page 4 of 10",
@@ -60,10 +60,33 @@ class Row:
 
 
 @dataclass(frozen=True)
+class RawCell:
+    """A table cell as printed: its lines of text, before they are joined and repaired."""
+
+    lines: tuple[str, ...]
+    rowspan: int = 1
+    colspan: int = 1
+
+
+@dataclass(frozen=True)
+class PlacedTable:
+    """A table found on the page, where it sits, and its cells row by row.
+
+    Each row holds the cells that start in it; a merged cell covers the
+    positions its spans reach in the rows and columns after it.
+    """
+
+    top: float
+    bottom: float
+    rows: tuple[tuple[RawCell, ...], ...]
+
+
+@dataclass(frozen=True)
 class PageRows:
-    rows: tuple[Row, ...]
+    rows: tuple[Row, ...]  # text outside tables
     width: float
     height: float
+    tables: tuple[PlacedTable, ...] = ()
 
 
 def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
@@ -73,7 +96,31 @@ def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
     line_gap = _usual_line_gap(pages)
     groups_by_page = [_group_rows(page, line_gap) for page in pages]
     levels = _heading_levels([group for groups in groups_by_page for group in groups], _body_size(pages))
-    return [tuple(_block(group, levels) for group in groups) for groups in groups_by_page]
+    return [_in_reading_order(groups, page.tables, levels) for groups, page in zip(groups_by_page, pages)]
+
+
+def _in_reading_order(
+    groups: list[list[Row]], tables: tuple[PlacedTable, ...], levels: dict[float, int]
+) -> tuple[Block, ...]:
+    """The page's blocks, with each table placed before the first text that starts below it."""
+    pending = sorted(tables, key=lambda placed: placed.top)
+    blocks: list[Block] = []
+    for group in groups:
+        while pending and pending[0].top <= group[0].y0:
+            blocks.append(_table(pending.pop(0)))
+        blocks.append(_block(group, levels))
+    blocks.extend(_table(placed) for placed in pending)
+    return tuple(blocks)
+
+
+def _table(placed: PlacedTable) -> Table:
+    """Join each cell's printed lines with the Thai line rules, and repair them."""
+    return Table(
+        rows=tuple(
+            tuple(TableCell(repair(join_lines(list(cell.lines))), cell.rowspan, cell.colspan) for cell in row)
+            for row in placed.rows
+        )
+    )
 
 
 def _heading_levels(groups: list[list[Row]], body_size: float) -> dict[float, int]:
@@ -145,7 +192,7 @@ def _furniture_key(row: Row, page: PageRows, number: int) -> str | None:
     by their distance from the PDF page number, so "หน้าที่ 2/7" on page 2 and
     "หน้าที่ 3/7" on page 3 match.
     """
-    band = _EDGE_BAND * page.height
+    band = EDGE_BAND * page.height
     edge = "top" if row.y0 <= band else "bottom" if row.y1 >= page.height - band else None
     text = " ".join(row.text.split())
     if edge is None or not any(char.isalnum() for char in text):
@@ -184,7 +231,11 @@ def _group_rows(page: PageRows, line_gap: float) -> list[list[Row]]:
     right_edge = page.width - min((row.x0 for row in rows), default=0.0)
     groups: list[list[Row]] = []
     for row in rows:
-        if groups and _continues(groups[-1], row, page, right_edge, line_gap):
+        # A paragraph never runs across a table that starts between two of its rows.
+        table_between = bool(groups) and any(
+            groups[-1][-1].y0 < table.top <= row.y0 for table in page.tables
+        )
+        if groups and not table_between and _continues(groups[-1], row, page, right_edge, line_gap):
             groups[-1].append(row)
         else:
             groups.append([row])

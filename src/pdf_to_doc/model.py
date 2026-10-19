@@ -22,7 +22,25 @@ class ListItem:
     text: str  # keeps its own number or letter, such as "1." or "(ก)"; bullets are dropped
 
 
-Block = Paragraph | Heading | ListItem
+@dataclass(frozen=True)
+class TableCell:
+    text: str
+    rowspan: int = 1
+    colspan: int = 1
+
+
+@dataclass(frozen=True)
+class Table:
+    # Each row holds the cells that start in it; a merged cell covers the
+    # positions its spans reach in the rows and columns after it.
+    rows: tuple[tuple[TableCell, ...], ...]
+
+    @property
+    def has_merged_cells(self) -> bool:
+        return any(cell.rowspan > 1 or cell.colspan > 1 for row in self.rows for cell in row)
+
+
+Block = Paragraph | Heading | ListItem | Table
 
 
 @dataclass(frozen=True)

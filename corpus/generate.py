@@ -9,7 +9,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from pdf_builder import NIRAMIT, SARABUN, Line, Spaced, Styled, pdf
+from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Spaced, Styled, pdf
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -173,6 +173,51 @@ DOCUMENTS = (
                     Styled("หน้าที่ ๒/๒", size=14, y=800),
                 ],
                 reference="ผู้รับทุนต้องส่งรายงานตามกำหนดเวลา",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="tables",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    "ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามตารางนี้",
+                    Grid(
+                        rows=(
+                            ("งวดที่", "กำหนดส่งงาน", "จำนวนเงิน"),
+                            ("๑", "ส่งรายงานความก้าว\nหน้าฉบับที่หนึ่ง", "50,000"),
+                            ("๒", "ส่งรายงานฉบับสมบูรณ์", "75,000"),
+                        ),
+                        widths=(70, 200, 100),
+                    ),
+                    "งบประมาณแยกตามปีมีดังนี้",
+                    Grid(
+                        rows=(
+                            (Cell("รายการ", rowspan=2), Cell("งบประมาณ", colspan=2)),
+                            ("ปีที่ ๑", "ปีที่ ๒"),
+                            ("ค่าตอบแทนผู้วิจัย", "100,000", "120,000"),
+                            ("ค่าวัสดุ", "-", "30,000"),
+                        ),
+                        widths=(150, 100, 100),
+                    ),
+                    "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม",
+                ],
+                reference=(
+                    "ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามตารางนี้\n\n"
+                    "| งวดที่ | กำหนดส่งงาน | จำนวนเงิน |\n"
+                    "| --- | --- | --- |\n"
+                    "| ๑ | ส่งรายงานความก้าวหน้าฉบับที่หนึ่ง | 50,000 |\n"
+                    "| ๒ | ส่งรายงานฉบับสมบูรณ์ | 75,000 |\n\n"
+                    "งบประมาณแยกตามปีมีดังนี้\n\n"
+                    "<table>\n"
+                    '<tr><td rowspan="2">รายการ</td><td colspan="2">งบประมาณ</td></tr>\n'
+                    "<tr><td>ปีที่ ๑</td><td>ปีที่ ๒</td></tr>\n"
+                    "<tr><td>ค่าตอบแทนผู้วิจัย</td><td>100,000</td><td>120,000</td></tr>\n"
+                    "<tr><td>ค่าวัสดุ</td><td>-</td><td>30,000</td></tr>\n"
+                    "</table>\n\n"
+                    "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"
+                ),
             ),
         ),
     ),
