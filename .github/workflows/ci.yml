@@ -26,6 +26,9 @@ jobs:
 
           sandbox pdf-to-doc mypy
           sandbox pdf-to-doc pytest
+          # Real PaddleOCR on the corpus scans, with the models baked into the image.
+          sandbox pdf-to-doc pytest -m ocr
+          # The gate covers text pages; OCR pages are measured and reported.
           sandbox pdf-to-doc pdf-to-doc-eval corpus/synthetic --max-broken 0
 
           # Convert a mounted file into a mounted folder, as a self-hoster would.

@@ -1,7 +1,8 @@
 """Generates the synthetic corpus: small PDFs whose reference text is known exactly.
 
 Each page is described twice: the lines to draw, which may carry damage such as
-sara am stored as two characters, and the reference text a reader sees.
+sara am stored as two characters, and the reference text a reader sees. A scanned
+page draws its lines as an image at 200 dpi, slightly askew and with mild grain.
 Run `uv run python corpus/generate.py` after changing a document below, and commit the result.
 """
 
@@ -9,7 +10,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Spaced, Styled, pdf
+from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Scan, Spaced, Styled, pdf
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -18,7 +19,7 @@ SYNTHETIC = Path(__file__).parent / "synthetic"
 
 @dataclass(frozen=True)
 class SyntheticPage:
-    lines: list[Line]
+    lines: list[Line] | Scan
     reference: str
 
 
@@ -231,11 +232,81 @@ DOCUMENTS = (
     ),
 )
 
+STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
+
+
+def scanned(lines: list[Line], overlay: list[Line] | None = None, seed: int = 0) -> Scan:
+    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed)
+
+
+SCANNED_DOCUMENTS = (
+    SyntheticDocument(
+        name="scanned-page",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        "ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้",
+                        "ในสัญญาฉบับนี้ และส่งรายงานทุกหกเดือน",
+                        "",
+                        "โครงการ BCG Economy ระยะที่ 2 ปี 2567",
+                        "",
+                        "ค่าตอบแทนผู้วิจัย 100,000 บาท",
+                    ],
+                    seed=1,
+                ),
+                reference=(
+                    "ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้ และส่งรายงานทุกหกเดือน\n\n"
+                    "โครงการ BCG Economy ระยะที่ 2 ปี 2567\n\n"
+                    "ค่าตอบแทนผู้วิจัย 100,000 บาท"
+                ),
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="stamped-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้ให้ทุนจะจ่ายเงินเป็นงวด", "ตามความก้าวหน้าของงาน"],
+                    overlay=[STAMP, Styled("หน้าที่ 1/2", size=14, y=800)],
+                    seed=2,
+                ),
+                reference="ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามความก้าวหน้าของงาน",
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้รับทุนต้องส่งรายงานฉบับสมบูรณ์", "ภายในสามสิบวันหลังสิ้นสุดโครงการ"],
+                    overlay=[STAMP, Styled("หน้าที่ 2/2", size=14, y=800)],
+                    seed=3,
+                ),
+                reference="ผู้รับทุนต้องส่งรายงานฉบับสมบูรณ์ภายในสามสิบวันหลังสิ้นสุดโครงการ",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="mixed-text-and-scan",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=["หน้านี้มีข้อความในไฟล์", "อ่านได้โดยไม่ต้องใช้ OCR"],
+                reference="หน้านี้มีข้อความในไฟล์อ่านได้โดยไม่ต้องใช้ OCR",
+            ),
+            SyntheticPage(
+                lines=scanned(["หน้านี้เป็นภาพสแกน", "ต้องอ่านด้วย OCR"], seed=4),
+                reference="หน้านี้เป็นภาพสแกนต้องอ่านด้วย OCR",
+            ),
+        ),
+    ),
+)
+
 
 def generate(folder: Path) -> None:
     """Write every document as `<name>.pdf` plus `<name>/page-NNN.reference.md`."""
     folder.mkdir(parents=True, exist_ok=True)
-    for document in DOCUMENTS:
+    for document in DOCUMENTS + SCANNED_DOCUMENTS:
         source = pdf(*(page.lines for page in document.pages), font_file=document.font_file)
         (folder / f"{document.name}.pdf").write_bytes(source)
         references = folder / document.name
@@ -249,4 +320,4 @@ def generate(folder: Path) -> None:
 if __name__ == "__main__":
     shutil.rmtree(SYNTHETIC, ignore_errors=True)
     generate(SYNTHETIC)
-    print(f"wrote {len(DOCUMENTS)} documents to {SYNTHETIC}")
+    print(f"wrote {len(DOCUMENTS + SCANNED_DOCUMENTS)} documents to {SYNTHETIC}")

@@ -4,13 +4,15 @@ import json
 from pathlib import Path
 
 import pytest
-from pdf_builder import pdf
+from fake_ocr import FakeEngine
+from pdf_builder import Scan, pdf
 
 from pdf_to_doc.evaluate_cli import main
 from pdf_to_doc.quality import CorpusError, evaluate, reference_file_name
 
 
 def add_document(corpus: Path, name: str, source: bytes, references: dict[int, str]) -> None:
+    corpus.mkdir(exist_ok=True)
     (corpus / f"{name}.pdf").write_bytes(source)
     (corpus / name).mkdir()
     for page, text in references.items():
@@ -140,3 +142,31 @@ def test_the_command_fails_when_there_is_nothing_to_measure(
     assert main([str(tmp_path / "no-such-folder"), "--max-broken", "0"]) == 2
     assert main([str(tmp_path), "--max-broken", "0"]) == 2
     assert "no reference text" in capsys.readouterr().out
+
+
+# OCR pages
+
+
+def test_ocr_pages_are_measured_with_their_engine_but_the_limits_cover_text_pages_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The engine misses the scan's second line: measured as broken text, but not gated yet.
+    source = pdf(["หน้าที่มีข้อความในไฟล์"], Scan(["บรรทัดแรกของหน้าสแกน", "บรรทัดที่สองที่อ่านไม่ออก"], dpi=50))
+    add_document(
+        tmp_path / "corpus", "mixed", source, {1: "หน้าที่มีข้อความในไฟล์", 2: "บรรทัดแรกของหน้าสแกนบรรทัดที่สองที่อ่านไม่ออก"}
+    )
+    json_path = tmp_path / "report.json"
+
+    exit_code = main(
+        [str(tmp_path / "corpus"), "--max-broken", "0", "--max-cer", "0", "--json", str(json_path)],
+        ocr=FakeEngine(["บรรทัดแรกของหน้าสแกน"]),
+    )
+
+    assert exit_code == 0
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    assert [(page["kind"], page["engine"]) for page in report["pages"]] == [("text", None), ("ocr", "fake")]
+    assert report["by_kind"]["text"]["broken"]["total"] == 0
+    assert report["by_kind"]["ocr"]["broken"]["missing_text"] == 1
+    table = capsys.readouterr().out
+    assert "TOTAL text" in table
+    assert "TOTAL ocr" in table

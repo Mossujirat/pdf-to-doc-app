@@ -1,10 +1,10 @@
-"""Page layout: turns the printed rows of text pages into document structure."""
+"""Page layout: turns the printed rows of each page, read from its text layer or with OCR, into document structure."""
 
 import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from pdf_to_doc.model import Block, Heading, ListItem, Paragraph, Table, TableCell
+from pdf_to_doc.model import Block, Heading, ListItem, PageKind, Paragraph, Table, TableCell
 from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
@@ -87,16 +87,24 @@ class PageRows:
     width: float
     height: float
     tables: tuple[PlacedTable, ...] = ()
+    # On an OCR page the font size is estimated, so it cannot tell headings apart.
+    kind: PageKind = "text"
 
 
 def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
     """The blocks of each page: page furniture removed, rows grouped into headings,
-    list items and paragraphs."""
+    list items and paragraphs. Headings come from text pages only."""
     pages = remove_page_furniture([replace(page, rows=_join_on_baselines(page.rows)) for page in pages])
     line_gap = _usual_line_gap(pages)
     groups_by_page = [_group_rows(page, line_gap) for page in pages]
-    levels = _heading_levels([group for groups in groups_by_page for group in groups], _body_size(pages))
-    return [_in_reading_order(groups, page.tables, levels) for groups, page in zip(groups_by_page, pages)]
+    text_pages = [(groups, page) for groups, page in zip(groups_by_page, pages) if page.kind == "text"]
+    levels = _heading_levels(
+        [group for groups, _ in text_pages for group in groups], _body_size([page for _, page in text_pages])
+    )
+    return [
+        _in_reading_order(groups, page.tables, levels if page.kind == "text" else {})
+        for groups, page in zip(groups_by_page, pages)
+    ]
 
 
 def _in_reading_order(
@@ -162,6 +170,19 @@ def _join_on_baselines(rows: tuple[Row, ...]) -> tuple[Row, ...]:
     return tuple(joined)
 
 
+def body_text_share(page: PageRows) -> float:
+    """The share of the page that its rows and tables cover outside the edge bands."""
+    area = sum((row.x1 - row.x0) * (row.y1 - row.y0) for row in page.rows if row.text.strip() and not _edge(row, page))
+    area += sum((table.bottom - table.top) * page.width for table in page.tables)
+    return area / (page.width * page.height)
+
+
+def _edge(row: Row, page: PageRows) -> str | None:
+    """The edge whose band the row starts or ends in, where page furniture sits."""
+    band = EDGE_BAND * page.height
+    return "top" if row.y0 <= band else "bottom" if row.y1 >= page.height - band else None
+
+
 def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
     """Drop page furniture: rows at the same edge (top or bottom) that repeat on two or more pages.
 
@@ -192,8 +213,7 @@ def _furniture_key(row: Row, page: PageRows, number: int) -> str | None:
     by their distance from the PDF page number, so "หน้าที่ 2/7" on page 2 and
     "หน้าที่ 3/7" on page 3 match.
     """
-    band = EDGE_BAND * page.height
-    edge = "top" if row.y0 <= band else "bottom" if row.y1 >= page.height - band else None
+    edge = _edge(row, page)
     text = " ".join(row.text.split())
     if edge is None or not any(char.isalnum() for char in text):
         return None

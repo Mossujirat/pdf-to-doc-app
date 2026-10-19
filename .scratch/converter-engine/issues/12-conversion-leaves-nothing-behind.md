@@ -23,3 +23,11 @@
 - [ ] One test blocks sockets and converts a mixed fixture.
 - [ ] One test checks that the temp area is empty after success and after a forced failure.
 - [ ] One test captures log output from a full conversion and confirms that no reference-text fragment appears in it.
+
+## Comments
+
+**2026-10-19, handed over from ticket 08 (OCR pages)**
+
+- PaddleX writes working files (`func_ret`, `locks`, `temp`) under `PADDLE_PDX_CACHE_HOME`: `~/.paddlex` by default, `/tmp/paddlex` in the image. The leftovers check should include that folder.
+- Pages are rendered in memory, and no image file is written. The engine is kept between conversions in one process, so nothing of a document should stay in it; check that too.
+- The models download separately (`pdf-to-doc-models`, or at image build). The no-network test should run with them in place.

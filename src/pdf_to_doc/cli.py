@@ -5,6 +5,7 @@ import math
 import sys
 from pathlib import Path
 
+from pdf_to_doc.console import thai_safe_output
 from pdf_to_doc.conversion import convert
 from pdf_to_doc.intake import (
     MAX_BYTES,
@@ -17,6 +18,9 @@ from pdf_to_doc.intake import (
     UnsupportedFormat,
     WrongPassword,
 )
+from pdf_to_doc.ocr_models import ModelsMissing
+from pdf_to_doc.ocr import OcrEngine
+from pdf_to_doc.reading import Progress
 
 EXIT_OK = 0
 # Exit code 1 is Python's for a crash, and 2 is argparse's for bad arguments.
@@ -26,8 +30,10 @@ EXIT_PASSWORD_REQUIRED = 5
 EXIT_WRONG_PASSWORD = 6
 EXIT_COPY_RESTRICTED = 7
 EXIT_DAMAGED_FILE = 8
+EXIT_MODELS_MISSING = 9
 
 _MB = 1024 * 1024
+_LINE_START = chr(13)  # a carriage return: the next print overwrites the line
 
 _EXIT_CODES = f"""\
 exit code:
@@ -37,10 +43,12 @@ exit code:
   {EXIT_PASSWORD_REQUIRED}  PDF ล็อกด้วยรหัสผ่าน แต่ไม่ได้ใส่ --password
   {EXIT_WRONG_PASSWORD}  รหัสผ่านไม่ถูกต้อง
   {EXIT_COPY_RESTRICTED}  PDF ตั้งสิทธิ์ห้ามคัดลอกข้อความ
-  {EXIT_DAMAGED_FILE}  ไฟล์เสียหรือไม่สมบูรณ์"""
+  {EXIT_DAMAGED_FILE}  ไฟล์เสียหรือไม่สมบูรณ์
+  {EXIT_MODELS_MISSING}  ยังไม่ได้ติดตั้ง model สำหรับ OCR (สั่ง pdf-to-doc-models)"""
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
+    """Run the command. `ocr` replaces the default OCR engine, for tests."""
     parser = argparse.ArgumentParser(
         prog="pdf-to-doc",
         description="แปลง PDF เป็น Markdown ที่ข้อความไทยอ่านได้ตรงกับต้นฉบับ",
@@ -54,10 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--password", help="รหัสผ่านสำหรับเปิดไฟล์ PDF ที่ล็อกไว้")
     args = parser.parse_args(argv)
 
-    # Windows consoles default to a code page that cannot print Thai.
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+    thai_safe_output()
 
     output_path: Path = args.output or args.source.with_suffix(".md")
     try:
@@ -65,15 +70,28 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         parser.error(f"อ่านไฟล์ {args.source} ไม่ได้ ({error.strerror})")
     try:
-        result = convert(source, to="markdown", password=args.password)
+        result = convert(source, to="markdown", password=args.password, ocr=ocr, progress=_show_progress)
     except IntakeError as error:
         exit_code, message = _refusal(error)
         print(f"{args.source}: {message}", file=sys.stderr)
         return exit_code
+    except ModelsMissing as error:
+        print(
+            f"ยังไม่ได้ติดตั้ง model สำหรับ OCR ที่ {error.folder} กรุณาสั่ง pdf-to-doc-models ก่อน",
+            file=sys.stderr,
+        )
+        return EXIT_MODELS_MISSING
     output_path.write_bytes(result.output)
 
     print(f"{output_path}: {result.summary.headline()}")
     return EXIT_OK
+
+
+def _show_progress(update: Progress) -> None:
+    """One line per page; on a terminal, each page overwrites the last."""
+    overwrite = sys.stderr.isatty() and update.current < update.total
+    line = f"OCR หน้า {update.current}/{update.total}"
+    print(line, end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
 
 
 def _refusal(error: IntakeError) -> tuple[int, str]:

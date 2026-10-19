@@ -9,6 +9,9 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "numpy==2.3.5",
+    "paddleocr==3.7.0",
+    "paddlepaddle==3.2.2",
     "pymupdf==1.28.2",
     "pythainlp==5.4.0",
     "rapidfuzz==3.14.6",
@@ -17,6 +20,7 @@ dependencies = [
 [project.scripts]
 pdf-to-doc = "pdf_to_doc.cli:main"
 pdf-to-doc-eval = "pdf_to_doc.evaluate_cli:main"
+pdf-to-doc-models = "pdf_to_doc.ocr_models:main"
 
 [build-system]
 requires = ["hatchling==1.32.4"]
@@ -31,6 +35,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["corpus", "tests"]
+# Fast tests by default; `pytest -m ocr` runs real PaddleOCR (models from `pdf-to-doc-models`).
+addopts = "-m 'not ocr'"
+markers = ["ocr: reads with real PaddleOCR, so it needs the models and takes longer"]
 
 [tool.mypy]
 strict = true
@@ -38,3 +45,8 @@ files = ["src", "tests", "corpus"]
 mypy_path = ["corpus", "tests"]
 # PyMuPDF ships only partial type hints.
 untyped_calls_exclude = ["pymupdf"]
+
+# PaddleOCR ships no type hints.
+[[tool.mypy.overrides]]
+module = ["paddleocr"]
+ignore_missing_imports = true

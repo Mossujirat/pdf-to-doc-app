@@ -9,15 +9,20 @@ A page is a list of lines, drawn top to bottom:
   text may hold several lines separated by newlines
 - an empty string leaves a blank line, which starts a new paragraph
 
+A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
+drawn over the image as text: a stamped header, or the text layer of a scan made searchable.
+
 The same inputs always give the same bytes, so generated files can be committed.
 
 For intake tests, `protected` encrypts a built PDF, which gives different bytes on
 every run, and `grown_to` pads one to an exact size.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pymupdf
 
 # PyMuPDF copies its PDF_ constants in at run time, where type checkers cannot see them.
@@ -70,32 +75,64 @@ class Grid:
 Line = str | Spaced | Styled | Grid
 
 
-def pdf(*pages: list[Line], font_file: Path = SARABUN) -> bytes:
+@dataclass(frozen=True)
+class Scan:
+    lines: Sequence[Line]
+    overlay: Sequence[Line] = ()  # drawn over the image as text
+    dpi: int = 200
+    angle: float = 0.0  # degrees the paper sat askew
+    noise: float = 0.0  # standard deviation of the grain, in grey levels
+    seed: int = 0
+
+
+def pdf(*pages: list[Line] | Scan, font_file: Path = SARABUN) -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({})
-    for lines in pages:
+    for content in pages:
         page = doc.new_page()
-        y: float = TOP
-        for line in lines:
-            if isinstance(line, Styled):
-                y = line.y if line.y is not None else y
-                y += _draw_styled(page, y, line, font_file)
-                continue
-            if isinstance(line, Grid):
-                y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
-                continue
-            if isinstance(line, Spaced):
-                x: float = LEFT
-                piece_font = _weight(font_file, line.bold)
-                for piece in line.pieces:
-                    _draw(page, x, y, piece, piece_font, FONT_SIZE)
-                    x += _width(piece, piece_font, FONT_SIZE) + line.gap
-            elif line:
-                _draw(page, LEFT, y, line, font_file, FONT_SIZE)
-            y += LINE_HEIGHT
+        if isinstance(content, Scan):
+            page.insert_image(page.rect, stream=_scanned_image(content, font_file))
+            _draw_lines(page, content.overlay, font_file)
+        else:
+            _draw_lines(page, content, font_file)
     data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
     doc.close()
     return data
+
+
+def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
+    y: float = TOP
+    for line in lines:
+        if isinstance(line, Styled):
+            y = line.y if line.y is not None else y
+            y += _draw_styled(page, y, line, font_file)
+            continue
+        if isinstance(line, Grid):
+            y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
+            continue
+        if isinstance(line, Spaced):
+            x: float = LEFT
+            piece_font = _weight(font_file, line.bold)
+            for piece in line.pieces:
+                _draw(page, x, y, piece, piece_font, FONT_SIZE)
+                x += _width(piece, piece_font, FONT_SIZE) + line.gap
+        elif line:
+            _draw(page, LEFT, y, line, font_file, FONT_SIZE)
+        y += LINE_HEIGHT
+
+
+def _scanned_image(scan: Scan, font_file: Path) -> bytes:
+    """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy."""
+    with pymupdf.open() as paper:
+        _draw_lines(paper.new_page(), scan.lines, font_file)
+        zoom = scan.dpi / 72
+        pix = paper[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom).prerotate(scan.angle), colorspace=pymupdf.csGRAY)
+    pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
+    grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0
+    grainy = np.clip(pixels + grain, 0, 255).astype(np.uint8)
+    image = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, grainy.tobytes(), False)
+    jpeg: bytes = image.tobytes("jpg", jpg_quality=75)
+    return jpeg
 
 
 OWNER_PASSWORD = "owner-password"

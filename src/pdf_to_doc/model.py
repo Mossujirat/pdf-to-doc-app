@@ -48,6 +48,7 @@ class Page:
     number: int
     kind: PageKind
     blocks: tuple[Block, ...]
+    engine: str | None = None  # the OCR engine that read an OCR page
 
 
 @dataclass(frozen=True)
