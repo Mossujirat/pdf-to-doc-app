@@ -45,7 +45,7 @@ uv run mypy                              # type checking
 uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
 ```
 
-CI (`.github/workflows/ci.yml`) builds the Docker image on every push and pull request. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
+CI (`.github/workflows/ci.yml`) builds the Docker image for every pull request and every push to `main`. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
 
 The test corpus and the reference-text format are described in `corpus/README.md`.
 

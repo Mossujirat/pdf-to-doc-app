@@ -4,9 +4,17 @@
 # sample contracts are git-ignored and never reach CI.
 name: CI
 
+# Pull requests, and what lands on main. While a ticket is in progress, the same
+# checks run locally in the image (see CLAUDE.md), which saves Actions minutes.
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to the same pull request replaces a run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

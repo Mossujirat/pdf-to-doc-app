@@ -132,3 +132,8 @@
   - Tests still check what the fake engine was asked to read, because the engine is one of the two agreed seams.
   - Thai marks in the new tests are written with `chr()`, which the file tools cannot mangle.
   - The harness gate on text pages stays. Without it, CI would fail as soon as an OCR page held broken text, while the spec's gate is zero broken text on text pages.
+
+**2026-10-19, CI runs less often**
+
+- With Paddle in the image, a CI run takes several minutes, and this private repository has a monthly quota of Actions minutes. At the user's request, CI now runs for pull requests and for pushes to `main` only. A newer push to the same pull request cancels the run in progress.
+- While a ticket is in progress, the same checks run locally in the image. That supersedes ticket 06's "each push and pull request".
