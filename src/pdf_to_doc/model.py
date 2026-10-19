@@ -11,7 +11,18 @@ class Paragraph:
     text: str
 
 
-Block = Paragraph
+@dataclass(frozen=True)
+class Heading:
+    level: int  # 1 is the most prominent
+    text: str
+
+
+@dataclass(frozen=True)
+class ListItem:
+    text: str  # keeps its own number or letter, such as "1." or "(ก)"; bullets are dropped
+
+
+Block = Paragraph | Heading | ListItem
 
 
 @dataclass(frozen=True)

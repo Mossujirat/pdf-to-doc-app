@@ -53,6 +53,10 @@ The machine-readable characters stored in a PDF page, separate from what the pag
 **Text page**:
 A page whose text layer matches what a reader sees, so its text can be taken from the layer.
 
+**Page furniture**:
+Headers, footers and page numbers that repeat across pages and are not part of the document's content. Outputs leave them out.
+_Avoid_: running header (when meaning all of these)
+
 **OCR page**:
 A page whose text must be read from its image, because its body has no text layer (a scan) or its text layer cannot be trusted.
 _Avoid_: scanned page (a page with an untrustworthy text layer is not a scan but is still an OCR page)

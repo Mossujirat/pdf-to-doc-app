@@ -149,7 +149,8 @@ _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _INLINE_TAG = re.compile(r"</?(?:mark|b|strong|i|em|u|s|span|sup|sub|a|font)\b[^<>]*>", re.IGNORECASE)
 # Other tags, such as table cells, separate their contents.
 _TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9]*\b[^<>]*>")
-_LINE_MARKUP = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|\|?[ \t:-]*-{3,}[ \t:|-]*$)", re.MULTILINE)
+# Headings, quotes, list bullets and table separator rows.
+_LINE_MARKUP = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\|?[ \t:-]*-{3,}[ \t:|-]*$)", re.MULTILINE)
 _EMPHASIS = re.compile(r"\*\*|__")
 _TABLE_PIPE = re.compile(r"\|")
 _WHITESPACE = re.compile(r"\s+")

@@ -30,13 +30,14 @@ The quality harness accepts any folder in this layout. Confidential documents ca
 A reference file holds what a reader sees on the page, written as Markdown:
 
 - Type the text exactly as printed. Keep Thai digits as Thai digits, and do not fix the original's typos.
+- Headings may be written with `#` and list items with `- `, keeping each item's own number (`- 1. …`, `- (ก) …`). This markup is ignored when pages are compared, so plain text works too.
 - Write tables as HTML `<table>` elements, with `rowspan` and `colspan` where cells are merged.
 - Replace content that is not transcribed with a placeholder:
   - `[รูปภาพ]` for an image
   - `[ลายเซ็น]` for a signature
   - `[ตราประทับ]` for a stamp
   - `[ลายมือ]` for handwriting
-- Leave out headers, footers and page numbers that repeat on every page; the converter is meant to drop them.
+- Leave out page furniture: headers, footers and page numbers that repeat at the same edge on two or more pages, and rows that are only a page counter. The converter drops them.
 - Line breaks and spacing between paragraphs do not matter.
 - Saving with or without a byte order mark makes no difference.
 
@@ -46,7 +47,7 @@ Both the output page and its reference are reduced to visible text before compar
 - HTML comments are removed.
 - Inline tags such as `<mark>` (uncertain text) are removed without leaving a gap. Other tags, such as table cells, leave a space.
 - HTML entities such as `&amp;` become the characters they stand for.
-- Markdown heading, quote, table and `**`/`__` emphasis markup is removed.
+- Markdown heading, quote, list bullet, table and `**`/`__` emphasis markup is removed.
 - The text is put into Unicode NFC. NFKC is never applied: it would split sara am into two characters and hide that damage.
 - Every run of whitespace becomes one space.
 

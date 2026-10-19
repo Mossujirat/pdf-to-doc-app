@@ -22,3 +22,10 @@
 
 **Tests**
 - [ ] Synthetic fixtures cover a ruled table with Thai text in cells, a table with merged cells, and a column-aligned list that is not a table. The harness shows zero broken text on them.
+
+## Comments
+
+**2026-10-19, findings from ticket 03 on the real contract**
+
+- **Wrapped cells split their row.** On page 2, the appendix list is laid out with tab stops. When a cell's text wraps onto a second line, PyMuPDF orders that row as: column 1, column 2 line 1, column 2 line 2, then columns 3–4 in a later block. Ticket 03 rejoins only consecutive pieces on one baseline, so that row comes out as three paragraphs.
+- **Budget table (pp. 69–72): every cell is its own paragraph.** A cell holding only "-" renders as an empty bullet in Markdown viewers, though the dash is still in the raw text. Keep such cells inside table blocks.

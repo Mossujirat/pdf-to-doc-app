@@ -4,8 +4,9 @@ from typing import Any
 
 import pymupdf
 
-from pdf_to_doc.model import Document, Page, Paragraph
-from pdf_to_doc.thai import is_thai, join_lines, repair
+from pdf_to_doc.layout import PageRows, Row, page_blocks
+from pdf_to_doc.model import Document, Page
+from pdf_to_doc.thai import is_thai
 
 # PyMuPDF's defaults, except that a glyph with no Unicode mapping comes out as
 # U+FFFD (visible, and countable when validating the text layer) instead of
@@ -17,23 +18,35 @@ _WORD_GAP = 0.2
 
 def read_pdf(source: bytes) -> Document:
     with pymupdf.open(stream=source, filetype="pdf") as pdf:
-        pages = tuple(
-            Page(number=index + 1, kind="text", blocks=_paragraphs(page))
-            for index, page in enumerate(pdf)
+        blocks_by_page = page_blocks([_page_rows(page) for page in pdf])
+    return Document(
+        pages=tuple(
+            Page(number=index + 1, kind="text", blocks=blocks)
+            for index, blocks in enumerate(blocks_by_page)
         )
-    return Document(pages=pages)
+    )
 
 
-def _paragraphs(page: pymupdf.Page) -> tuple[Paragraph, ...]:
+def _page_rows(page: pymupdf.Page) -> PageRows:
     layout: dict[str, Any] = page.get_text("rawdict", flags=_FLAGS)
-    paragraphs = []
+    rows = []
     for block in layout["blocks"]:
         if block["type"] != 0:
             continue
-        text = repair(join_lines([_line_text(line) for line in block["lines"]]))
-        if text.strip():
-            paragraphs.append(Paragraph(text))
-    return tuple(paragraphs)
+        for line in block["lines"]:
+            x0, y0, x1, y1 = line["bbox"]
+            size = round(max(span["size"] for span in line["spans"]), 1)
+            bold = all(_is_bold(span) for span in line["spans"] if _span_text(span).strip())
+            rows.append(Row(_line_text(line), x0, y0, x1, y1, size, bold))
+    return PageRows(rows=tuple(rows), width=page.rect.width, height=page.rect.height)
+
+
+def _is_bold(span: dict[str, Any]) -> bool:
+    return bool(span["flags"] & pymupdf.TEXT_FONT_BOLD) or "bold" in span["font"].lower()
+
+
+def _span_text(span: dict[str, Any]) -> str:
+    return "".join(char["c"] for char in span["chars"])
 
 
 def _line_text(line: dict[str, Any]) -> str:

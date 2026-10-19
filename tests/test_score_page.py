@@ -150,3 +150,10 @@ def test_angle_brackets_in_text_are_not_mistaken_for_markup() -> None:
 
 def test_html_entities_are_read_as_the_characters_they_stand_for() -> None:
     assert score_page(output="ก&ข", reference="<td>ก&amp;ข</td>").cer == 0
+
+
+def test_markdown_list_bullets_do_not_count_as_errors() -> None:
+    output = "- 1. เงื่อนไขของสัญญา\n- 2. ขอบเขตของงาน\n- รายงานฉบับสมบูรณ์"
+    reference = "1. เงื่อนไขของสัญญา\n2. ขอบเขตของงาน\nรายงานฉบับสมบูรณ์"
+
+    assert score_page(output=output, reference=reference).cer == 0
