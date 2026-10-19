@@ -11,7 +11,16 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync
 uv run pdf-to-doc document.pdf -o document.md
+uv run pdf-to-doc locked.pdf --password "..."   # a PDF that needs a password to open
 ```
+
+The source type is read from the file's content, not its name. These files are refused with a Thai message and an exit code of their own, listed by `pdf-to-doc --help`:
+
+- legacy Word `.doc` files, and anything that is not a PDF or DOCX (DOCX conversion is not built yet)
+- files over 50 MB or 150 pages
+- PDFs that need a password, when none or a wrong one is given
+- PDFs whose permissions forbid copying text
+- damaged files
 
 ## Development
 

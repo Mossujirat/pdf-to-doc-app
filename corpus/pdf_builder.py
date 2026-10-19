@@ -10,12 +10,18 @@ A page is a list of lines, drawn top to bottom:
 - an empty string leaves a blank line, which starts a new paragraph
 
 The same inputs always give the same bytes, so generated files can be committed.
+
+For intake tests, `protected` encrypts a built PDF, which gives different bytes on
+every run, and `grown_to` pads one to an exact size.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
+
+# PyMuPDF copies its PDF_ constants in at run time, where type checkers cannot see them.
+from pymupdf.mupdf import PDF_ENCRYPT_AES_256, PDF_PERM_COPY
 
 FONTS = Path(__file__).parent / "fonts"
 SARABUN = FONTS / "Sarabun-Regular.ttf"
@@ -88,6 +94,49 @@ def pdf(*pages: list[Line], font_file: Path = SARABUN) -> bytes:
                 _draw(page, LEFT, y, line, font_file, FONT_SIZE)
             y += LINE_HEIGHT
     data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
+    doc.close()
+    return data
+
+
+OWNER_PASSWORD = "owner-password"
+
+
+def protected(source: bytes, *, open_password: str = "", allow_copy: bool = True) -> bytes:
+    """The same PDF, encrypted with `OWNER_PASSWORD`.
+
+    Opening it needs `open_password` unless that is empty. `allow_copy` sets
+    whether its permissions let readers copy the text. Encryption is random, so
+    unlike the other builders this gives different bytes on every run.
+    """
+    doc = pymupdf.open(stream=source, filetype="pdf")
+    data: bytes = doc.tobytes(
+        encryption=PDF_ENCRYPT_AES_256,
+        owner_pw=OWNER_PASSWORD,
+        user_pw=open_password,
+        permissions=-1 if allow_copy else ~PDF_PERM_COPY,
+    )
+    doc.close()
+    return data
+
+
+def grown_to(source: bytes, size: int) -> bytes:
+    """The same PDF, grown to exactly `size` bytes by a stream of spaces that nothing draws."""
+    padding = size - len(source)
+    grown = _padded(source, padding)
+    # The stream's own object adds a few bytes; take them off the padding.
+    grown = _padded(source, padding - (len(grown) - size))
+    if len(grown) != size:
+        raise ValueError(f"cannot grow the PDF to exactly {size} bytes")
+    return grown
+
+
+def _padded(source: bytes, padding: int) -> bytes:
+    doc = pymupdf.open(stream=source, filetype="pdf")
+    xref = doc.get_new_xref()
+    doc.update_object(xref, "<<>>")
+    doc.update_stream(xref, b" " * padding, compress=0)
+    doc.xref_set_key(doc.pdf_catalog(), "Padding", f"{xref} 0 R")  # referenced, so saving keeps it
+    data: bytes = doc.tobytes(garbage=3, no_new_id=True)
     doc.close()
     return data
 

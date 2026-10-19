@@ -31,9 +31,8 @@ pymupdf.no_recommend_layout()
 Box = tuple[float, float, float, float]
 
 
-def read_pdf(source: bytes) -> Document:
-    with pymupdf.open(stream=source, filetype="pdf") as pdf:
-        blocks_by_page = page_blocks([_read_page(page) for page in pdf])
+def read_pdf(pdf: pymupdf.Document) -> Document:
+    blocks_by_page = page_blocks([_read_page(page) for page in pdf.pages()])
     return Document(
         pages=tuple(
             Page(number=index + 1, kind="text", blocks=blocks)
