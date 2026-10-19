@@ -144,7 +144,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 - **PaddleOCR (default)**
   - Pin paddlepaddle 3.2.2; version 3.3.1 crashed at inference.
-  - Models: PP-OCRv5 mobile detector; Thai and English mobile recognisers.
+  - Models: PP-OCRv5 mobile detector; the Thai mobile recogniser. It reads English words and digits on the same line correctly, and on the English sample's scans it agrees with the English recogniser on 99.3–99.8% of characters, so the English recogniser is not used (ticket 08).
   - Detector input limited to a longest side of 1280 px. Defaults split Thai marks into separate boxes and were far worse: CER 11.8% instead of 4.0%, at four times the time.
   - Orientation and unwarping off.
   - Scanned table structure: try PaddleOCR's table model (PP-StructureV3) on CPU. If it is not good enough, output the table as lines with a placeholder saying the table structure may be incomplete.

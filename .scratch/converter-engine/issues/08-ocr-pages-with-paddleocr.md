@@ -75,7 +75,7 @@
   - On the English sample's scans, it agrees with the English recogniser on 99.3–99.8% of characters.
   - The English recogniser cannot read Thai at all.
   - So only the Thai recogniser is used, for both languages. The English model is not shipped.
-  - This departs from the spec's "Thai and English mobile recognisers", and needs the user's sign-off; the spec's OCR adapter section should then say so.
+  - This departs from the spec's "Thai and English mobile recognisers". The user accepted it on 2026-10-19, and the spec's OCR adapter section now says so.
 - **Models.**
   - The detector and the Thai recogniser come from Hugging Face (`PaddlePaddle/<model>`, Apache-2.0), pinned to a commit, and each file is checked against its SHA-256. Together they are 13 MB.
   - `pdf-to-doc-models` fetches them into `~/.cache/pdf-to-doc/models`, or into `$PDF_TO_DOC_MODELS`.
