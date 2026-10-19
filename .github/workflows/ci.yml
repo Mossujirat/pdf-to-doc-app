@@ -1,0 +1,36 @@
+# Builds the Linux image and runs the checks inside it, the way the future
+# server will run conversions: no network, a read-only file system, and
+# scratch space in memory. Only committed files are used; the confidential
+# sample contracts are git-ignored and never reach CI.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the image
+        run: docker build -t pdf-to-doc .
+
+      - name: Check inside the sandbox
+        run: |
+          sandbox() { docker run --rm --network none --read-only --tmpfs /tmp "$@"; }
+
+          sandbox pdf-to-doc mypy
+          sandbox pdf-to-doc pytest
+          sandbox pdf-to-doc pdf-to-doc-eval corpus/synthetic --max-broken 0
+
+          # Convert a mounted file into a mounted folder, as a self-hoster would.
+          mkdir output
+          sandbox --user "$(id -u):$(id -g)" \
+            -v "$PWD/corpus/synthetic:/in:ro" -v "$PWD/output:/out" \
+            pdf-to-doc pdf-to-doc /in/tables.pdf -o /out/tables.md
+          grep -q "<table>" output/tables.md

@@ -22,6 +22,17 @@ The source type is read from the file's content, not its name. These files are r
 - PDFs whose permissions forbid copying text
 - damaged files
 
+### Docker
+
+The image runs the converter on Linux. Nothing is downloaded while converting, so it works with networking off:
+
+```sh
+docker build -t pdf-to-doc .
+docker run --rm --network none -v "$PWD:/work" pdf-to-doc pdf-to-doc /work/document.pdf -o /work/document.md
+```
+
+The container runs as a non-root user. On a Linux host, add `--user "$(id -u):$(id -g)"` so it can write to your folder and the output belongs to you. It can also run with a read-only file system: add `--read-only --tmpfs /tmp`.
+
 ## Development
 
 ```sh
@@ -29,6 +40,8 @@ uv run pytest                            # tests
 uv run mypy                              # type checking
 uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
 ```
+
+CI (`.github/workflows/ci.yml`) builds the Docker image on every push and pull request. It runs the same three checks inside the image, with no network and a read-only file system, and fails on any broken text in the corpus.
 
 The test corpus and the reference-text format are described in `corpus/README.md`.
 

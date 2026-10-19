@@ -6,6 +6,7 @@
 - Type checking: `uv run mypy`
 - Quality harness: `uv run pdf-to-doc-eval corpus/synthetic` (format in `corpus/README.md`)
 - Regenerate the synthetic corpus after changing `corpus/generate.py`: `uv run python corpus/generate.py`
+- Linux container: build the image and run the checks the way `.github/workflows/ci.yml` does. In Git Bash, set `MSYS_NO_PATHCONV=1`, or it rewrites container paths such as `/tmp` into Windows paths.
 - Escapes in Python source are easy to lose in this environment:
   - The file-writing tools turn `\uXXXX` into the literal (often invisible) character.
   - Shell heredocs collapse `\\` to `\`.
