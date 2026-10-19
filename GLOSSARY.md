@@ -41,6 +41,10 @@ _Avoid_: tag, alt text
 The known-correct text of a test page, against which outputs are judged for broken text.
 _Avoid_: ground truth, expected output
 
+**Corpus**:
+A set of source files, each with reference text for some or all of its pages, used to measure broken text.
+_Avoid_: dataset, fixtures (when meaning the whole set)
+
 ## Pages
 
 **Text layer**:
@@ -48,6 +52,10 @@ The machine-readable characters stored in a PDF page, separate from what the pag
 
 **Text page**:
 A page whose text layer matches what a reader sees, so its text can be taken from the layer.
+
+**Page furniture**:
+Headers, footers and page numbers that repeat across pages and are not part of the document's content. Outputs leave them out.
+_Avoid_: running header (when meaning all of these)
 
 **OCR page**:
 A page whose text must be read from its image, because its body has no text layer (a scan) or its text layer cannot be trusted.

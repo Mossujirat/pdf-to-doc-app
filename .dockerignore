@@ -1,0 +1,12 @@
+# Only what the image needs. Everything else stays out of the build context,
+# including the confidential sample contracts under docs/example_pdf/.
+*
+!.gitattributes
+!pyproject.toml
+!uv.lock
+!.python-version
+!LICENSE
+!src/
+!tests/
+!corpus/
+**/__pycache__

@@ -1,0 +1,7 @@
+# Keep LF everywhere: the code and scripts also run in Linux containers.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.ttf binary
+*.docx binary
