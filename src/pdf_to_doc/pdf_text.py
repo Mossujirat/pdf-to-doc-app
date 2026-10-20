@@ -6,6 +6,7 @@ from typing import Any
 import pymupdf
 
 from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedTable, RawCell, Row
+from pdf_to_doc.pdf_images import placed_images
 from pdf_to_doc.thai import is_thai
 
 # PyMuPDF's defaults, except that a glyph with no Unicode mapping comes out as
@@ -68,8 +69,10 @@ def _inside(x: float, y: float, box: Box) -> bool:
 
 
 def text_rows(page: pymupdf.Page) -> PageRows:
-    """The page's text layer. Every character ends up exactly once: in a table cell, or in a row."""
+    """The page's text layer, and the images drawn on it. Every character ends up exactly
+    once: in a table cell, or in a row."""
     layout: dict[str, Any] = page.get_text("rawdict", flags=_FLAGS)
+    images = placed_images(layout["blocks"])
     lines = [line for block in layout["blocks"] if block["type"] == 0 for line in block["lines"]]
     words = [word for index, line in enumerate(lines) for word in _words(index, line)]
     taken: set[int] = set()  # positions of words already given to a cell
@@ -82,7 +85,7 @@ def text_rows(page: pymupdf.Page) -> PageRows:
     rows = tuple(
         _row(chars) for _, chars in sorted(left_by_line.items()) if any(not char.text.isspace() for char in chars)
     )
-    return PageRows(rows=rows, width=page.rect.width, height=page.rect.height, tables=tables)
+    return PageRows(rows=rows, width=page.rect.width, height=page.rect.height, tables=tables, images=images)
 
 
 def _words(index: int, line: dict[str, Any]) -> list[_Word]:

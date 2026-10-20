@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 from markdown_reader import page_texts
 from pdf_builder import OWNER_PASSWORD, grown_to, pdf, protected
-from word_builder import docx, legacy_doc
+from word_builder import Block, PageBreak, document, docx, docx_unpacking_to, legacy_doc, locked_docx
 
 from pdf_to_doc import (
     CopyRestricted,
     DamagedFile,
+    DocxToDocx,
     PasswordRequired,
     TooLarge,
     UnsupportedFormat,
@@ -47,15 +48,29 @@ def test_a_zip_archive_that_is_not_a_word_document_is_refused() -> None:
     assert refusal.value.found is None
 
 
-def test_a_docx_is_recognised_but_not_converted_yet() -> None:
+def test_a_word_file_locked_with_a_password_is_refused() -> None:
     with pytest.raises(UnsupportedFormat) as refusal:
-        convert(docx("สัญญาให้ทุนโครงการ"))
+        convert(locked_docx())
 
-    assert refusal.value.found == "docx"
+    assert refusal.value.found == "locked office"
+
+
+def test_a_docx_is_not_converted_to_docx() -> None:
+    with pytest.raises(DocxToDocx):
+        convert(docx("สัญญาให้ทุนโครงการ"), to="docx")
 
 
 def cut_short_pdf() -> bytes:
     return pdf(["หน้าแรก"])[:200]
+
+
+def docx_with_broken_xml() -> bytes:
+    archive = io.BytesIO(docx("หน้าแรก"))
+    with zipfile.ZipFile(archive) as source, zipfile.ZipFile(broken := io.BytesIO(), "w") as target:
+        for entry in source.infolist():
+            content = source.read(entry.filename)
+            target.writestr(entry, content[:-40] if entry.filename == "word/document.xml" else content)
+    return broken.getvalue()
 
 
 @pytest.mark.parametrize(
@@ -63,6 +78,7 @@ def cut_short_pdf() -> bytes:
     [
         pytest.param(cut_short_pdf, id="PDF"),
         pytest.param(lambda: docx("หน้าแรก")[:-30], id="DOCX"),
+        pytest.param(docx_with_broken_xml, id="DOCX whose document is cut short inside"),
     ],
 )
 def test_a_file_cut_short_is_refused_as_damaged(source: Callable[[], bytes]) -> None:
@@ -84,6 +100,25 @@ def test_a_file_over_50_mb_is_refused() -> None:
         convert(pdf_of_size(50 * MB + 1))
 
     assert (refusal.value.unit, refusal.value.limit) == ("bytes", 50 * MB)
+
+
+def test_a_docx_that_unpacks_to_more_than_200_mb_is_refused() -> None:
+    # A file small enough to take that unpacks enormous is a zip bomb.
+    with pytest.raises(TooLarge) as refusal:
+        convert(docx_unpacking_to(200 * MB + 1))
+
+    assert (refusal.value.unit, refusal.value.limit) == ("unpacked bytes", 200 * MB)
+
+
+def test_a_docx_over_150_pages_is_refused() -> None:
+    pages: list[Block] = []
+    for number in range(151):
+        pages += [f"หน้าที่ {number + 1}", PageBreak()]
+
+    with pytest.raises(TooLarge) as refusal:
+        convert(document(*pages[:-1]))
+
+    assert (refusal.value.unit, refusal.value.size, refusal.value.limit) == ("pages", 151, 150)
 
 
 def test_a_file_of_exactly_50_mb_converts() -> None:
@@ -187,7 +222,9 @@ def test_the_command_opens_a_locked_pdf_with_its_password(tmp_path: Path) -> Non
     [
         pytest.param(legacy_doc, [], 3, "บันทึกเป็น .docx", id="legacy Word file"),
         pytest.param(lambda: "ข้อความธรรมดา".encode(), [], 3, "ไม่ใช่ PDF หรือ DOCX", id="neither PDF nor DOCX"),
-        pytest.param(lambda: docx("สัญญา"), [], 3, "ยังแปลงไฟล์ DOCX ไม่ได้", id="DOCX"),
+        pytest.param(locked_docx, [], 3, "ล็อกด้วยรหัสผ่าน", id="locked Word file"),
+        pytest.param(lambda: docx("สัญญา"), ["--to", "docx"], 3, "เป็น DOCX อยู่แล้ว", id="DOCX to DOCX"),
+        pytest.param(lambda: docx_unpacking_to(200 * MB + 1), [], 4, "200 MB", id="DOCX unpacking over 200 MB"),
         pytest.param(lambda: pdf_of_size(50 * MB + 1), [], 4, "50 MB", id="over 50 MB"),
         pytest.param(lambda: blank_pages(151), [], 4, "150 หน้า", id="over 150 pages"),
         pytest.param(locked_pdf, [], 5, "--password", id="password required"),

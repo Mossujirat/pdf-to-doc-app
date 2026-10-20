@@ -7,6 +7,7 @@ A page is a list of lines, drawn top to bottom:
 - a `Styled` line sets its own size, weight, indent, alignment or position
 - a `Grid` is a ruled table; its cells may span rows and columns, and a cell's
   text may hold several lines separated by newlines
+- a `Picture` is an image: a photo, a signature, a stamp or a chart
 - an empty string leaves a blank line, which starts a new paragraph
 
 A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
@@ -23,6 +24,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, assert_never
 
 import numpy as np
 import pymupdf
@@ -74,7 +76,26 @@ class Grid:
     y: float | None = None
 
 
-Line = str | Spaced | Styled | Grid
+@dataclass(frozen=True)
+class Picture:
+    """An image below the line before, `width` by `height` points.
+
+    A photo fills its box with colour. A signature is a scribble in blue ink, a stamp
+    a red ring and a chart a round pie, each on a transparent ground, as scanned ones
+    are pasted in.
+    """
+
+    kind: Literal["photo", "signature", "stamp", "chart"]
+    width: float
+    height: float
+    x: float = LEFT
+    # How far the line after it comes up over its bottom, as a signature line runs under the signature.
+    overlap: float = 0.0
+    # An absolute top; the following lines continue below the image.
+    y: float | None = None
+
+
+Line = str | Spaced | Styled | Grid | Picture
 
 
 @dataclass(frozen=True)
@@ -112,6 +133,11 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
         if isinstance(line, Grid):
             y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
             continue
+        if isinstance(line, Picture):
+            top = line.y if line.y is not None else y - FONT_SIZE
+            page.insert_image(pymupdf.Rect(line.x, top, line.x + line.width, top + line.height), stream=_picture(line))
+            y = top + line.height + LINE_HEIGHT - line.overlap
+            continue
         if isinstance(line, Spaced):
             x: float = LEFT
             piece_font = _weight(font_file, line.bold)
@@ -135,6 +161,47 @@ def _scanned_image(scan: Scan, font_file: Path) -> bytes:
     image = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, grainy.tobytes(), False)
     jpeg: bytes = image.tobytes("jpg", jpg_quality=75)
     return jpeg
+
+
+_PICTURE_DPI = 144
+
+
+def _picture(picture: Picture) -> bytes:
+    """The picture as a PNG. A photo is opaque; the others lie on a transparent ground."""
+    zoom = _PICTURE_DPI / 72
+    width, height = round(picture.width * zoom), round(picture.height * zoom)
+    y, x = np.mgrid[0:height, 0:width] / np.array([height, width]).reshape(2, 1, 1)
+    radius = np.hypot(x - 0.5, y - 0.5) * 2  # 1 at the edge of the round that fits the box
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    match picture.kind:
+        case "photo":
+            rgba[...] = np.stack([x * 200 + 30, y * 160 + 60, np.full_like(x, 150), np.full_like(x, 255)], axis=-1)
+        case "signature":
+            # Loops along a wavering line, as a pen leaves them.
+            t = np.linspace(0, 1, 4000)
+            curve_x = 0.05 + 0.9 * t + 0.03 * np.sin(t * 60)
+            curve_y = 0.5 + 0.3 * np.sin(t * 23) * np.cos(t * 5)
+            pen = max(1, round(1.2 * zoom))
+            for cx, cy in zip((curve_x * width).astype(int), (curve_y * height).astype(int)):
+                rgba[max(0, cy - pen) : cy + pen, max(0, cx - pen) : cx + pen] = (25, 45, 160, 255)
+        case "stamp":
+            # A ring with a thinner ring inside it, and a mark in the middle.
+            ink = ((radius > 0.82) & (radius < 0.96)) | ((radius > 0.62) & (radius < 0.68)) | (radius < 0.12)
+            rgba[ink] = (200, 30, 45, 255)
+        case "chart":
+            # A pie chart: a filled round cut into three coloured slices.
+            slices = np.digitize(np.arctan2(y - 0.5, x - 0.5), [-1.0, 1.5])
+            colours = np.array([(220, 80, 60, 255), (60, 120, 200, 255), (240, 180, 40, 255)], dtype=np.uint8)
+            disc = radius < 0.96
+            rgba[disc] = colours[slices[disc]]
+        case _:
+            assert_never(picture.kind)
+    if picture.kind == "photo":
+        image = pymupdf.Pixmap(pymupdf.csRGB, width, height, rgba[..., :3].tobytes(), False)
+    else:
+        image = pymupdf.Pixmap(pymupdf.csRGB, width, height, rgba.tobytes(), True)
+    png: bytes = image.tobytes("png")
+    return png
 
 
 def remapped(source: bytes, mapping: dict[str, str]) -> bytes:

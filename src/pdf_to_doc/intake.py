@@ -20,6 +20,8 @@ SourceType = Literal["pdf", "docx"]
 
 MAX_BYTES = 50 * 1024 * 1024
 MAX_PAGES = 150
+# A DOCX is a zip archive: one that unpacks to more than this is a zip bomb.
+MAX_UNPACKED_BYTES = 200 * 1024 * 1024
 
 # Readers accept a PDF whose header is preceded by up to 1 KB of other bytes.
 _PDF_HEADER = b"%PDF-"
@@ -28,6 +30,8 @@ _ZIP_SIGNATURE = bytes.fromhex("504b0304")  # the container of DOCX files
 _WORD_DOCUMENT_PART = "word/document.xml"
 _OLE_SIGNATURE = bytes.fromhex("d0cf11e0a1b11ae1")  # the compound file container of Office 97-2003
 _WORD_97_STREAM = "WordDocument".encode("utf-16-le")  # its directory names the streams it holds
+# Office keeps a password-locked DOCX, XLSX or PPTX in one; which it is, is locked inside.
+_LOCKED_OFFICE_STREAM = "EncryptedPackage".encode("utf-16-le")
 
 
 class IntakeError(Exception):
@@ -38,19 +42,21 @@ class UnsupportedFormat(IntakeError):
     """The source is not a type the converter reads.
 
     `found` names a type that was recognised and is not converted: "doc" for a
-    legacy Word 97-2003 file, or "docx", which intake accepts but which cannot be
-    converted yet. It is None for anything else.
+    legacy Word 97-2003 file, or "locked office" for an Office file locked with a
+    password, most likely a DOCX, which would need decrypting even to tell. It is
+    None for anything else.
     """
 
-    def __init__(self, found: Literal["doc", "docx"] | None) -> None:
+    def __init__(self, found: Literal["doc", "locked office"] | None) -> None:
         super().__init__(f"unsupported source type: {found or 'unknown'}")
         self.found = found
 
 
 class TooLarge(IntakeError):
-    """The source is over a limit: `size` is its size in `unit`, and `limit` the most allowed."""
+    """The source is over a limit: `size` is its size in `unit`, and `limit` the most allowed.
+    A DOCX's "unpacked bytes" are what its zip archive holds once unpacked."""
 
-    def __init__(self, unit: Literal["bytes", "pages"], size: int, limit: int) -> None:
+    def __init__(self, unit: Literal["bytes", "pages", "unpacked bytes"], size: int, limit: int) -> None:
         super().__init__(f"{size} {unit}, over the limit of {limit}")
         self.unit = unit
         self.size = size
@@ -85,11 +91,18 @@ def _detect(source: bytes) -> SourceType:
     if source.startswith(_ZIP_SIGNATURE):
         try:
             with zipfile.ZipFile(io.BytesIO(source)) as archive:
-                if _WORD_DOCUMENT_PART in archive.namelist():
-                    return "docx"
+                entries = archive.infolist()
         except zipfile.BadZipFile as error:
             raise DamagedFile() from error
-        raise UnsupportedFormat(None)
+        if _WORD_DOCUMENT_PART not in (entry.filename for entry in entries):
+            raise UnsupportedFormat(None)
+        # Reading a part never gives more than the size the archive lists for it.
+        unpacked = sum(entry.file_size for entry in entries)
+        if unpacked > MAX_UNPACKED_BYTES:
+            raise TooLarge("unpacked bytes", unpacked, MAX_UNPACKED_BYTES)
+        return "docx"
+    if source.startswith(_OLE_SIGNATURE) and _LOCKED_OFFICE_STREAM in source:
+        raise UnsupportedFormat("locked office")
     if source.startswith(_OLE_SIGNATURE) and _WORD_97_STREAM in source:
         raise UnsupportedFormat("doc")
     if _PDF_HEADER in source[:_PDF_HEADER_WITHIN]:

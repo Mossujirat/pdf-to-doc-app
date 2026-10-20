@@ -54,7 +54,7 @@ The machine-readable characters stored in a PDF page, separate from what the pag
 A page whose text layer matches what a reader sees, so its text can be taken from the layer.
 
 **Page furniture**:
-Headers, footers and page numbers that repeat across pages and are not part of the document's content. Outputs leave them out.
+Headers, footers and page numbers that repeat across pages and are not part of the document's content, including an image repeated at the same edge, such as a logo or initials on every page. Outputs leave them out.
 _Avoid_: running header (when meaning all of these)
 
 **OCR page**:

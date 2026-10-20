@@ -159,6 +159,13 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - Where it can be identified, it becomes a placeholder: Typhoon tags it, and it can be an image object on a text page.
   - Otherwise, low-confidence handwriting becomes uncertain text, never silent output.
 
+**Placeholders** (ticket 09)
+- Images on text pages become placeholders where they sit in reading order. OCR pages are images themselves and get none.
+- A round coloured mark is a stamp, wherever it is pressed. A small image on a row to sign on ("ลงชื่อ", "ลายมือชื่อ", "Signature") is a signature. Anything else is an image: the converter does not guess.
+- Not placeholders: images too small to be pictures (rules, bullets), the page behind the text (a scan made searchable, a watermark), and page furniture: images of the same size in about the same place at an edge of two or more pages.
+- An image inside a table cell is placed right after the table.
+- The summary counts placeholders by kind.
+
 **Document model** (ADR 0003)
 - **Block kinds:**
   - headings with a level
@@ -173,10 +180,14 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 **DOCX reader**
 - Reads DOCX structure straight into the document model:
   - headings by style
-  - lists
+  - lists, with the numbers Word draws worked out as Word counts them (ticket 13)
   - tables with merges
   - images as placeholders
 - DOCX text is already Unicode, but it still passes through the character-level Thai repair.
+- Pages are where Word's last layout broke them, as Word records on saving; a file without those records breaks pages at typed breaks (ticket 13).
+- The 150-page limit counts those pages. A DOCX that unpacks to more than 200 MB is refused as a zip bomb, and a password-locked Office file is recognised and refused (ticket 13).
+- A list within a list keeps its depth: list items carry a level, and Markdown indents them (ticket 13).
+- DOCX-to-DOCX is refused with its own error.
 
 **Markdown renderer**
 - GitHub-flavoured Markdown.
@@ -190,8 +201,11 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **DOCX renderer**
 - Uses python-docx.
-- Thai font is TH Sarabun New, set in the complex-script slot with its matching size; python-docx's plain font name does not set that slot.
+- Thai font is TH Sarabun New, set in the complex-script slot with its matching size; python-docx's plain font name does not set that slot. English text uses TH Sarabun New too, at the same size (ticket 07).
+- Runs that hold Thai are marked complex script, so Word breaks their lines between words. English words get runs of their own without the mark, or Word would proof them as Thai (ticket 07).
+- Each page of the original starts a new page, at its own first paragraph (ticket 07).
 - Headings use Word heading styles.
+- Bulleted list items use Word's bullets. Items that keep their own number or letter go in a Word list that shows nothing before them (ticket 07).
 - Tables have real merged cells.
 - Uncertain text is highlighted yellow.
 - The summary goes on the first page.
