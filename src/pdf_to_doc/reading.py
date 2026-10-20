@@ -42,7 +42,7 @@ ProgressCallback = Callable[[Progress], None]
 
 
 def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: ProgressCallback | None = None) -> Document:
-    """Read every page. `ocr` gives the engine, and is called only if a page needs one.
+    """Read every page. `ocr` gives the engine, and is called once, when the first OCR page needs one.
     `progress` hears before each OCR page is read."""
     pages = list(pdf.pages())
     rows = [text_rows(page) for page in pages]
@@ -50,10 +50,13 @@ def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Prog
     untrusted = {index for index, page_rows in enumerate(rows) if not trusted(page_rows)}
     ocr_pages = [index for index, page in enumerate(pages) if index in untrusted or _needs_ocr(page, rows[index])]
     engines: dict[int, str] = {}
+    # The engine lives only as long as this call: an engine holds what it last read.
+    engine: OcrEngine | None = None
     for count, index in enumerate(ocr_pages, start=1):
         if progress:
             progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
-        engine = ocr()
+        if engine is None:
+            engine = ocr()
         image = render(pages[index])
         # An untrusted text layer passes on nothing, not even its stamps.
         text_layer = replace(rows[index], rows=(), tables=()) if index in untrusted else rows[index]

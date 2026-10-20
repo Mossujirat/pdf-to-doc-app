@@ -142,3 +142,8 @@
 
 - A line whose boxes were at least 1.2 times the usual height got a font size of its own, to keep titles apart. On 15 of the contract's scanned pages, 19% of body lines were that tall, because of marks above and below the letters. Each of them started a new paragraph, cutting sentences in two.
 - Every line of an OCR page now gets the page's one size, and paragraphs on OCR pages are split by spacing alone. A title with no extra space below it runs into the paragraph under it.
+
+**2026-10-20, changed in ticket 12**
+
+- The PaddleOCR engine is no longer kept for the rest of the process. Its predictors held the last OCR page and what was read from it until the next page was read.
+- Each conversion now loads its own engine when its first OCR page needs one, and drops it when the conversion ends. Loading again takes under a second; importing Paddle still happens once per process.

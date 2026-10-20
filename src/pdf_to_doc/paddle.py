@@ -13,7 +13,6 @@ import logging
 import math
 import os
 import warnings
-from functools import cache
 from pathlib import Path
 
 import numpy as np
@@ -27,13 +26,15 @@ _SLANT_SHOWING_RATIO = 3
 
 
 def default_engine() -> OcrEngine:
-    """PaddleOCR from the models folder, loaded the first time a page needs it, then kept."""
-    return _engine(models_folder())
+    """PaddleOCR, freshly loaded from the models folder.
 
-
-@cache
-def _engine(models: Path) -> OcrEngine:
-    return PaddleOcrEngine(models)
+    A conversion loads its own engine and drops it when it ends. Paddle keeps
+    the last page image it read, and what it read there, in its predictors, so
+    an engine kept for the next conversion would keep part of this one's
+    document. Loading again takes under a second; importing Paddle, the slow
+    part, happens once per process.
+    """
+    return PaddleOcrEngine(models_folder())
 
 
 class PaddleOcrEngine:

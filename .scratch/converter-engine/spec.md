@@ -198,7 +198,8 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **Privacy at runtime**
 - No network access while converting: models are downloaded at install or build time, never on first use.
-- Temporary files go in a private temp directory and are deleted when the conversion ends, success or failure.
+- A conversion writes no temporary files: pages are rendered in memory and handed to the OCR engine as arrays (ticket 12).
+- Each conversion loads its own OCR engine and drops it when it ends, because Paddle keeps the last page it read in its predictors (ticket 12).
 - File content is never logged.
 
 **Packaging**
