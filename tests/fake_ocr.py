@@ -1,5 +1,7 @@
 """A fake OCR engine for tests: it reads each page image as the next lines it was given."""
 
+from collections.abc import Sequence
+
 from pdf_builder import LINE_HEIGHT, TOP, Styled
 
 from pdf_to_doc.ocr import Language, PageImage, TextBox
@@ -15,7 +17,7 @@ class FakeEngine:
 
     name = "fake"
 
-    def __init__(self, *pages: list[str | Styled]) -> None:
+    def __init__(self, *pages: Sequence[str | Styled]) -> None:
         self.pages = list(pages)
         self.images: list[PageImage] = []  # every image it was asked to read
 

@@ -1,7 +1,10 @@
-"""Reads a PDF page by page: a text page from its text layer, an OCR page with the OCR engine."""
+"""Reads a PDF page by page: a text page from its text layer, an OCR page with the OCR engine.
+
+A page whose text layer is there but cannot be trusted is also an OCR page.
+"""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy as np
@@ -11,6 +14,7 @@ from pdf_to_doc.layout import EDGE_BAND, PageRows, body_text_share, page_blocks
 from pdf_to_doc.model import Document, Page
 from pdf_to_doc.ocr import LANGUAGES, OcrEngine, ocr_page, render
 from pdf_to_doc.pdf_text import text_rows
+from pdf_to_doc.validation import trusted
 
 # The body is the page outside the edge bands, where stamped headers and page
 # counters sit. A page is an OCR page when its text layer covers little of the
@@ -42,14 +46,18 @@ def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Prog
     `progress` hears before each OCR page is read."""
     pages = list(pdf.pages())
     rows = [text_rows(page) for page in pages]
-    ocr_pages = [index for index, page in enumerate(pages) if _needs_ocr(page, rows[index])]
+    # A scan's text layer is checked too, as the text laid over it is kept.
+    untrusted = {index for index, page_rows in enumerate(rows) if not trusted(page_rows)}
+    ocr_pages = [index for index, page in enumerate(pages) if index in untrusted or _needs_ocr(page, rows[index])]
     engines: dict[int, str] = {}
     for count, index in enumerate(ocr_pages, start=1):
         if progress:
             progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         engine = ocr()
         image = render(pages[index])
-        rows[index] = ocr_page(engine.read(image, LANGUAGES), image, rows[index])
+        # An untrusted text layer passes on nothing, not even its stamps.
+        text_layer = replace(rows[index], rows=(), tables=()) if index in untrusted else rows[index]
+        rows[index] = ocr_page(engine.read(image, LANGUAGES), image, text_layer)
         engines[index] = engine.name
     return Document(
         pages=tuple(
@@ -58,6 +66,7 @@ def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Prog
                 kind=rows[index].kind,
                 blocks=blocks,
                 engine=engines.get(index),
+                untrusted_text_layer=index in untrusted,
             )
             for index, blocks in enumerate(page_blocks(rows))
         )

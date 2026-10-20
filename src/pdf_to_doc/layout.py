@@ -24,7 +24,10 @@ _BARE_PAGE_NUMBER = re.compile(rf"{_DASHES}(?P<page>{_NUMBER})(?:\s*/\s*{_NUMBER
 # letter in brackets, "(ก)" or "ก)", followed by a space. "ก." is left out: it is
 # also how Thai abbreviates ตำบล, อำเภอ and the like.
 _NUMBERED_ITEM = re.compile(rf"^\s*(?:\(?{_NUMBER}(?:\.{_NUMBER})*[.)]|{_NUMBER}(?:\.{_NUMBER})+|\(?{THAI_CONSONANT}\))\s")
-_BULLET_ITEM = re.compile(r"^\s*[•●○◦▪■□‣⁃∙\-–*]\s+")
+# Symbol and Wingdings fonts, which Word draws bullets with, report their glyphs
+# as Private Use Area characters in this range.
+SYMBOL_FONT_CHARACTERS = f"{chr(0xF000)}-{chr(0xF0FF)}"
+_BULLET_ITEM = re.compile(r"^\s*[•●○◦▪■□‣⁃∙\-–*" + SYMBOL_FONT_CHARACTERS + r"]\s+")
 # Font sizes closer than this (points) count as the same size within a paragraph.
 _SIZE_STEP = 0.5
 # Text this much larger than the body can be a heading; heading sizes closer than

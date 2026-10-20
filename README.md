@@ -15,7 +15,7 @@ uv run pdf-to-doc document.pdf -o document.md
 uv run pdf-to-doc locked.pdf --password "..."   # a PDF that needs a password to open
 ```
 
-Each page is read on its own: from its text layer, or with OCR when the page is a scan or its text is drawn as shapes. The CLI shows progress while OCR runs, and the summary at the top of the output names the OCR pages. The models live in `~/.cache/pdf-to-doc/models`, or wherever `PDF_TO_DOC_MODELS` points; nothing is downloaded while converting.
+Each page is read on its own: from its text layer, or with OCR when the page is a scan, its text is drawn as shapes, or its text layer is wrong (such as "กำร" where the page shows "การ"). Legacy Thai fonts' Private Use Area characters are mapped back to Thai. The CLI shows progress while OCR runs, and the summary at the top of the output names the OCR pages. The models live in `~/.cache/pdf-to-doc/models`, or wherever `PDF_TO_DOC_MODELS` points; nothing is downloaded while converting.
 
 The source type is read from the file's content, not its name. These files are refused with a Thai message and an exit code of their own, listed by `pdf-to-doc --help`:
 

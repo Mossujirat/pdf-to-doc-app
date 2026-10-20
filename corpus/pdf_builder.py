@@ -15,9 +15,11 @@ drawn over the image as text: a stamped header, or the text layer of a scan made
 The same inputs always give the same bytes, so generated files can be committed.
 
 For intake tests, `protected` encrypts a built PDF, which gives different bytes on
-every run, and `grown_to` pads one to an exact size.
+every run, and `grown_to` pads one to an exact size. `remapped` rewrites a built
+PDF's fonts so that its text layer reports some characters as others.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,7 +87,7 @@ class Scan:
     seed: int = 0
 
 
-def pdf(*pages: list[Line] | Scan, font_file: Path = SARABUN) -> bytes:
+def pdf(*pages: Sequence[Line] | Scan, font_file: Path = SARABUN) -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({})
     for content in pages:
@@ -133,6 +135,67 @@ def _scanned_image(scan: Scan, font_file: Path) -> bytes:
     image = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, grainy.tobytes(), False)
     jpeg: bytes = image.tobytes("jpg", jpg_quality=75)
     return jpeg
+
+
+def remapped(source: bytes, mapping: dict[str, str]) -> bytes:
+    """The same PDF, whose fonts report `mapping[c]` wherever they reported `c`.
+
+    The pages still show the right text; only the text layer changes, as with a
+    font whose ToUnicode map is wrong, or a legacy font that reports some glyphs
+    as Private Use Area characters.
+    """
+    doc = pymupdf.open(stream=source, filetype="pdf")
+    done: set[int] = set()
+    for xref in range(1, doc.xref_length()):
+        kind, value = doc.xref_get_key(xref, "ToUnicode")
+        if kind != "xref" or int(value.split()[0]) in done:
+            continue
+        cmap = int(value.split()[0])
+        done.add(cmap)
+        glyphs = _to_unicode(doc.xref_stream(cmap).decode("latin-1"))
+        changed = {glyph: "".join(mapping.get(char, char) for char in text) for glyph, text in glyphs.items()}
+        doc.update_stream(cmap, _cmap(changed).encode("latin-1"))
+    data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
+    doc.close()
+    return data
+
+
+def _to_unicode(cmap: str) -> dict[int, str]:
+    """Glyph id to text, from a ToUnicode CMap's bfchar and bfrange entries."""
+    glyphs: dict[int, str] = {}
+    for block in cmap.split("begin")[1:]:
+        if not block.startswith(("bfchar", "bfrange")):
+            continue
+        tokens = re.findall("<[0-9A-Fa-f]*>", block.split("end")[0])
+        if block.startswith("bfchar"):
+            for source, target in zip(tokens[0::2], tokens[1::2]):
+                glyphs[int(source[1:-1], 16)] = _utf16(target)
+            continue
+        # PyMuPDF writes each range as a first glyph, a last glyph and the text of the first.
+        for low, high, first in zip(tokens[0::3], tokens[1::3], tokens[2::3]):
+            text = _utf16(first)
+            for offset, glyph in enumerate(range(int(low[1:-1], 16), int(high[1:-1], 16) + 1)):
+                glyphs[glyph] = text[:-1] + chr(ord(text[-1]) + offset)
+    return glyphs
+
+
+def _utf16(token: str) -> str:
+    return bytes.fromhex(token[1:-1]).decode("utf-16-be")
+
+
+def _cmap(glyphs: dict[int, str]) -> str:
+    entries = [f"<{glyph:04X}> <{text.encode('utf-16-be').hex().upper()}>" for glyph, text in sorted(glyphs.items())]
+    blocks = "".join(
+        f"{len(entries[start : start + 100])} beginbfchar\n" + "\n".join(entries[start : start + 100]) + "\nendbfchar\n"
+        for start in range(0, len(entries), 100)
+    )
+    return (
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
+        "/CIDSystemInfo <</Registry(Adobe)/Ordering(UCS)/Supplement 0>> def\n"
+        "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
+        "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n"
+        f"{blocks}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n"
+    )
 
 
 OWNER_PASSWORD = "owner-password"

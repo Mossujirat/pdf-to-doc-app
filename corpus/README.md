@@ -83,6 +83,7 @@ uv run python corpus/generate.py                              # regenerate corpu
 
 It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
+- A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` differ from what the generator makes.
 

@@ -10,6 +10,7 @@ class PageSummary:
     number: int
     kind: PageKind
     engine: str | None = None
+    untrusted_text_layer: bool = False
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,9 @@ class Summary:
         if ocr_pages:
             engines = ", ".join(sorted({page.engine for page in ocr_pages if page.engine}))
             sentence += f" ได้แก่หน้า {_page_ranges([page.number for page in ocr_pages])} ด้วย {engines}"
+        untrusted = [page.number for page in self.pages if page.untrusted_text_layer]
+        if untrusted:
+            sentence += f" (หน้า {_page_ranges(untrusted)} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงอ่านด้วย OCR)"
         return sentence
 
 
@@ -45,4 +49,8 @@ def _page_ranges(numbers: list[int]) -> str:
 
 
 def summarize(document: Document) -> Summary:
-    return Summary(pages=tuple(PageSummary(page.number, page.kind, page.engine) for page in document.pages))
+    return Summary(
+        pages=tuple(
+            PageSummary(page.number, page.kind, page.engine, page.untrusted_text_layer) for page in document.pages
+        )
+    )

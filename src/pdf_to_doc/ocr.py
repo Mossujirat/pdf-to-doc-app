@@ -8,6 +8,7 @@ from typing import Literal, Protocol
 import pymupdf
 
 from pdf_to_doc.layout import PageRows, Row
+from pdf_to_doc.validation import unknown_words
 
 Language = Literal["th", "en"]
 LANGUAGES: tuple[Language, ...] = ("th", "en")
@@ -62,14 +63,16 @@ def ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows)
 
     Text over a scan, such as a stamped header or a note, is taken from the text
     layer, which holds it exactly, and the engine's boxes that cover it are
-    dropped. Each row the engine read gets the geometry of a text-layer row: the
+    dropped; unless the engine's reading of a row holds fewer words outside the
+    word list, as when the row's font reports some letters wrongly. Each row the engine read gets the geometry of a text-layer row: the
     page's font size, estimated from the usual box height, and a height in
     proportion to it.
     """
     scale = text_layer.width / image.width
-    read = tuple(box for box in boxes if not any(_overlaps(box, row, scale) for row in text_layer.rows))
+    kept = [row for row in text_layer.rows if not _reads_better(boxes, row, scale)]
+    read = tuple(box for box in boxes if not any(_overlaps(box, row, scale) for row in kept))
     lines = _printed_lines(read)
-    rows = list(text_layer.rows)
+    rows = list(kept)
     if lines:
         size = median(_line_height(line) for line in lines) * scale / _BOX_HEIGHT_PER_FONT_SIZE
         rows += [_row(line, scale, size) for line in lines]
@@ -103,6 +106,12 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
         y1=centre + half,
         size=size,
     )
+
+
+def _reads_better(boxes: tuple[TextBox, ...], row: Row, scale: float) -> bool:
+    """Whether the engine's reading of the row's place holds fewer words outside the word list."""
+    covering = [box.text for box in boxes if _overlaps(box, row, scale)]
+    return bool(covering) and unknown_words(" ".join(covering)) < unknown_words(row.text)
 
 
 def _overlaps(box: TextBox, row: Row, scale: float) -> bool:
