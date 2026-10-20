@@ -159,6 +159,13 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - Where it can be identified, it becomes a placeholder: Typhoon tags it, and it can be an image object on a text page.
   - Otherwise, low-confidence handwriting becomes uncertain text, never silent output.
 
+**Placeholders** (ticket 09)
+- Images on text pages become placeholders where they sit in reading order. OCR pages are images themselves and get none.
+- A round coloured mark is a stamp, wherever it is pressed. A small image on a row to sign on ("ลงชื่อ", "ลายมือชื่อ", "Signature") is a signature. Anything else is an image: the converter does not guess.
+- Not placeholders: images too small to be pictures (rules, bullets), the page behind the text (a scan made searchable, a watermark), and page furniture: images of the same size in about the same place at an edge of two or more pages.
+- An image inside a table cell is placed right after the table.
+- The summary counts placeholders by kind.
+
 **Document model** (ADR 0003)
 - **Block kinds:**
   - headings with a level

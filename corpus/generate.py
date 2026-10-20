@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Scan, Spaced, Styled, pdf, remapped
+from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Scan, Spaced, Styled, pdf, remapped
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -344,7 +344,34 @@ TEXT_LAYER_DOCUMENTS = (
     ),
 )
 
-ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS
+SIGNATURE_LINE = "ลงชื่อ ................................................ ผู้ให้ทุน"
+# A signature whose foot runs over the signature line after it.
+SIGNATURE = Picture("signature", 140, 45, x=130, overlap=14)
+
+PLACEHOLDER_DOCUMENTS = (
+    # A signing page: a picture, a signature on its signature line, and a stamp.
+    SyntheticDocument(
+        name="placeholders",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    *CLAUSES,
+                    "",
+                    Picture("photo", 120, 70),
+                    "",
+                    SIGNATURE,
+                    SIGNATURE_LINE,
+                    "",
+                    Picture("stamp", 70, 70, x=330),
+                ],
+                reference="".join(CLAUSES) + f"\n\n[รูปภาพ]\n\n[ลายเซ็น]\n\n{SIGNATURE_LINE}\n\n[ตราประทับ]",
+            ),
+        ),
+    ),
+)
+
+ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS
 
 
 def generate(folder: Path) -> None:

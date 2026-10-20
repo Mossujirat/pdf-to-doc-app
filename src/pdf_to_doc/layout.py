@@ -4,7 +4,17 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from pdf_to_doc.model import DEEPEST_HEADING, Block, Heading, ListItem, PageKind, Paragraph, Table, TableCell
+from pdf_to_doc.model import (
+    DEEPEST_HEADING,
+    Block,
+    Heading,
+    ListItem,
+    PageKind,
+    Paragraph,
+    Placeholder,
+    Table,
+    TableCell,
+)
 from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
@@ -35,6 +45,20 @@ _SIZE_STEP = 0.5
 _HEADING_SCALE = 1.06
 _HEADING_SIZE_STEP = 0.6
 _HEADING_MAX_ROWS = 2
+# An image with this many rows of text printed over it is the page behind the text,
+# as on a scan made searchable, or a watermark: not a picture of its own.
+_BACKGROUND_ROWS = 3
+# A row to sign on: "ลงชื่อ ........", "ลายมือชื่อ", or the English word "Signature".
+_SIGNATURE_LINE = re.compile(r"ลงชื่อ|ลายมือชื่อ|\bsignature\b", re.IGNORECASE)
+# A signature is at most this share of the page's width and height. On the sample
+# contracts the largest was 199 pt wide and 118 pt tall.
+_SIGNATURE_MAX_WIDTH = 0.4
+_SIGNATURE_MAX_HEIGHT = 0.2
+# Images at one edge of two pages are the same furniture when each side differs by
+# less than this share, and their centres by less than this many points each way.
+# Initials signed at the foot of every page of a sample contract moved up to 21 pt.
+_SAME_IMAGE_SIZE = 0.2
+_SAME_IMAGE_PLACE = 36.0
 # Lines whose baselines differ by less than this share of the font size are on one
 # row; a gap wider than this many character widths sets the row out in columns.
 _BASELINE_TOLERANCE = 0.3
@@ -84,11 +108,23 @@ class PlacedTable:
 
 
 @dataclass(frozen=True)
+class PlacedImage:
+    """An image drawn on a text page, and where it sits."""
+
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+    stamp_like: bool = False  # a ring in colour, as a stamp leaves
+
+
+@dataclass(frozen=True)
 class PageRows:
     rows: tuple[Row, ...]  # text outside tables
     width: float
     height: float
     tables: tuple[PlacedTable, ...] = ()
+    images: tuple[PlacedImage, ...] = ()
     # On an OCR page the font size is estimated, so it cannot tell headings apart.
     kind: PageKind = "text"
 
@@ -104,23 +140,61 @@ def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
         [group for groups, _ in text_pages for group in groups], _body_size([page for _, page in text_pages])
     )
     return [
-        _in_reading_order(groups, page.tables, levels if page.kind == "text" else {})
+        _in_reading_order(groups, page, levels if page.kind == "text" else {})
         for groups, page in zip(groups_by_page, pages)
     ]
 
 
-def _in_reading_order(
-    groups: list[list[Row]], tables: tuple[PlacedTable, ...], levels: dict[float, int]
-) -> tuple[Block, ...]:
-    """The page's blocks, with each table placed before the first text that starts below it."""
-    pending = sorted(tables, key=lambda placed: placed.top)
+def _in_reading_order(groups: list[list[Row]], page: PageRows, levels: dict[float, int]) -> tuple[Block, ...]:
+    """The page's blocks, with each table and image placed before the first text that starts below it."""
+    placed: list[tuple[float, Block]] = [(table.top, _table(table)) for table in page.tables]
+    placed += [(image.top, placeholder) for image in page.images if (placeholder := _placeholder(image, page))]
+    pending = sorted(placed, key=lambda item: item[0])
     blocks: list[Block] = []
     for group in groups:
-        while pending and pending[0].top <= group[0].y0:
-            blocks.append(_table(pending.pop(0)))
+        while pending and pending[0][0] <= group[0].y0:
+            blocks.append(pending.pop(0)[1])
         blocks.append(_block(group, levels))
-    blocks.extend(_table(placed) for placed in pending)
+    blocks.extend(block for _, block in pending)
     return tuple(blocks)
+
+
+def _behind_text(image: PlacedImage, rows: tuple[Row, ...]) -> bool:
+    """Whether enough rows are printed over the image for it to be the page behind them."""
+    over = [
+        row
+        for row in rows
+        if image.x0 <= (row.x0 + row.x1) / 2 <= image.x1 and image.top <= (row.y0 + row.y1) / 2 <= image.bottom
+    ]
+    return len(over) >= _BACKGROUND_ROWS
+
+
+def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
+    """What stands in for the image, or None when it is the page behind the text.
+
+    A stamp when the image is a ring in colour, wherever it is pressed, even over
+    a whole signature block. A signature when it is small and sits on a row to sign on,
+    or just above or below one. When it is unclear what an image shows, it is only an
+    image: the converter does not guess.
+    """
+    if image.stamp_like:
+        return Placeholder("stamp")
+    if _behind_text(image, page.rows):
+        return None
+    small = (
+        image.x1 - image.x0 <= _SIGNATURE_MAX_WIDTH * page.width
+        and image.bottom - image.top <= _SIGNATURE_MAX_HEIGHT * page.height
+    )
+    if small and any(_SIGNATURE_LINE.search(row.text) and _next_to(image, row) for row in page.rows):
+        return Placeholder("signature")
+    return Placeholder("image")
+
+
+def _next_to(image: PlacedImage, row: Row) -> bool:
+    """Whether the image and the row overlap across the page, and lie less than a row's height apart down it."""
+    across = image.x0 < row.x1 and row.x0 < image.x1
+    down = row.y0 - image.bottom <= row.size and image.top - row.y1 <= row.size
+    return across and down
 
 
 def _table(placed: PlacedTable) -> Table:
@@ -174,26 +248,31 @@ def _join_on_baselines(rows: tuple[Row, ...]) -> tuple[Row, ...]:
 
 def body_text_share(page: PageRows) -> float:
     """The share of the page that its rows and tables cover outside the edge bands."""
-    area = sum((row.x1 - row.x0) * (row.y1 - row.y0) for row in page.rows if row.text.strip() and not _edge(row, page))
+    area = sum(
+        (row.x1 - row.x0) * (row.y1 - row.y0) for row in page.rows if row.text.strip() and not _edge(row.y0, row.y1, page)
+    )
     area += sum((table.bottom - table.top) * page.width for table in page.tables)
     return area / (page.width * page.height)
 
 
-def _edge(row: Row, page: PageRows) -> str | None:
-    """The edge whose band the row starts or ends in, where page furniture sits."""
+def _edge(top: float, bottom: float, page: PageRows) -> str | None:
+    """The edge whose band a row or image from `top` to `bottom` starts or ends in, where page furniture sits."""
     band = EDGE_BAND * page.height
-    return "top" if row.y0 <= band else "bottom" if row.y1 >= page.height - band else None
+    return "top" if top <= band else "bottom" if bottom >= page.height - band else None
 
 
 def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
-    """Drop page furniture: rows at the same edge (top or bottom) that repeat on two or more pages.
+    """Drop page furniture: rows at the same edge (top or bottom) that repeat on two or more
+    pages, and images of the same size in about the same place at an edge of two or more pages.
 
     Page numbers must follow the pages: a printed number repeats only if it
     stays the same distance from the PDF's own page number. A row near the edge
-    of only one page is kept, unless the whole row is a page counter.
+    of only one page is kept, unless the whole row is a page counter. So is an
+    image near the edge of only one page.
     """
     keys = [[_furniture_key(row, page, number) for row in page.rows] for number, page in enumerate(pages, 1)]
     pages_per_key = Counter(key for page_keys in keys for key in set(page_keys) if key)
+    images = [[(image, _edge(image.top, image.bottom, page)) for image in page.images] for page in pages]
     return [
         replace(
             page,
@@ -202,9 +281,33 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
                 for row, key in zip(page.rows, page_keys)
                 if not (key and (pages_per_key[key] >= 2 or _is_counter_only(row)))
             ),
+            images=tuple(
+                image
+                for image, edge in page_images
+                if not (edge and any(_repeats(image, edge, others) for others in images if others is not page_images))
+            ),
         )
-        for page, page_keys in zip(pages, keys)
+        for page, page_keys, page_images in zip(pages, keys, images)
     ]
+
+
+def _repeats(image: PlacedImage, edge: str, others: list[tuple[PlacedImage, str | None]]) -> bool:
+    """Whether another page has an image of the same size in about the same place at the same edge."""
+
+    def close(a: float, b: float, share: float = _SAME_IMAGE_SIZE) -> bool:
+        return abs(a - b) <= share * max(a, b)
+
+    def near(a: float, b: float) -> bool:
+        return abs(a - b) <= _SAME_IMAGE_PLACE
+
+    return any(
+        other_edge == edge
+        and close(image.x1 - image.x0, other.x1 - other.x0)
+        and close(image.bottom - image.top, other.bottom - other.top)
+        and near((image.x0 + image.x1) / 2, (other.x0 + other.x1) / 2)
+        and near((image.top + image.bottom) / 2, (other.top + other.bottom) / 2)
+        for other, other_edge in others
+    )
 
 
 def _furniture_key(row: Row, page: PageRows, number: int) -> str | None:
@@ -215,7 +318,7 @@ def _furniture_key(row: Row, page: PageRows, number: int) -> str | None:
     by their distance from the PDF page number, so "หน้าที่ 2/7" on page 2 and
     "หน้าที่ 3/7" on page 3 match.
     """
-    edge = _edge(row, page)
+    edge = _edge(row.y0, row.y1, page)
     text = " ".join(row.text.split())
     if edge is None or not any(char.isalnum() for char in text):
         return None

@@ -1,7 +1,7 @@
 """The document model: one structured representation that every output is rendered from (ADR 0003)."""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, assert_never
 
 PageKind = Literal["text", "ocr"]
 # Markdown and Word both have six heading levels.
@@ -43,7 +43,37 @@ class Table:
         return any(cell.rowspan > 1 or cell.colspan > 1 for row in self.rows for cell in row)
 
 
-Block = Paragraph | Heading | ListItem | Table
+PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table"]
+
+
+@dataclass(frozen=True)
+class Placeholder:
+    """Content the converter deliberately does not transcribe, shown as a short Thai label."""
+
+    kind: PlaceholderKind
+
+    @property
+    def name(self) -> str:
+        match self.kind:
+            case "image":
+                return "รูปภาพ"
+            case "signature":
+                return "ลายเซ็น"
+            case "stamp":
+                return "ตราประทับ"
+            case "handwriting":
+                return "ลายมือ"
+            case "incomplete_table":
+                return "ตารางอาจไม่สมบูรณ์"
+            case _:
+                assert_never(self.kind)
+
+    @property
+    def text(self) -> str:
+        return f"[{self.name}]"
+
+
+Block = Paragraph | Heading | ListItem | Table | Placeholder
 
 
 @dataclass(frozen=True)

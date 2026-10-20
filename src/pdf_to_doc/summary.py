@@ -1,8 +1,9 @@
 """What a conversion did, page by page. Every output opens with it."""
 
 from dataclasses import dataclass
+from typing import get_args
 
-from pdf_to_doc.model import Document, PageKind
+from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,7 @@ class PageSummary:
     kind: PageKind
     engine: str | None = None
     untrusted_text_layer: bool = False
+    placeholders: tuple[PlaceholderKind, ...] = ()  # the kind of each placeholder, in reading order
 
 
 @dataclass(frozen=True)
@@ -20,8 +22,12 @@ class Summary:
     def count(self, kind: PageKind) -> int:
         return sum(1 for page in self.pages if page.kind == kind)
 
+    def placeholder_count(self, kind: PlaceholderKind) -> int:
+        return sum(page.placeholders.count(kind) for page in self.pages)
+
     def headline(self) -> str:
-        """One Thai sentence for people: how many pages, how each was read, and which were read with OCR."""
+        """One Thai sentence for people: how many pages, how each was read, which were read with
+        OCR, and how many placeholders of each kind stand in for what was not transcribed."""
         sentence = (
             f"{len(self.pages)} หน้า: "
             f"อ่านจากข้อความในไฟล์ {self.count('text')} หน้า, "
@@ -34,6 +40,9 @@ class Summary:
         untrusted = [page.number for page in self.pages if page.untrusted_text_layer]
         if untrusted:
             sentence += f" (หน้า {_page_ranges(untrusted)} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงอ่านด้วย OCR)"
+        counts = [(Placeholder(kind).name, self.placeholder_count(kind)) for kind in get_args(PlaceholderKind)]
+        if any(count for _, count in counts):
+            sentence += " ส่วนที่ไม่ได้ถอดเป็นข้อความ: " + ", ".join(f"{name} {count} จุด" for name, count in counts if count)
         return sentence
 
 
@@ -51,6 +60,13 @@ def _page_ranges(numbers: list[int]) -> str:
 def summarize(document: Document) -> Summary:
     return Summary(
         pages=tuple(
-            PageSummary(page.number, page.kind, page.engine, page.untrusted_text_layer) for page in document.pages
+            PageSummary(
+                page.number,
+                page.kind,
+                page.engine,
+                page.untrusted_text_layer,
+                tuple(block.kind for block in page.blocks if isinstance(block, Placeholder)),
+            )
+            for page in document.pages
         )
     )

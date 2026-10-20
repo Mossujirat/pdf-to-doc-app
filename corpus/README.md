@@ -37,6 +37,7 @@ A reference file holds what a reader sees on the page, written as Markdown:
   - `[ลายเซ็น]` for a signature
   - `[ตราประทับ]` for a stamp
   - `[ลายมือ]` for handwriting
+  - `[ตารางอาจไม่สมบูรณ์]` beside a table whose structure may be incomplete
 - Leave out page furniture: headers, footers and page numbers that repeat at the same edge on two or more pages, and rows that are only a page counter. The converter drops them.
 - Line breaks and spacing between paragraphs do not matter.
 - Saving with or without a byte order mark makes no difference.
@@ -84,6 +85,7 @@ uv run python corpus/generate.py                              # regenerate corpu
 It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
 - A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
+- A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` differ from what the generator makes.
 
