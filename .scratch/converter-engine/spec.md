@@ -144,7 +144,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 - **PaddleOCR (default)**
   - Pin paddlepaddle 3.2.2; version 3.3.1 crashed at inference.
-  - Models: PP-OCRv5 mobile detector; Thai and English mobile recognisers.
+  - Models: PP-OCRv5 mobile detector; the Thai mobile recogniser. It reads English words and digits on the same line correctly, and on the English sample's scans it agrees with the English recogniser on 99.3–99.8% of characters, so the English recogniser is not used (ticket 08).
   - Detector input limited to a longest side of 1280 px. Defaults split Thai marks into separate boxes and were far worse: CER 11.8% instead of 4.0%, at four times the time.
   - Orientation and unwarping off.
   - Scanned table structure: try PaddleOCR's table model (PP-StructureV3) on CPU. If it is not good enough, output the table as lines with a placeholder saying the table structure may be incomplete.
@@ -198,7 +198,8 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **Privacy at runtime**
 - No network access while converting: models are downloaded at install or build time, never on first use.
-- Temporary files go in a private temp directory and are deleted when the conversion ends, success or failure.
+- A conversion writes no temporary files: pages are rendered in memory and handed to the OCR engine as arrays (ticket 12).
+- Each conversion loads its own OCR engine and drops it when it ends, because Paddle keeps the last page it read in its predictors (ticket 12).
 - File content is never logged.
 
 **Packaging**
@@ -292,6 +293,8 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 | `feat/docx` | 07, 09, 13 |
 | `feat/ocr` | 08, 10–12, 14, 15 |
 | `chore/quality-gate` | 16, 17 |
+
+`feat/ocr` merges in two PRs, at the user's choice (2026-10-20). The first holds 08, 10 and 12, so `feat/docx` starts from a `main` that already reads OCR pages. Tickets 11, 14 and 15 need 07 and 09 from `feat/docx`, so they follow in a second PR.
 
 **Glossary.** Domain terms follow `GLOSSARY.md`: source file, document model, output, conversion, Accurate mode, broken text, uncertain text, placeholder, reference text, text layer, text page, OCR page.
 

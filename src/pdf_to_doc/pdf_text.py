@@ -5,8 +5,7 @@ from typing import Any
 
 import pymupdf
 
-from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedTable, RawCell, Row, page_blocks
-from pdf_to_doc.model import Document, Page
+from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedTable, RawCell, Row
 from pdf_to_doc.thai import is_thai
 
 # PyMuPDF's defaults, except that a glyph with no Unicode mapping comes out as
@@ -29,16 +28,6 @@ _BASELINE_TOLERANCE = 0.3
 pymupdf.no_recommend_layout()
 
 Box = tuple[float, float, float, float]
-
-
-def read_pdf(pdf: pymupdf.Document) -> Document:
-    blocks_by_page = page_blocks([_read_page(page) for page in pdf.pages()])
-    return Document(
-        pages=tuple(
-            Page(number=index + 1, kind="text", blocks=blocks)
-            for index, blocks in enumerate(blocks_by_page)
-        )
-    )
 
 
 @dataclass(frozen=True)
@@ -78,8 +67,8 @@ def _inside(x: float, y: float, box: Box) -> bool:
     return box[0] <= x <= box[2] and box[1] <= y <= box[3]
 
 
-def _read_page(page: pymupdf.Page) -> PageRows:
-    """Every character on the page ends up exactly once: in a table cell, or in a row."""
+def text_rows(page: pymupdf.Page) -> PageRows:
+    """The page's text layer. Every character ends up exactly once: in a table cell, or in a row."""
     layout: dict[str, Any] = page.get_text("rawdict", flags=_FLAGS)
     lines = [line for block in layout["blocks"] if block["type"] == 0 for line in block["lines"]]
     words = [word for index, line in enumerate(lines) for word in _words(index, line)]

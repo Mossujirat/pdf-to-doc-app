@@ -48,6 +48,9 @@ class Page:
     number: int
     kind: PageKind
     blocks: tuple[Block, ...]
+    engine: str | None = None  # the OCR engine that read an OCR page
+    # Read with OCR because its text layer was there but could not be trusted.
+    untrusted_text_layer: bool = False
 
 
 @dataclass(frozen=True)

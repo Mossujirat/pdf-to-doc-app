@@ -29,3 +29,10 @@
 
 **Tests**
 - [ ] Corpus fixtures with simulated scanned tables cover the chosen path.
+
+## Comments
+
+**2026-10-20, handed over from ticket 10 (text-layer validation)**
+
+- The contract's budget tables on pages 69-72 now become OCR pages, because their font's ToUnicode map turns "การ" into "กำร". Until this ticket, they come out as lines of text, without table structure. The user accepted that.
+- Those pages still draw their table rules as vector lines, and PyMuPDF's table finder still finds the grid (ticket 04). So when an OCR page carries a ruled grid in the PDF, the cells could come from that grid and the text from OCR, with each box placed in the cell that holds its centre. Ticket 04 notes that this grid is coarse on these pages.

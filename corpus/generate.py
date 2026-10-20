@@ -1,15 +1,17 @@
 """Generates the synthetic corpus: small PDFs whose reference text is known exactly.
 
 Each page is described twice: the lines to draw, which may carry damage such as
-sara am stored as two characters, and the reference text a reader sees.
+sara am stored as two characters, and the reference text a reader sees. A scanned
+page draws its lines as an image at 200 dpi, slightly askew and with mild grain.
 Run `uv run python corpus/generate.py` after changing a document below, and commit the result.
 """
 
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Spaced, Styled, pdf
+from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Scan, Spaced, Styled, pdf, remapped
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -18,7 +20,7 @@ SYNTHETIC = Path(__file__).parent / "synthetic"
 
 @dataclass(frozen=True)
 class SyntheticPage:
-    lines: list[Line]
+    lines: Sequence[Line] | Scan
     reference: str
 
 
@@ -27,6 +29,8 @@ class SyntheticDocument:
     name: str
     font_file: Path
     pages: tuple[SyntheticPage, ...]
+    # Characters the fonts' text layer reports as something else, as broken or legacy fonts do.
+    remap: dict[str, str] | None = None
 
 
 DOCUMENTS = (
@@ -231,12 +235,125 @@ DOCUMENTS = (
     ),
 )
 
+STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
+
+
+def scanned(lines: list[Line], overlay: list[Line] | None = None, seed: int = 0) -> Scan:
+    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed)
+
+
+SCANNED_DOCUMENTS = (
+    SyntheticDocument(
+        name="scanned-page",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        "ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้",
+                        "ในสัญญาฉบับนี้ และส่งรายงานทุกหกเดือน",
+                        "",
+                        "โครงการ BCG Economy ระยะที่ 2 ปี 2567",
+                        "",
+                        "ค่าตอบแทนผู้วิจัย 100,000 บาท",
+                    ],
+                    seed=1,
+                ),
+                reference=(
+                    "ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้ และส่งรายงานทุกหกเดือน\n\n"
+                    "โครงการ BCG Economy ระยะที่ 2 ปี 2567\n\n"
+                    "ค่าตอบแทนผู้วิจัย 100,000 บาท"
+                ),
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="stamped-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้ให้ทุนจะจ่ายเงินเป็นงวด", "ตามความก้าวหน้าของงาน"],
+                    overlay=[STAMP, Styled("หน้าที่ 1/2", size=14, y=800)],
+                    seed=2,
+                ),
+                reference="ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามความก้าวหน้าของงาน",
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้รับทุนต้องส่งรายงานฉบับสมบูรณ์", "ภายในสามสิบวันหลังสิ้นสุดโครงการ"],
+                    overlay=[STAMP, Styled("หน้าที่ 2/2", size=14, y=800)],
+                    seed=3,
+                ),
+                reference="ผู้รับทุนต้องส่งรายงานฉบับสมบูรณ์ภายในสามสิบวันหลังสิ้นสุดโครงการ",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="mixed-text-and-scan",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=["หน้านี้มีข้อความในไฟล์", "อ่านได้โดยไม่ต้องใช้ OCR"],
+                reference="หน้านี้มีข้อความในไฟล์อ่านได้โดยไม่ต้องใช้ OCR",
+            ),
+            SyntheticPage(
+                lines=scanned(["หน้านี้เป็นภาพสแกน", "ต้องอ่านด้วย OCR"], seed=4),
+                reference="หน้านี้เป็นภาพสแกนต้องอ่านด้วย OCR",
+            ),
+        ),
+    ),
+)
+
+CLAUSES = [
+    "ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติ",
+    "และจะรายงานผลการดำเนินงานให้ผู้ให้ทุนทราบทุกหกเดือน",
+    "โดยผู้ให้ทุนจะจ่ายเงินตามงวดที่กำหนดไว้ในสัญญา",
+    "หากผู้รับทุนไม่สามารถดำเนินการได้ตามกำหนดเวลา",
+    "ให้แจ้งผู้ให้ทุนเป็นหนังสือก่อนครบกำหนดอย่างน้อยสามสิบวัน",
+]
+
+TEXT_LAYER_DOCUMENTS = (
+    # A legacy Windows Thai font: marks over tall consonants and below the line
+    # are shifted glyphs, reported as Private Use Area characters.
+    SyntheticDocument(
+        name="legacy-font",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=["ปิ่นโตของผู้ใหญ่บ้าน", "ทั้งปีนี้ไม่ได้ใช้เลย"],
+                reference="ปิ่นโตของผู้ใหญ่บ้านทั้งปีนี้ไม่ได้ใช้เลย",
+            ),
+        ),
+        remap={
+            chr(0x0E34): chr(0xF701),  # sara i, shifted left
+            chr(0x0E35): chr(0xF702),  # sara ii, shifted left
+            chr(0x0E48): chr(0xF713),  # mai ek, shifted left
+            chr(0x0E49): chr(0xF70B),  # mai tho, shifted down
+            chr(0x0E31): chr(0xF710),  # mai han-akat, shifted left
+            chr(0x0E0D): chr(0xF70F),  # yo ying without its lower part
+        },
+    ),
+    # A font whose ToUnicode map reports sara aa as sara am: "การ" reads "กำร".
+    # The page looks right, so it is read with OCR.
+    SyntheticDocument(
+        name="wrong-unicode-map",
+        font_file=SARABUN,
+        pages=(SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),),
+        remap={chr(0x0E32): chr(0x0E33)},
+    ),
+)
+
+ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS
+
 
 def generate(folder: Path) -> None:
     """Write every document as `<name>.pdf` plus `<name>/page-NNN.reference.md`."""
     folder.mkdir(parents=True, exist_ok=True)
-    for document in DOCUMENTS:
+    for document in ALL_DOCUMENTS:
         source = pdf(*(page.lines for page in document.pages), font_file=document.font_file)
+        if document.remap:
+            source = remapped(source, document.remap)
         (folder / f"{document.name}.pdf").write_bytes(source)
         references = folder / document.name
         references.mkdir(exist_ok=True)
@@ -249,4 +366,4 @@ def generate(folder: Path) -> None:
 if __name__ == "__main__":
     shutil.rmtree(SYNTHETIC, ignore_errors=True)
     generate(SYNTHETIC)
-    print(f"wrote {len(DOCUMENTS)} documents to {SYNTHETIC}")
+    print(f"wrote {len(ALL_DOCUMENTS)} documents to {SYNTHETIC}")

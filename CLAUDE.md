@@ -2,7 +2,7 @@
 
 ## Commands
 
-- Tests: `uv run pytest`
+- Tests: `uv run pytest`. Real PaddleOCR tests are marked `ocr` and left out by default: `uv run pytest -m ocr`. They, the harness and any conversion with OCR pages need the models, fetched once with `uv run pdf-to-doc-models`.
 - Type checking: `uv run mypy`
 - Quality harness: `uv run pdf-to-doc-eval corpus/synthetic` (format in `corpus/README.md`)
 - Regenerate the synthetic corpus after changing `corpus/generate.py`: `uv run python corpus/generate.py`

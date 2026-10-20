@@ -11,6 +11,7 @@ from rapidfuzz.distance import Indel, Levenshtein, Opcode
 from pdf_to_doc.conversion import convert
 from pdf_to_doc.markdown import split_pages
 from pdf_to_doc.model import PageKind
+from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.thai import MARK, THAI_LETTER, is_thai
 
 # Reference text of at least this many characters that the output lacks altogether.
@@ -179,9 +180,9 @@ class PageReport:
     number: int
     kind: PageKind
     score: PageScore
-    # The conversion summary does not report these yet; OCR and uncertain-text
-    # marking (tickets 08 and 11) will fill them in.
     engine: str | None = None
+    # The conversion summary does not report this yet; uncertain-text marking
+    # (ticket 11) will fill it in.
     uncertain: int = 0
 
 
@@ -212,16 +213,21 @@ class Report:
     def uncertain(self) -> int:
         return sum(page.uncertain for page in self.pages)
 
+    def of_kind(self, kind: PageKind) -> "Report":
+        """The report for text pages only, or for OCR pages only."""
+        return Report(pages=tuple(page for page in self.pages if page.kind == kind))
+
 
 def reference_file_name(number: int) -> str:
     return f"page-{number:03d}.reference.md"
 
 
-def evaluate(corpus: Path) -> Report:
+def evaluate(corpus: Path, ocr: OcrEngine | None = None) -> Report:
     """Convert every source file in the corpus and score each page that has reference text.
 
     Layout: `<name>.pdf` beside a `<name>/` folder of `page-NNN.reference.md` files.
     Raises CorpusError when the layout is wrong or there is nothing to score.
+    `ocr` replaces the default OCR engine, for tests.
     """
     if not corpus.is_dir():
         raise CorpusError(f"not a folder: {corpus}")
@@ -230,14 +236,15 @@ def evaluate(corpus: Path) -> Report:
         references = _read_references(corpus / source.stem)
         if not references:
             continue
-        result = convert(source.read_bytes())
+        result = convert(source.read_bytes(), ocr=ocr)
         outputs = split_pages(result.output.decode("utf-8"))
-        kinds = {page.number: page.kind for page in result.summary.pages}
+        summaries = {page.number: page for page in result.summary.pages}
         for number, reference in sorted(references.items()):
-            if number not in kinds:
+            if number not in summaries:
                 raise CorpusError(f"{source.name} has no page {number}, but has reference text for it")
             score = score_page(outputs.get(number, ""), reference)
-            pages.append(PageReport(source.stem, number, kinds[number], score))
+            summary = summaries[number]
+            pages.append(PageReport(source.stem, number, summary.kind, score, summary.engine))
     if not pages:
         raise CorpusError(f"no reference text found in {corpus}")
     return Report(pages=tuple(pages))

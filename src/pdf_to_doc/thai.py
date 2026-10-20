@@ -28,12 +28,37 @@ _SPACE_BEFORE_MARK = re.compile(rf"(?<={THAI_LETTER})\s+(?={MARK})")
 _SARA_AA_NIKHAHIT = "\u0e32\u0e4d"
 
 
+# Legacy Thai fonts draw marks shifted left or down, and consonants without their
+# lower part, as glyphs of their own, and report them as Private Use Area
+# characters: Windows fonts in U+F700-F71A, Mac fonts in U+F884-F89E. This is
+# HarfBuzz's Thai shaper table (src/hb-ot-shaper-thai.cc) as (Thai, Windows, Mac).
+_LEGACY_GLYPHS = (
+    # Shifted down
+    (0x0E48, 0xF70A, 0xF88B), (0x0E49, 0xF70B, 0xF88E), (0x0E4A, 0xF70C, 0xF891), (0x0E4B, 0xF70D, 0xF894),
+    (0x0E4C, 0xF70E, 0xF897), (0x0E38, 0xF718, 0xF89B), (0x0E39, 0xF719, 0xF89C), (0x0E3A, 0xF71A, 0xF89D),
+    # Shifted down and left
+    (0x0E48, 0xF705, 0xF88C), (0x0E49, 0xF706, 0xF88F), (0x0E4A, 0xF707, 0xF892), (0x0E4B, 0xF708, 0xF895),
+    (0x0E4C, 0xF709, 0xF898),
+    # Shifted left
+    (0x0E48, 0xF713, 0xF88A), (0x0E49, 0xF714, 0xF88D), (0x0E4A, 0xF715, 0xF890), (0x0E4B, 0xF716, 0xF893),
+    (0x0E4C, 0xF717, 0xF896), (0x0E31, 0xF710, 0xF884), (0x0E34, 0xF701, 0xF885), (0x0E35, 0xF702, 0xF886),
+    (0x0E36, 0xF703, 0xF887), (0x0E37, 0xF704, 0xF888), (0x0E47, 0xF712, 0xF889), (0x0E4D, 0xF711, 0xF899),
+    # Without the lower part: yo ying and tho than
+    (0x0E0D, 0xF70F, 0xF89A), (0x0E10, 0xF700, 0xF89E),
+)
+_FROM_LEGACY_GLYPHS = str.maketrans(
+    {legacy: thai for thai, windows, mac in _LEGACY_GLYPHS for legacy in (windows, mac)}
+)
+
+
 def repair(text: str) -> str:
     """Fix character-level damage in running text, without deleting any letter.
 
-    Removes invisible characters and spaces in front of Thai marks,
-    recomposes sara am and puts vowels and tone marks in standard order.
+    Maps legacy fonts' Private Use Area glyphs back to Thai, removes invisible
+    characters and spaces in front of Thai marks, recomposes sara am and puts
+    vowels and tone marks in standard order.
     """
+    text = text.translate(_FROM_LEGACY_GLYPHS)
     text = _INVISIBLE.sub("", text)
     text = _SPACE_BEFORE_MARK.sub("", text)
     text = text.replace(_SARA_AA_NIKHAHIT, SARA_AM)

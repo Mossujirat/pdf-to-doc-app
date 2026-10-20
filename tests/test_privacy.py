@@ -1,0 +1,83 @@
+"""Privacy at runtime: a conversion never touches the network, and nothing of the
+source file outlives it but the output.
+
+Each conversion runs in a fresh process (see `fresh_process`), as a user's first one does.
+Two checks look past what a user sees, on purpose: the files left in the temp area,
+and the Paddle predictors still alive, which keep the last page they read.
+"""
+
+from pathlib import Path
+
+import pytest
+from fresh_process import ConversionStopped, Run, convert_in_fresh_process
+from markdown_reader import page_texts
+from pdf_builder import Scan, pdf, protected
+
+from pdf_to_doc.quality import score_page
+
+TEXT_PAGE = ["สัญญาให้ทุนวิจัยเลขที่ ๐๔๑๗/๒๕๖๙ ระหว่างกองทุน", "ส่งเสริมการวิจัยกับบริษัทสยามอนาไลติกาจำกัด"]
+SCANS = [
+    ["ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้ทุกประการ", "และส่งรายงานความก้าวหน้าต่อผู้ให้ทุนทุกหกเดือน"],
+    ["ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามความก้าวหน้าของงาน", "ที่คณะกรรมการกำกับโครงการให้ความเห็นชอบแล้ว"],
+]
+
+
+def mixed() -> bytes:
+    """A text page followed by two scans."""
+    return pdf(TEXT_PAGE, *(Scan(lines) for lines in SCANS))
+
+
+def leaked(run: Run) -> list[str]:
+    """Every run of 8 characters of the document's text, without a space, that the log holds."""
+    lines = [*TEXT_PAGE, *SCANS[0], *SCANS[1]]
+    fragments = {line[start : start + 8] for line in lines for start in range(len(line) - 7)}
+    return sorted(fragment for fragment in fragments if " " not in fragment and fragment in run.log)
+
+
+@pytest.fixture(scope="module")
+def converted(tmp_path_factory: pytest.TempPathFactory) -> Run:
+    """The mixed file, converted once with real PaddleOCR."""
+    return convert_in_fresh_process(tmp_path_factory.mktemp("converted"), mixed())
+
+
+@pytest.mark.ocr
+def test_a_first_conversion_succeeds_with_the_network_cut_off(converted: Run) -> None:
+    assert converted.failure is None
+    assert converted.network == []
+    assert converted.output is not None
+    assert "ด้วย PaddleOCR" in converted.output
+    text_page, *scans = page_texts(converted.output)
+    assert text_page == "".join(TEXT_PAGE)
+    for page, lines in zip(scans, SCANS, strict=True):
+        assert score_page(page, "".join(lines)).cer < 0.05
+
+
+@pytest.mark.ocr
+def test_nothing_of_the_document_outlives_a_conversion(converted: Run) -> None:
+    assert converted.failure is None
+    assert converted.left_behind == []
+    assert converted.paddle_objects_alive == 0
+
+
+@pytest.mark.ocr
+def test_the_log_of_a_conversion_holds_none_of_the_document(converted: Run) -> None:
+    assert converted.failure is None
+    assert leaked(converted) == []
+
+
+@pytest.mark.ocr
+def test_nothing_of_the_document_outlives_a_conversion_that_fails_partway(tmp_path: Path) -> None:
+    run = convert_in_fresh_process(tmp_path, mixed(), stop_at_ocr_page=2)
+
+    assert run.failure == ConversionStopped.__name__
+    assert run.left_behind == []
+    assert run.paddle_objects_alive == 0
+    assert leaked(run) == []
+
+
+def test_nothing_of_the_document_outlives_a_refusal(tmp_path: Path) -> None:
+    run = convert_in_fresh_process(tmp_path, protected(mixed(), open_password="รหัสลับ"))
+
+    assert run.failure == "PasswordRequired"
+    assert run.left_behind == []
+    assert leaked(run) == []

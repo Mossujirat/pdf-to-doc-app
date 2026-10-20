@@ -61,14 +61,17 @@ The harness then reports, per page and in total:
   - **decomposed sara am**: sara am stored as two characters, in either order
   - **missing text**: a run of 10 or more reference characters that the output lacks altogether. This does not depend on how the reference is wrapped into lines.
 - **Page kind**: text page or OCR page.
-- **OCR engine and uncertain-text count**: shown as `-` and 0 until OCR and uncertain-text marking exist.
+- **OCR engine**: the engine that read an OCR page, `-` for a text page.
+- **Uncertain-text count**: 0 until uncertain-text marking exists.
+
+Totals are given for all pages, and separately for text pages and for OCR pages. `--max-cer` and `--max-broken` apply to text pages only: the quality gate is zero broken text on text pages. OCR pages are measured, and their gate comes with the OCR baseline.
 
 ## Commands
 
 ```sh
 uv run pdf-to-doc-eval corpus/synthetic                       # print the table
 uv run pdf-to-doc-eval corpus/synthetic --json report.json    # also write JSON
-uv run pdf-to-doc-eval corpus/synthetic --max-broken 0 --max-cer 0   # exit 1 when exceeded
+uv run pdf-to-doc-eval corpus/synthetic --max-broken 0 --max-cer 0   # exit 1 when text pages exceed it
 uv run python corpus/generate.py                              # regenerate corpus/synthetic
 ```
 
@@ -79,6 +82,8 @@ uv run python corpus/generate.py                              # regenerate corpu
 - the reference text a reader sees
 
 It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
+- A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
+- A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` differ from what the generator makes.
 

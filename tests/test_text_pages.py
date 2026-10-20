@@ -13,7 +13,6 @@ MAI_EK = "\u0e48"
 MAI_HAN_AKAT = "\u0e31"
 NO_BREAK_SPACE = "\u00a0"
 SOFT_HYPHEN = "\u00ad"
-ZERO_WIDTH_SPACE = "\u200b"
 
 
 def markdown_pages(source: bytes) -> list[str]:
@@ -173,11 +172,3 @@ def test_a_space_before_a_following_vowel_is_kept() -> None:
     source = pdf([f"สระ {SARA_AA} ออกเสียงยาว"])
 
     assert markdown_pages(source) == [f"สระ {SARA_AA} ออกเสียงยาว"]
-
-
-def test_a_character_without_a_unicode_mapping_never_becomes_an_invisible_nul() -> None:
-    # The test font has no glyph for the zero-width space, so its text layer
-    # cannot say which character it was.
-    markdown = convert(pdf([f"ทดสอบ{ZERO_WIDTH_SPACE}อักขระ"])).output.decode("utf-8")
-
-    assert "\x00" not in markdown

@@ -9,15 +9,22 @@ A page is a list of lines, drawn top to bottom:
   text may hold several lines separated by newlines
 - an empty string leaves a blank line, which starts a new paragraph
 
+A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
+drawn over the image as text: a stamped header, or the text layer of a scan made searchable.
+
 The same inputs always give the same bytes, so generated files can be committed.
 
 For intake tests, `protected` encrypts a built PDF, which gives different bytes on
-every run, and `grown_to` pads one to an exact size.
+every run, and `grown_to` pads one to an exact size. `remapped` rewrites a built
+PDF's fonts so that its text layer reports some characters as others.
 """
 
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pymupdf
 
 # PyMuPDF copies its PDF_ constants in at run time, where type checkers cannot see them.
@@ -70,32 +77,125 @@ class Grid:
 Line = str | Spaced | Styled | Grid
 
 
-def pdf(*pages: list[Line], font_file: Path = SARABUN) -> bytes:
+@dataclass(frozen=True)
+class Scan:
+    lines: Sequence[Line]
+    overlay: Sequence[Line] = ()  # drawn over the image as text
+    dpi: int = 200
+    angle: float = 0.0  # degrees the paper sat askew
+    noise: float = 0.0  # standard deviation of the grain, in grey levels
+    seed: int = 0
+
+
+def pdf(*pages: Sequence[Line] | Scan, font_file: Path = SARABUN) -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({})
-    for lines in pages:
+    for content in pages:
         page = doc.new_page()
-        y: float = TOP
-        for line in lines:
-            if isinstance(line, Styled):
-                y = line.y if line.y is not None else y
-                y += _draw_styled(page, y, line, font_file)
-                continue
-            if isinstance(line, Grid):
-                y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
-                continue
-            if isinstance(line, Spaced):
-                x: float = LEFT
-                piece_font = _weight(font_file, line.bold)
-                for piece in line.pieces:
-                    _draw(page, x, y, piece, piece_font, FONT_SIZE)
-                    x += _width(piece, piece_font, FONT_SIZE) + line.gap
-            elif line:
-                _draw(page, LEFT, y, line, font_file, FONT_SIZE)
-            y += LINE_HEIGHT
+        if isinstance(content, Scan):
+            page.insert_image(page.rect, stream=_scanned_image(content, font_file))
+            _draw_lines(page, content.overlay, font_file)
+        else:
+            _draw_lines(page, content, font_file)
     data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
     doc.close()
     return data
+
+
+def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
+    y: float = TOP
+    for line in lines:
+        if isinstance(line, Styled):
+            y = line.y if line.y is not None else y
+            y += _draw_styled(page, y, line, font_file)
+            continue
+        if isinstance(line, Grid):
+            y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
+            continue
+        if isinstance(line, Spaced):
+            x: float = LEFT
+            piece_font = _weight(font_file, line.bold)
+            for piece in line.pieces:
+                _draw(page, x, y, piece, piece_font, FONT_SIZE)
+                x += _width(piece, piece_font, FONT_SIZE) + line.gap
+        elif line:
+            _draw(page, LEFT, y, line, font_file, FONT_SIZE)
+        y += LINE_HEIGHT
+
+
+def _scanned_image(scan: Scan, font_file: Path) -> bytes:
+    """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy."""
+    with pymupdf.open() as paper:
+        _draw_lines(paper.new_page(), scan.lines, font_file)
+        zoom = scan.dpi / 72
+        pix = paper[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom).prerotate(scan.angle), colorspace=pymupdf.csGRAY)
+    pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
+    grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0
+    grainy = np.clip(pixels + grain, 0, 255).astype(np.uint8)
+    image = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, grainy.tobytes(), False)
+    jpeg: bytes = image.tobytes("jpg", jpg_quality=75)
+    return jpeg
+
+
+def remapped(source: bytes, mapping: dict[str, str]) -> bytes:
+    """The same PDF, whose fonts report `mapping[c]` wherever they reported `c`.
+
+    The pages still show the right text; only the text layer changes, as with a
+    font whose ToUnicode map is wrong, or a legacy font that reports some glyphs
+    as Private Use Area characters.
+    """
+    doc = pymupdf.open(stream=source, filetype="pdf")
+    done: set[int] = set()
+    for xref in range(1, doc.xref_length()):
+        kind, value = doc.xref_get_key(xref, "ToUnicode")
+        if kind != "xref" or int(value.split()[0]) in done:
+            continue
+        cmap = int(value.split()[0])
+        done.add(cmap)
+        glyphs = _to_unicode(doc.xref_stream(cmap).decode("latin-1"))
+        changed = {glyph: "".join(mapping.get(char, char) for char in text) for glyph, text in glyphs.items()}
+        doc.update_stream(cmap, _cmap(changed).encode("latin-1"))
+    data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
+    doc.close()
+    return data
+
+
+def _to_unicode(cmap: str) -> dict[int, str]:
+    """Glyph id to text, from a ToUnicode CMap's bfchar and bfrange entries."""
+    glyphs: dict[int, str] = {}
+    for block in cmap.split("begin")[1:]:
+        if not block.startswith(("bfchar", "bfrange")):
+            continue
+        tokens = re.findall("<[0-9A-Fa-f]*>", block.split("end")[0])
+        if block.startswith("bfchar"):
+            for source, target in zip(tokens[0::2], tokens[1::2]):
+                glyphs[int(source[1:-1], 16)] = _utf16(target)
+            continue
+        # PyMuPDF writes each range as a first glyph, a last glyph and the text of the first.
+        for low, high, first in zip(tokens[0::3], tokens[1::3], tokens[2::3]):
+            text = _utf16(first)
+            for offset, glyph in enumerate(range(int(low[1:-1], 16), int(high[1:-1], 16) + 1)):
+                glyphs[glyph] = text[:-1] + chr(ord(text[-1]) + offset)
+    return glyphs
+
+
+def _utf16(token: str) -> str:
+    return bytes.fromhex(token[1:-1]).decode("utf-16-be")
+
+
+def _cmap(glyphs: dict[int, str]) -> str:
+    entries = [f"<{glyph:04X}> <{text.encode('utf-16-be').hex().upper()}>" for glyph, text in sorted(glyphs.items())]
+    blocks = "".join(
+        f"{len(entries[start : start + 100])} beginbfchar\n" + "\n".join(entries[start : start + 100]) + "\nendbfchar\n"
+        for start in range(0, len(entries), 100)
+    )
+    return (
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
+        "/CIDSystemInfo <</Registry(Adobe)/Ordering(UCS)/Supplement 0>> def\n"
+        "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
+        "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n"
+        f"{blocks}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n"
+    )
 
 
 OWNER_PASSWORD = "owner-password"
