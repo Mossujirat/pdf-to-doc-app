@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import word_builder as word
 from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Scan, Spaced, Styled, pdf, remapped
 
 from pdf_to_doc.quality import reference_file_name
@@ -374,23 +375,81 @@ PLACEHOLDER_DOCUMENTS = (
 ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS
 
 
+@dataclass(frozen=True)
+class SyntheticWordDocument:
+    """A DOCX source, its blocks as Word holds them, and the reference text of each page Word laid out."""
+
+    name: str
+    blocks: tuple[word.Block, ...]
+    references: tuple[str, ...]
+
+
+WORD_DOCUMENTS = (
+    SyntheticWordDocument(
+        name="word-structure",
+        blocks=(
+            word.Heading("สัญญาให้ทุนโครงการ", 1),
+            word.Heading("ข้อกำหนดทั่วไป", 2),
+            # Sara am stored as nikhahit + sara aa, as some Word files hold it.
+            f"ผู้รับทุนตกลงท{chr(0x0E4D)}{chr(0x0E32)}งานตามแผนงานที่ได้รับอนุมัติ",
+            word.Numbered(("เงื่อนไขของสัญญา", "ขอบเขตของการดำเนินงาน", "ข้อตกลงด้านการเงิน")),
+            "รายงานที่ต้องส่ง",
+            word.Bulleted(("รายงานความก้าวหน้า", "รายงานฉบับสมบูรณ์")),
+            word.PageBreak("rendered"),
+            word.Heading("งบประมาณ", 2),
+            word.Table(
+                (
+                    (Cell("รายการ", rowspan=2), Cell("งบประมาณ", colspan=2)),
+                    ("ปีที่ ๑", "ปีที่ ๒"),
+                    ("ค่าตอบแทนผู้วิจัย", "100,000", "120,000"),
+                )
+            ),
+            word.Image(),
+            "โครงการ BCG Economy ระยะที่ 2 แบ่งงานเป็นสามส่วน",
+            word.Numbered(("งานวิจัย", "งานพัฒนา", "งานถ่ายทอดเทคโนโลยี"), levels=(("thaiLetters", "(%1)"),)),
+        ),
+        references=(
+            "# สัญญาให้ทุนโครงการ\n\n"
+            "## ข้อกำหนดทั่วไป\n\n"
+            "ผู้รับทุนตกลงทำงานตามแผนงานที่ได้รับอนุมัติ\n\n"
+            "- 1. เงื่อนไขของสัญญา\n- 2. ขอบเขตของการดำเนินงาน\n- 3. ข้อตกลงด้านการเงิน\n\n"
+            "รายงานที่ต้องส่ง\n\n"
+            "- รายงานความก้าวหน้า\n- รายงานฉบับสมบูรณ์",
+            "## งบประมาณ\n\n"
+            "<table>\n"
+            '<tr><td rowspan="2">รายการ</td><td colspan="2">งบประมาณ</td></tr>\n'
+            "<tr><td>ปีที่ ๑</td><td>ปีที่ ๒</td></tr>\n"
+            "<tr><td>ค่าตอบแทนผู้วิจัย</td><td>100,000</td><td>120,000</td></tr>\n"
+            "</table>\n\n"
+            "[รูปภาพ]\n\n"
+            "โครงการ BCG Economy ระยะที่ 2 แบ่งงานเป็นสามส่วน\n\n"
+            "- (ก) งานวิจัย\n- (ข) งานพัฒนา\n- (ค) งานถ่ายทอดเทคโนโลยี",
+        ),
+    ),
+)
+
+
 def generate(folder: Path) -> None:
-    """Write every document as `<name>.pdf` plus `<name>/page-NNN.reference.md`."""
+    """Write every document as `<name>.pdf` or `<name>.docx` plus `<name>/page-NNN.reference.md`."""
     folder.mkdir(parents=True, exist_ok=True)
     for document in ALL_DOCUMENTS:
         source = pdf(*(page.lines for page in document.pages), font_file=document.font_file)
         if document.remap:
             source = remapped(source, document.remap)
         (folder / f"{document.name}.pdf").write_bytes(source)
-        references = folder / document.name
-        references.mkdir(exist_ok=True)
-        for number, page in enumerate(document.pages, start=1):
-            (references / reference_file_name(number)).write_text(
-                page.reference + "\n", encoding="utf-8", newline="\n"
-            )
+        _write_references(folder / document.name, [page.reference for page in document.pages])
+    for word_document in WORD_DOCUMENTS:
+        (folder / f"{word_document.name}.docx").write_bytes(word.document(*word_document.blocks))
+        _write_references(folder / word_document.name, list(word_document.references))
+
+
+def _write_references(folder: Path, references: list[str]) -> None:
+    folder.mkdir(exist_ok=True)
+    for number, reference in enumerate(references, start=1):
+        (folder / reference_file_name(number)).write_text(reference + "\n", encoding="utf-8", newline="\n")
 
 
 if __name__ == "__main__":
     shutil.rmtree(SYNTHETIC, ignore_errors=True)
     generate(SYNTHETIC)
-    print(f"wrote {len(ALL_DOCUMENTS)} documents to {SYNTHETIC}")
+    print(f"wrote {len(ALL_DOCUMENTS) + len(WORD_DOCUMENTS)} documents to {SYNTHETIC}")

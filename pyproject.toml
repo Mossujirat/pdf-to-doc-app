@@ -47,7 +47,7 @@ mypy_path = ["corpus", "tests"]
 # PyMuPDF ships only partial type hints.
 untyped_calls_exclude = ["pymupdf"]
 
-# PaddleOCR ships no type hints.
+# PaddleOCR ships no type hints, nor does lxml, which python-docx parses with.
 [[tool.mypy.overrides]]
-module = ["paddleocr"]
+module = ["paddleocr", "lxml"]
 ignore_missing_imports = true

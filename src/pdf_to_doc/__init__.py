@@ -1,6 +1,6 @@
 """Convert PDF files into Markdown or DOCX whose Thai and English text reads exactly as the original."""
 
-from pdf_to_doc.conversion import ConversionResult, convert
+from pdf_to_doc.conversion import ConversionResult, DocxToDocx, convert
 from pdf_to_doc.intake import (
     CopyRestricted,
     DamagedFile,
@@ -19,6 +19,7 @@ __all__ = [
     "ConversionResult",
     "CopyRestricted",
     "DamagedFile",
+    "DocxToDocx",
     "IntakeError",
     "Language",
     "ModelsMissing",

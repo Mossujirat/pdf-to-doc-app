@@ -13,6 +13,7 @@ from docx_reader import page_texts as docx_page_texts
 from fresh_process import ConversionStopped, Run, convert_in_fresh_process
 from markdown_reader import page_texts
 from pdf_builder import Scan, pdf, protected
+from word_builder import document
 
 from pdf_to_doc.quality import score_page
 
@@ -83,6 +84,17 @@ def test_a_conversion_to_docx_leaves_nothing_behind_and_logs_none_of_the_documen
     assert run.failure is None
     assert run.output is not None
     assert docx_page_texts(run.output) == ["".join(TEXT_PAGE)]
+    assert run.network == []
+    assert run.left_behind == []
+    assert leaked(run) == []
+
+
+def test_a_docx_source_converts_leaving_nothing_behind_and_logging_none_of_it(tmp_path: Path) -> None:
+    run = convert_in_fresh_process(tmp_path, document(*TEXT_PAGE))
+
+    assert run.failure is None
+    assert run.output is not None
+    assert page_texts(run.output.decode("utf-8")) == ["\n\n".join(TEXT_PAGE)]
     assert run.network == []
     assert run.left_behind == []
     assert leaked(run) == []

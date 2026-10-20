@@ -180,10 +180,14 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 **DOCX reader**
 - Reads DOCX structure straight into the document model:
   - headings by style
-  - lists
+  - lists, with the numbers Word draws worked out as Word counts them (ticket 13)
   - tables with merges
   - images as placeholders
 - DOCX text is already Unicode, but it still passes through the character-level Thai repair.
+- Pages are where Word's last layout broke them, as Word records on saving; a file without those records breaks pages at typed breaks (ticket 13).
+- The 150-page limit counts those pages. A DOCX that unpacks to more than 200 MB is refused as a zip bomb, and a password-locked Office file is recognised and refused (ticket 13).
+- A list within a list keeps its depth: list items carry a level, and Markdown indents them (ticket 13).
+- DOCX-to-DOCX is refused with its own error.
 
 **Markdown renderer**
 - GitHub-flavoured Markdown.

@@ -6,13 +6,14 @@ A **corpus** is a set of source files with **reference text**: the known-correct
 
 ```
 <folder>/
-  <name>.pdf
+  <name>.pdf          (or <name>.docx)
   <name>/
     page-001.reference.md
     page-002.reference.md
 ```
 
-- Every source file sits beside a folder of the same name.
+- Every source file, a PDF or a DOCX, sits beside a folder of the same name.
+- A DOCX's pages are those Word laid out when it last saved the file.
 - That folder holds one reference file per page, numbered from 001.
 - A page without a reference file is not scored.
 - A source file without a reference folder is not converted.

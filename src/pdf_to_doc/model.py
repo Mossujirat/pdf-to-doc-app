@@ -23,6 +23,7 @@ class Heading:
 class ListItem:
     text: str  # keeps its own number or letter, such as "1." or "(ก)"; bullets are dropped
     bulleted: bool  # the item had a bullet rather than its own number or letter
+    level: int = 0  # how deep in a list within a list, 0 the outermost; text pages tell no depth
 
 
 @dataclass(frozen=True)

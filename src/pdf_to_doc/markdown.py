@@ -26,7 +26,7 @@ def _render_block(block: Block) -> str:
     if isinstance(block, Heading):
         return f"{'#' * block.level} {block.text}"
     if isinstance(block, ListItem):
-        return f"- {block.text}"
+        return f"{'  ' * block.level}- {block.text}"
     if isinstance(block, Table):
         return _html_table(block) if block.has_merged_cells else _gfm_table(block)
     return block.text

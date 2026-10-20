@@ -6,14 +6,15 @@ from pathlib import Path
 import pytest
 from fake_ocr import FakeEngine
 from pdf_builder import Scan, pdf
+from word_builder import Heading, PageBreak, document
 
 from pdf_to_doc.evaluate_cli import main
 from pdf_to_doc.quality import CorpusError, evaluate, reference_file_name
 
 
-def add_document(corpus: Path, name: str, source: bytes, references: dict[int, str]) -> None:
+def add_document(corpus: Path, name: str, source: bytes, references: dict[int, str], suffix: str = ".pdf") -> None:
     corpus.mkdir(exist_ok=True)
-    (corpus / f"{name}.pdf").write_bytes(source)
+    (corpus / f"{name}{suffix}").write_bytes(source)
     (corpus / name).mkdir()
     for page, text in references.items():
         (corpus / name / reference_file_name(page)).write_text(text, encoding="utf-8")
@@ -28,6 +29,18 @@ def test_a_page_that_matches_its_reference_scores_perfect(tmp_path: Path) -> Non
     assert (page.source, page.number, page.kind) == ("contract", 1, "text")
     assert page.score.cer == 0
     assert report.broken.total == 0
+
+
+def test_a_docx_source_is_scored_page_by_page_like_a_pdf(tmp_path: Path) -> None:
+    source = document("หน้าแรก", PageBreak(), Heading("บทที่สอง"), "หน้าที่สอง")
+    add_document(tmp_path, "letter", source, {1: "หน้าแรก", 2: "# บทที่สอง\n\nหน้าที่สอง"}, suffix=".docx")
+
+    report = evaluate(tmp_path)
+
+    assert [(page.source, page.number, page.kind, page.score.cer) for page in report.pages] == [
+        ("letter", 1, "text", 0),
+        ("letter", 2, "text", 0),
+    ]
 
 
 def test_only_pages_with_reference_text_are_scored(tmp_path: Path) -> None:

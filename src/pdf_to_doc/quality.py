@@ -225,14 +225,14 @@ def reference_file_name(number: int) -> str:
 def evaluate(corpus: Path, ocr: OcrEngine | None = None) -> Report:
     """Convert every source file in the corpus and score each page that has reference text.
 
-    Layout: `<name>.pdf` beside a `<name>/` folder of `page-NNN.reference.md` files.
+    Layout: `<name>.pdf` or `<name>.docx` beside a `<name>/` folder of `page-NNN.reference.md` files.
     Raises CorpusError when the layout is wrong or there is nothing to score.
     `ocr` replaces the default OCR engine, for tests.
     """
     if not corpus.is_dir():
         raise CorpusError(f"not a folder: {corpus}")
     pages: list[PageReport] = []
-    for source in sorted(corpus.glob("*.pdf")):
+    for source in sorted([*corpus.glob("*.pdf"), *corpus.glob("*.docx")]):
         references = _read_references(corpus / source.stem)
         if not references:
             continue

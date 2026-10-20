@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pdf_to_doc.docx_output import render_docx
-from pdf_to_doc.intake import UnsupportedFormat, admit, open_pdf
+from pdf_to_doc.docx_reading import read_docx
+from pdf_to_doc.intake import IntakeError, admit, open_pdf
 from pdf_to_doc.markdown import render_markdown
 from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.paddle import default_engine
@@ -12,6 +13,10 @@ from pdf_to_doc.reading import ProgressCallback, read_pdf
 from pdf_to_doc.summary import Summary, summarize
 
 OutputFormat = Literal["markdown", "docx"]
+
+
+class DocxToDocx(IntakeError):
+    """The source is a DOCX and DOCX output was asked for, which is not offered."""
 
 
 @dataclass(frozen=True)
@@ -38,9 +43,12 @@ def convert(
     if to not in ("markdown", "docx"):
         raise ValueError(f"Unsupported output format: {to}")
     if admit(source) == "docx":
-        raise UnsupportedFormat("docx")  # DOCX sources are accepted, but reading them is not built yet.
-    with open_pdf(source, password) as pdf:
-        document = read_pdf(pdf, (lambda: ocr) if ocr else default_engine, progress)
+        if to == "docx":
+            raise DocxToDocx()
+        document = read_docx(source)
+    else:
+        with open_pdf(source, password) as pdf:
+            document = read_pdf(pdf, (lambda: ocr) if ocr else default_engine, progress)
     summary = summarize(document)
     output = render_docx(document, summary) if to == "docx" else render_markdown(document, summary).encode("utf-8")
     return ConversionResult(output=output, summary=summary)

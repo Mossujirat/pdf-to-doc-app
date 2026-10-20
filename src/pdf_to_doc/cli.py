@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import get_args
 
 from pdf_to_doc.console import thai_safe_output
-from pdf_to_doc.conversion import OutputFormat, convert
+from pdf_to_doc.conversion import DocxToDocx, OutputFormat, convert
 from pdf_to_doc.intake import (
     MAX_BYTES,
     MAX_PAGES,
+    MAX_UNPACKED_BYTES,
     CopyRestricted,
     DamagedFile,
     IntakeError,
@@ -40,8 +41,8 @@ _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
 _EXIT_CODES = f"""\
 exit code:
   {EXIT_OK}  แปลงสำเร็จ
-  {EXIT_UNSUPPORTED_FORMAT}  ไม่ใช่ไฟล์ที่แปลงได้ (เช่น Word รุ่นเก่า .doc)
-  {EXIT_TOO_LARGE}  ไฟล์ใหญ่เกิน {MAX_BYTES // _MB} MB หรือเกิน {MAX_PAGES} หน้า
+  {EXIT_UNSUPPORTED_FORMAT}  ไม่ใช่ไฟล์ที่แปลงได้ (เช่น Word รุ่นเก่า .doc หรือไฟล์ Word ที่ล็อกรหัสผ่าน) หรือขอแปลง DOCX เป็น DOCX
+  {EXIT_TOO_LARGE}  ไฟล์ใหญ่เกิน {MAX_BYTES // _MB} MB เกิน {MAX_PAGES} หน้า หรือเป็น DOCX ที่แตกออกมาใหญ่เกิน {MAX_UNPACKED_BYTES // _MB} MB
   {EXIT_PASSWORD_REQUIRED}  PDF ล็อกด้วยรหัสผ่าน แต่ไม่ได้ใส่ --password
   {EXIT_WRONG_PASSWORD}  รหัสผ่านไม่ถูกต้อง
   {EXIT_COPY_RESTRICTED}  PDF ตั้งสิทธิ์ห้ามคัดลอกข้อความ
@@ -53,11 +54,11 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     """Run the command. `ocr` replaces the default OCR engine, for tests."""
     parser = argparse.ArgumentParser(
         prog="pdf-to-doc",
-        description="แปลง PDF เป็น Markdown หรือ DOCX ที่ข้อความไทยอ่านได้ตรงกับต้นฉบับ",
+        description="แปลง PDF เป็น Markdown หรือ DOCX และแปลง DOCX เป็น Markdown โดยข้อความไทยอ่านได้ตรงกับต้นฉบับ",
         epilog=_EXIT_CODES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("source", type=Path, help="ไฟล์ PDF ต้นฉบับ")
+    parser.add_argument("source", type=Path, help="ไฟล์ PDF หรือ DOCX ต้นฉบับ")
     parser.add_argument(
         "--to",
         choices=get_args(OutputFormat),
@@ -116,14 +117,21 @@ def _refusal(error: IntakeError) -> tuple[int, str]:
             return EXIT_UNSUPPORTED_FORMAT, (
                 "ไฟล์นี้เป็น Word รุ่นเก่า (.doc) ซึ่งแปลงไม่ได้ กรุณาเปิดใน Word แล้วบันทึกเป็น .docx ก่อน"
             )
-        case UnsupportedFormat(found="docx"):
-            return EXIT_UNSUPPORTED_FORMAT, "ยังแปลงไฟล์ DOCX ไม่ได้ในรุ่นนี้ ตอนนี้แปลงได้เฉพาะ PDF"
+        case UnsupportedFormat(found="locked office"):
+            return EXIT_UNSUPPORTED_FORMAT, (
+                "ไฟล์ Office นี้ล็อกด้วยรหัสผ่าน จึงแปลงไม่ได้ ถ้าเป็นไฟล์ Word"
+                " กรุณาเปิดใน Word แล้วบันทึกใหม่โดยไม่ตั้งรหัสผ่าน"
+            )
         case UnsupportedFormat():
             return EXIT_UNSUPPORTED_FORMAT, "ไฟล์นี้ไม่ใช่ PDF หรือ DOCX จึงแปลงไม่ได้"
+        case DocxToDocx():
+            return EXIT_UNSUPPORTED_FORMAT, "ไฟล์นี้เป็น DOCX อยู่แล้ว จึงไม่แปลงเป็น DOCX อีก แปลงเป็น Markdown ได้ด้วย --to markdown"
         case TooLarge(unit="bytes", size=size, limit=limit):
-            # Rounded up, so a file just over the limit never shows as the limit itself.
-            megabytes = math.ceil(size * 10 / _MB) / 10
-            return EXIT_TOO_LARGE, f"ไฟล์นี้ใหญ่ {megabytes:.1f} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
+            return EXIT_TOO_LARGE, f"ไฟล์นี้ใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
+        case TooLarge(unit="unpacked bytes", size=size, limit=limit):
+            return EXIT_TOO_LARGE, (
+                f"ไฟล์ DOCX นี้เมื่อแตกออกมาใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
+            )
         case TooLarge(unit="pages", size=size, limit=limit):
             return EXIT_TOO_LARGE, (
                 f"ไฟล์นี้มี {size} หน้า เกินจำนวนสูงสุดที่แปลงได้ {limit} หน้า กรุณาแบ่งไฟล์แล้วแปลงทีละส่วน"
@@ -139,6 +147,11 @@ def _refusal(error: IntakeError) -> tuple[int, str]:
         case DamagedFile():
             return EXIT_DAMAGED_FILE, "ไฟล์เสียหรือไม่สมบูรณ์ จึงเปิดอ่านไม่ได้ ลองดาวน์โหลดหรือคัดลอกไฟล์มาใหม่"
     raise error
+
+
+def _megabytes(size: int) -> str:
+    """A size in megabytes to one decimal place, rounded up, so a file just over a limit never shows as the limit."""
+    return f"{math.ceil(size * 10 / _MB) / 10:.1f}"
 
 
 if __name__ == "__main__":

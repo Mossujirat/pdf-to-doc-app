@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
         prog="pdf-to-doc-eval",
         description="Convert every source file in a corpus and measure broken text against its reference text.",
     )
-    parser.add_argument("corpus", type=Path, help="folder of <name>.pdf files and <name>/page-NNN.reference.md")
+    parser.add_argument("corpus", type=Path, help="folder of <name>.pdf or <name>.docx files and <name>/page-NNN.reference.md")
     parser.add_argument("--json", type=Path, help="also write the full report to this JSON file")
     # The quality gate covers text pages; OCR pages are measured, and their gate
     # comes with the OCR baseline (ticket 17).
