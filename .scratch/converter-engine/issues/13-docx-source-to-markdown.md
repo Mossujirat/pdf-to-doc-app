@@ -66,7 +66,6 @@
   - Section breaks start no page in a file without Word's page records; Word's records cover them in files it saved.
   - A symbol inserted from a symbol font (`w:sym`) is left out.
   - Thai counting numbers (`thaiCounting`, Thai number words) and other rare formats are drawn in Arabic digits.
-  - Not checked in the Linux image: Docker was not running.
   - A list within a list keeps its depth in Markdown only. The DOCX renderer writes every list item at the outer level; it only renders PDFs, whose list items have no depth.
 
 **2026-10-20, changes after code review**
@@ -82,5 +81,7 @@ The reviewer probed real Word XML shapes and checked several against Word over C
 - A test now checks a tone mark stored before its vowel in a DOCX.
 
 Tidying: `DocxToDocx` lives with the conversion function, not in intake, since it refuses an output; the CLI rounds megabytes in one place; page and text marks are one `_Mark` enum and reading gives `_Item`s, with no stand-in paragraph for "text was here"; element paths are made in one place; the list-style links are read once; the builder's numbered lists say how they begin with one field.
+
+**Checked in the Linux image** (no network, read-only, `/tmp` in memory): mypy, the fast suite, `pytest -m ocr`, the harness gate, and mounted conversions of a PDF to Markdown, a PDF to DOCX and a DOCX to Markdown all pass. The first run found that `word-structure.docx` generated on Linux differed from the one generated on Windows in 18 bytes: Python records in each zip entry the system that made it. `word_builder` now records the same system everywhere; the committed file kept its bytes.
 
 Not changed: footnotes, endnotes and symbol-font characters, as in "Left open"; the builder's table placement repeats the renderer's, since fixtures do not reach into the renderer; the page limit is checked for PDFs in intake and for DOCX after reading, since a DOCX's pages are only known then.

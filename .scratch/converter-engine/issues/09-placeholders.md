@@ -54,6 +54,7 @@
   - Signatures without a signature-line row next to them, such as one above a drawn line or "(name)" only, stay images.
   - The stamp rule was checked against synthetic stamps only; the sample contracts hold none that could be confirmed without looking at them. A stamp with no border ring, or a rectangular one such as a date stamp, stays an image.
   - At the user's request, the sample contracts were not processed again after the first look, so the changes after code review were checked on synthetic pages only.
+- **Checked in the Linux image** later, with ticket 13 (Docker was not running before): mypy, the fast suite, `pytest -m ocr`, the harness gate, and a mounted conversion of `placeholders.pdf` to DOCX all pass.
 
 **2026-10-20, changes after code review**
 

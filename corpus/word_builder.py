@@ -64,9 +64,16 @@ def docx(text: str) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         for name, content in parts.items():
-            # A fixed timestamp keeps the bytes the same on every run.
-            archive.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), content, zipfile.ZIP_DEFLATED)
+            archive.writestr(_entry(name), content, zipfile.ZIP_DEFLATED)
     return buffer.getvalue()
+
+
+def _entry(name: str) -> zipfile.ZipInfo:
+    """A zip entry that is the same on every run and every system: Python otherwise dates
+    an entry now, and records the system that made it, Windows or Unix."""
+    entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    entry.create_system = 0
+    return entry
 
 
 # Compound file layout (version 3, 512-byte sectors): the header, then sector 0
@@ -101,7 +108,7 @@ def docx_unpacking_to(size: int) -> bytes:
     buffer = io.BytesIO(docx("สัญญา"))
     with zipfile.ZipFile(buffer, "a") as archive:
         left = size - sum(entry.file_size for entry in archive.infolist())
-        padding = zipfile.ZipInfo("word/media/padding.bin", date_time=(1980, 1, 1, 0, 0, 0))
+        padding = _entry("word/media/padding.bin")
         padding.compress_type = zipfile.ZIP_DEFLATED
         with archive.open(padding, "w") as part:
             while left > 0:
@@ -557,15 +564,11 @@ def _png() -> bytes:
 
 
 def _with_fixed_dates(word: WordDocument) -> bytes:
-    """The saved file, its zip entries all dated alike, so the same blocks always give the same bytes."""
+    """The saved file, its zip entries written alike, so the same blocks always give the same bytes."""
     saved = io.BytesIO()
     word.save(saved)
     fixed = io.BytesIO()
     with zipfile.ZipFile(saved) as source, zipfile.ZipFile(fixed, "w") as target:
         for entry in source.infolist():
-            target.writestr(
-                zipfile.ZipInfo(entry.filename, date_time=(1980, 1, 1, 0, 0, 0)),
-                source.read(entry.filename),
-                zipfile.ZIP_DEFLATED,
-            )
+            target.writestr(_entry(entry.filename), source.read(entry.filename), zipfile.ZIP_DEFLATED)
     return fixed.getvalue()
