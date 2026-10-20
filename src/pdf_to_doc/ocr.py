@@ -13,12 +13,11 @@ Language = Literal["th", "en"]
 LANGUAGES: tuple[Language, ...] = ("th", "en")
 # Pages are rendered at this resolution; the detector scales its own input down.
 DPI = 300
-# A detector draws a box about this many times as tall as the font size.
+# A detector draws a box about this many times as tall as the font size. Marks
+# above and below the letters make a box taller: on real scans, one line in five
+# was a fifth taller than the page's usual line, in the same font. So box heights
+# cannot tell font sizes apart, and every line of a page gets the same size.
 _BOX_HEIGHT_PER_FONT_SIZE = 1.5
-# A line whose boxes are this much taller than the page's usual line is set in a
-# larger font, such as a title. Smaller differences come from marks above and
-# below the letters, not from the font.
-_LARGER_LINE = 1.2
 # Boxes whose centres are closer than this share of a box height sit on one printed line.
 _SAME_LINE = 0.5
 # A row of a text layer is about this many times as tall as its font size.
@@ -63,17 +62,17 @@ def ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows)
 
     Text over a scan, such as a stamped header or a note, is taken from the text
     layer, which holds it exactly, and the engine's boxes that cover it are
-    dropped. Each row the engine read gets the geometry of a text-layer row: a
-    font size estimated from the box heights, and a height in proportion to it.
-    Lines share the page's usual size unless they are clearly larger.
+    dropped. Each row the engine read gets the geometry of a text-layer row: the
+    page's font size, estimated from the usual box height, and a height in
+    proportion to it.
     """
     scale = text_layer.width / image.width
     read = tuple(box for box in boxes if not any(_overlaps(box, row, scale) for row in text_layer.rows))
     lines = _printed_lines(read)
     rows = list(text_layer.rows)
     if lines:
-        usual = median(_line_height(line) for line in lines)
-        rows += [_row(line, scale, _font_size(line, usual) * scale) for line in lines]
+        size = median(_line_height(line) for line in lines) * scale / _BOX_HEIGHT_PER_FONT_SIZE
+        rows += [_row(line, scale, size) for line in lines]
     return PageRows(
         rows=tuple(sorted(rows, key=lambda row: row.y0)),
         width=text_layer.width,
@@ -109,12 +108,6 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
 def _overlaps(box: TextBox, row: Row, scale: float) -> bool:
     left, top, right, bottom = (edge * scale for edge in box.box)
     return top < row.y1 and row.y0 < bottom and left < row.x1 and row.x0 < right
-
-
-def _font_size(line: list[TextBox], usual_height: float) -> float:
-    """The line's font size in image pixels: the page's usual size, unless the line is clearly larger."""
-    height = _line_height(line)
-    return (height if height >= _LARGER_LINE * usual_height else usual_height) / _BOX_HEIGHT_PER_FONT_SIZE
 
 
 def _line_height(line: list[TextBox]) -> float:

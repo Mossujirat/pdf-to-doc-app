@@ -104,12 +104,19 @@ def test_progress_is_reported_before_each_ocr_page() -> None:
     assert updates == [Progress(stage="ocr", current=1, total=2), Progress(stage="ocr", current=2, total=2)]
 
 
-def test_a_title_set_larger_on_a_scan_stays_apart_from_the_text_below_it() -> None:
-    engine = FakeEngine([Styled("สัญญาให้ทุนโครงการวิจัย", size=22), "ผู้รับทุนตกลงดำเนินงาน", "ตามแผนที่กำหนดไว้"])
+def test_lines_of_a_scan_stay_one_paragraph_whatever_the_height_of_their_boxes() -> None:
+    # Marks above and below the letters make some boxes a quarter taller than others.
+    engine = FakeEngine(
+        [
+            Styled("ผู้รับทุนตกลงจะดำเนินการวิจัย", y=100),
+            Styled("ตามแผนงานที่ได้รับอนุมัติ", size=20, y=122),
+            Styled("และจะรายงานผลทุกหกเดือน", y=144),
+        ]
+    )
 
     result = convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine)
 
-    assert markdown_pages(result) == ["สัญญาให้ทุนโครงการวิจัย\n\nผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้"]
+    assert markdown_pages(result) == ["ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติและจะรายงานผลทุกหกเดือน"]
 
 
 # What the user sees

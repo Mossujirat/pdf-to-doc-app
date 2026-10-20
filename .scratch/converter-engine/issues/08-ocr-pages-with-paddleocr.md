@@ -137,3 +137,8 @@
 
 - With Paddle in the image, a CI run takes several minutes, and this private repository has a monthly quota of Actions minutes. At the user's request, CI now runs for pull requests and for pushes to `main` only. A newer push to the same pull request cancels the run in progress.
 - While a ticket is in progress, the same checks run locally in the image. That supersedes ticket 06's "each push and pull request".
+
+**2026-10-20, changed in ticket 10**
+
+- A line whose boxes were at least 1.2 times the usual height got a font size of its own, to keep titles apart. On 15 of the contract's scanned pages, 19% of body lines were that tall, because of marks above and below the letters. Each of them started a new paragraph, cutting sentences in two.
+- Every line of an OCR page now gets the page's one size, and paragraphs on OCR pages are split by spacing alone. A title with no extra space below it runs into the paragraph under it.
