@@ -9,6 +9,7 @@ and the Paddle predictors still alive, which keep the last page they read.
 from pathlib import Path
 
 import pytest
+from docx_reader import page_texts as docx_page_texts
 from fresh_process import ConversionStopped, Run, convert_in_fresh_process
 from markdown_reader import page_texts
 from pdf_builder import Scan, pdf, protected
@@ -45,8 +46,9 @@ def test_a_first_conversion_succeeds_with_the_network_cut_off(converted: Run) ->
     assert converted.failure is None
     assert converted.network == []
     assert converted.output is not None
-    assert "ด้วย PaddleOCR" in converted.output
-    text_page, *scans = page_texts(converted.output)
+    markdown = converted.output.decode("utf-8")
+    assert "ด้วย PaddleOCR" in markdown
+    text_page, *scans = page_texts(markdown)
     assert text_page == "".join(TEXT_PAGE)
     for page, lines in zip(scans, SCANS, strict=True):
         assert score_page(page, "".join(lines)).cer < 0.05
@@ -72,6 +74,17 @@ def test_nothing_of_the_document_outlives_a_conversion_that_fails_partway(tmp_pa
     assert run.failure == ConversionStopped.__name__
     assert run.left_behind == []
     assert run.paddle_objects_alive == 0
+    assert leaked(run) == []
+
+
+def test_a_conversion_to_docx_leaves_nothing_behind_and_logs_none_of_the_document(tmp_path: Path) -> None:
+    run = convert_in_fresh_process(tmp_path, pdf(TEXT_PAGE), to="docx")
+
+    assert run.failure is None
+    assert run.output is not None
+    assert docx_page_texts(run.output) == ["".join(TEXT_PAGE)]
+    assert run.network == []
+    assert run.left_behind == []
     assert leaked(run) == []
 
 

@@ -4,9 +4,10 @@ import argparse
 import math
 import sys
 from pathlib import Path
+from typing import get_args
 
 from pdf_to_doc.console import thai_safe_output
-from pdf_to_doc.conversion import convert
+from pdf_to_doc.conversion import OutputFormat, convert
 from pdf_to_doc.intake import (
     MAX_BYTES,
     MAX_PAGES,
@@ -33,6 +34,7 @@ EXIT_DAMAGED_FILE = 8
 EXIT_MODELS_MISSING = 9
 
 _MB = 1024 * 1024
+_SUFFIXES: dict[OutputFormat, str] = {"markdown": ".md", "docx": ".docx"}
 _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
 
 _EXIT_CODES = f"""\
@@ -51,26 +53,33 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     """Run the command. `ocr` replaces the default OCR engine, for tests."""
     parser = argparse.ArgumentParser(
         prog="pdf-to-doc",
-        description="แปลง PDF เป็น Markdown ที่ข้อความไทยอ่านได้ตรงกับต้นฉบับ",
+        description="แปลง PDF เป็น Markdown หรือ DOCX ที่ข้อความไทยอ่านได้ตรงกับต้นฉบับ",
         epilog=_EXIT_CODES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("source", type=Path, help="ไฟล์ PDF ต้นฉบับ")
     parser.add_argument(
-        "-o", "--output", type=Path, help="ไฟล์ผลลัพธ์ (ค่าเริ่มต้น: ชื่อเดียวกับต้นฉบับ นามสกุล .md)"
+        "--to",
+        choices=get_args(OutputFormat),
+        help="รูปแบบผลลัพธ์: markdown สำหรับใช้กับ AI หรือ docx สำหรับแก้ไขใน Word"
+        " (ค่าเริ่มต้น: ตามนามสกุลของ --output ถ้าไม่ได้ระบุจะเป็น markdown)",
+    )
+    parser.add_argument(
+        "-o", "--output", type=Path, help="ไฟล์ผลลัพธ์ (ค่าเริ่มต้น: ชื่อเดียวกับต้นฉบับ นามสกุล .md หรือ .docx)"
     )
     parser.add_argument("--password", help="รหัสผ่านสำหรับเปิดไฟล์ PDF ที่ล็อกไว้")
     args = parser.parse_args(argv)
 
     thai_safe_output()
 
-    output_path: Path = args.output or args.source.with_suffix(".md")
+    output_format: OutputFormat = args.to or _format_named_by(args.output)
+    output_path: Path = args.output or args.source.with_suffix(_SUFFIXES[output_format])
     try:
         source = args.source.read_bytes()
     except OSError as error:
         parser.error(f"อ่านไฟล์ {args.source} ไม่ได้ ({error.strerror})")
     try:
-        result = convert(source, to="markdown", password=args.password, ocr=ocr, progress=_show_progress)
+        result = convert(source, to=output_format, password=args.password, ocr=ocr, progress=_show_progress)
     except IntakeError as error:
         exit_code, message = _refusal(error)
         print(f"{args.source}: {message}", file=sys.stderr)
@@ -85,6 +94,12 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
 
     print(f"{output_path}: {result.summary.headline()}")
     return EXIT_OK
+
+
+def _format_named_by(output: Path | None) -> OutputFormat:
+    """The format an output file's name asks for, so a .docx file never gets Markdown by default."""
+    suffix = output.suffix.lower() if output else ""
+    return next((name for name, known in _SUFFIXES.items() if known == suffix), "markdown")
 
 
 def _show_progress(update: Progress) -> None:

@@ -3,11 +3,12 @@
 from pathlib import Path
 
 import pytest
+from docx_reader import page_texts
 from fake_ocr import BlankEngine
 from generate import SYNTHETIC, generate
 
 from pdf_to_doc import convert
-from pdf_to_doc.quality import evaluate
+from pdf_to_doc.quality import evaluate, reference_file_name, score_page
 
 # OCR pages are read with real PaddleOCR. Their gate comes with the OCR baseline
 # (ticket 17); until then, a page this far off means OCR has stopped working.
@@ -37,6 +38,20 @@ def test_the_text_pages_of_the_committed_corpus_have_no_broken_text() -> None:
     assert len(report.pages) >= 4
     assert report.broken.total == 0
     assert report.cer == 0
+
+
+def test_the_docx_of_each_text_page_of_the_committed_corpus_reads_as_its_reference_text() -> None:
+    scored = []
+    for source in sorted(SYNTHETIC.glob("*.pdf")):
+        result = convert(source.read_bytes(), to="docx", ocr=BlankEngine())
+        for text, page in zip(page_texts(result.output), result.summary.pages, strict=True):
+            reference = SYNTHETIC / source.stem / reference_file_name(page.number)
+            if page.kind == "text" and reference.exists():
+                score = score_page(text, reference.read_text(encoding="utf-8-sig"))
+                assert (score.cer, score.broken.total) == (0, 0), f"{source.name} page {page.number}"
+                scored.append(page)
+
+    assert len(scored) >= 4
 
 
 @pytest.mark.ocr

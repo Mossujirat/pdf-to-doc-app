@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 PageKind = Literal["text", "ocr"]
+# Markdown and Word both have six heading levels.
+DEEPEST_HEADING = 6
 
 
 @dataclass(frozen=True)
@@ -13,13 +15,14 @@ class Paragraph:
 
 @dataclass(frozen=True)
 class Heading:
-    level: int  # 1 is the most prominent
+    level: int  # 1 is the most prominent, DEEPEST_HEADING the least
     text: str
 
 
 @dataclass(frozen=True)
 class ListItem:
     text: str  # keeps its own number or letter, such as "1." or "(ก)"; bullets are dropped
+    bulleted: bool  # the item had a bullet rather than its own number or letter
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,11 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    # Only for type checking: the converter must load after the audit hook is in place.
+    from pdf_to_doc.conversion import OutputFormat
 
 # Calls that reach beyond this machine. Creating a socket, binding it here and
 # asking for the machine's own name stay allowed: urllib3 binds a socket on ::1
@@ -37,7 +42,7 @@ _NETWORK_EVENTS = frozenset(
 class Run:
     """What a conversion in a fresh process did."""
 
-    output: str | None  # the Markdown, if the conversion succeeded
+    output: bytes | None  # the output, if the conversion succeeded
     failure: str | None  # the name of the error it raised, if it did not
     network: list[str]  # the network calls it tried, each one refused
     left_behind: list[str]  # files left in the temp area once it ended
@@ -49,8 +54,10 @@ class ConversionStopped(Exception):
     """Raised to make a conversion fail partway."""
 
 
-def convert_in_fresh_process(folder: Path, source: bytes, *, stop_at_ocr_page: int | None = None) -> Run:
-    """Convert `source` to Markdown in a fresh process, in default mode.
+def convert_in_fresh_process(
+    folder: Path, source: bytes, *, to: "OutputFormat" = "markdown", stop_at_ocr_page: int | None = None
+) -> Run:
+    """Convert `source` to the output format `to` in a fresh process, in default mode.
 
     The process's temp area is `folder/temp`, and PaddleX keeps its working
     files in it, as in the image. `stop_at_ocr_page` makes the conversion fail
@@ -58,7 +65,7 @@ def convert_in_fresh_process(folder: Path, source: bytes, *, stop_at_ocr_page: i
     """
     temp = folder / "temp"
     temp.mkdir()
-    source_path, output_path, report_path = folder / "source.pdf", folder / "output.md", folder / "report.json"
+    source_path, output_path, report_path = folder / "source.pdf", folder / "output", folder / "report.json"
     source_path.write_bytes(source)
     environment = {
         **os.environ,
@@ -71,7 +78,7 @@ def convert_in_fresh_process(folder: Path, source: bytes, *, stop_at_ocr_page: i
     }
     stop_argument = [] if stop_at_ocr_page is None else [str(stop_at_ocr_page)]
     process = subprocess.run(
-        [sys.executable, __file__, str(source_path), str(output_path), str(report_path), *stop_argument],
+        [sys.executable, __file__, str(source_path), str(output_path), str(report_path), to, *stop_argument],
         env=environment,
         capture_output=True,
         encoding="utf-8",
@@ -82,7 +89,7 @@ def convert_in_fresh_process(folder: Path, source: bytes, *, stop_at_ocr_page: i
         raise AssertionError(f"the fresh process crashed:\n{process.stderr}")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     return Run(
-        output=output_path.read_text(encoding="utf-8") if output_path.exists() else None,
+        output=output_path.read_bytes() if output_path.exists() else None,
         failure=report["failure"],
         network=report["network"],
         left_behind=report["left_behind"],
@@ -91,7 +98,7 @@ def convert_in_fresh_process(folder: Path, source: bytes, *, stop_at_ocr_page: i
     )
 
 
-def _convert(source: Path, output: Path, report: Path, stop_at_ocr_page: int | None) -> None:
+def _convert(source: Path, output: Path, report: Path, to: "OutputFormat", stop_at_ocr_page: int | None) -> None:
     refused: list[str] = []
 
     def refuse_network(event: str, args: tuple[object, ...]) -> None:
@@ -111,7 +118,7 @@ def _convert(source: Path, output: Path, report: Path, stop_at_ocr_page: int | N
 
     failure = None
     try:
-        output.write_bytes(convert(source.read_bytes(), progress=stop_partway).output)
+        output.write_bytes(convert(source.read_bytes(), to=to, progress=stop_partway).output)
     except Exception as error:
         failure = type(error).__name__
         # Logged with its message and traceback, as a service would log a failed conversion.
@@ -155,5 +162,11 @@ def _paddle_objects_alive() -> int:
 
 
 if __name__ == "__main__":
-    source, output, report, *stop_argument = sys.argv[1:]
-    _convert(Path(source), Path(output), Path(report), int(stop_argument[0]) if stop_argument else None)
+    source, output, report, to, *stop_argument = sys.argv[1:]
+    _convert(
+        Path(source),
+        Path(output),
+        Path(report),
+        cast("OutputFormat", to),
+        int(stop_argument[0]) if stop_argument else None,
+    )

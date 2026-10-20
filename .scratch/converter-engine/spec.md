@@ -190,8 +190,11 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **DOCX renderer**
 - Uses python-docx.
-- Thai font is TH Sarabun New, set in the complex-script slot with its matching size; python-docx's plain font name does not set that slot.
+- Thai font is TH Sarabun New, set in the complex-script slot with its matching size; python-docx's plain font name does not set that slot. English text uses TH Sarabun New too, at the same size (ticket 07).
+- Runs that hold Thai are marked complex script, so Word breaks their lines between words. English words get runs of their own without the mark, or Word would proof them as Thai (ticket 07).
+- Each page of the original starts a new page, at its own first paragraph (ticket 07).
 - Headings use Word heading styles.
+- Bulleted list items use Word's bullets. Items that keep their own number or letter go in a Word list that shows nothing before them (ticket 07).
 - Tables have real merged cells.
 - Uncertain text is highlighted yellow.
 - The summary goes on the first page.

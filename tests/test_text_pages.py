@@ -59,9 +59,9 @@ def test_the_markdown_opens_with_a_summary_of_the_conversion() -> None:
     assert "2 หน้า" in summary
 
 
-def test_an_output_format_that_is_not_supported_yet_is_refused() -> None:
+def test_an_output_format_that_is_not_supported_is_refused() -> None:
     with pytest.raises(ValueError):
-        convert(pdf(["หน้าแรก"]), to="docx")  # type: ignore[arg-type]
+        convert(pdf(["หน้าแรก"]), to="html")  # type: ignore[arg-type]
 
 
 # Line joining

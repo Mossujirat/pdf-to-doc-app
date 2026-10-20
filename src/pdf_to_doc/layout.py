@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from pdf_to_doc.model import Block, Heading, ListItem, PageKind, Paragraph, Table, TableCell
+from pdf_to_doc.model import DEEPEST_HEADING, Block, Heading, ListItem, PageKind, Paragraph, Table, TableCell
 from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
@@ -35,7 +35,6 @@ _SIZE_STEP = 0.5
 _HEADING_SCALE = 1.06
 _HEADING_SIZE_STEP = 0.6
 _HEADING_MAX_ROWS = 2
-_DEEPEST_HEADING = 6
 # Lines whose baselines differ by less than this share of the font size are on one
 # row; a gap wider than this many character widths sets the row out in columns.
 _BASELINE_TOLERANCE = 0.3
@@ -322,9 +321,9 @@ def _block(group: list[Row], levels: dict[float, int]) -> Block:
     text = repair(join_lines([row.text for row in group]))
     short = len(group) <= _HEADING_MAX_ROWS
     if short and group[0].size in levels:
-        return Heading(level=min(levels[group[0].size], _DEEPEST_HEADING), text=text)
+        return Heading(level=min(levels[group[0].size], DEEPEST_HEADING), text=text)
     if _starts_list_item(text) and not group[0].in_columns:
-        return ListItem(_BULLET_ITEM.sub("", text))
+        return ListItem(_BULLET_ITEM.sub("", text), bulleted=bool(_BULLET_ITEM.match(text)))
     if short and all(row.bold and not row.in_columns for row in group):
-        return Heading(level=min(max(levels.values(), default=0) + 1, _DEEPEST_HEADING), text=text)
+        return Heading(level=min(max(levels.values(), default=0) + 1, DEEPEST_HEADING), text=text)
     return Paragraph(text)

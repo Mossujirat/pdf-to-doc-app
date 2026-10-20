@@ -1,8 +1,8 @@
 # pdf-to-doc
 
-Converts PDF files into Markdown whose Thai and English text reads exactly as the original: no floating or missing vowels and tone marks, no spaces inside words, no sentences cut at every printed line. The Markdown is meant to be pasted into AI chats.
+Converts PDF files into Markdown or DOCX whose Thai and English text reads exactly as the original: no floating or missing vowels and tone marks, no spaces inside words, no sentences cut at every printed line. The Markdown is meant to be pasted into AI chats, the DOCX to be edited in Word.
 
-Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). DOCX sources and output, Accurate mode and the web service are planned (see `.scratch/converter-engine/`).
+Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). DOCX sources, Accurate mode and the web service are planned (see `.scratch/converter-engine/`).
 
 ## Usage
 
@@ -12,14 +12,17 @@ Requires [uv](https://docs.astral.sh/uv/).
 uv sync
 uv run pdf-to-doc-models                         # once: fetch the OCR models (about 13 MB)
 uv run pdf-to-doc document.pdf -o document.md
+uv run pdf-to-doc document.pdf --to docx         # writes document.docx; -o document.docx does the same
 uv run pdf-to-doc locked.pdf --password "..."   # a PDF that needs a password to open
 ```
 
 Each page is read on its own: from its text layer, or with OCR when the page is a scan, its text is drawn as shapes, or its text layer is wrong (such as "กำร" where the page shows "การ"). Legacy Thai fonts' Private Use Area characters are mapped back to Thai. The CLI shows progress while OCR runs, and the summary at the top of the output names the OCR pages. The models live in `~/.cache/pdf-to-doc/models`, or wherever `PDF_TO_DOC_MODELS` points; nothing is downloaded while converting.
 
+The DOCX keeps the original's structure, not its page layout: headings in Word's heading styles, lists, and tables with real merged cells. Each page of the original starts a new page. Text is set in TH Sarabun New 16 pt, with Thai marked as complex script so that Word breaks its lines between words; the font must be installed for Word to show it.
+
 The source type is read from the file's content, not its name. These files are refused with a Thai message and an exit code of their own, listed by `pdf-to-doc --help`:
 
-- legacy Word `.doc` files, and anything that is not a PDF or DOCX (DOCX conversion is not built yet)
+- legacy Word `.doc` files, and anything that is not a PDF or DOCX (reading DOCX files is not built yet)
 - files over 50 MB or 150 pages
 - PDFs that need a password, when none or a wrong one is given
 - PDFs whose permissions forbid copying text
