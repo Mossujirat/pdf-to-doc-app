@@ -110,10 +110,10 @@ def _convert(source: Path, output: Path, report: Path, to: "OutputFormat", stop_
     # Everything a logger lets through, as when a deployment turns logging up. Paddle's
     # own loggers stay at ERROR, where the OCR adapter sets them.
     logging.basicConfig(level=logging.DEBUG)
-    from pdf_to_doc import Progress, convert
+    from pdf_to_doc import Opened, Progress, convert
 
-    def stop_partway(update: Progress) -> None:
-        if update.current == stop_at_ocr_page:
+    def stop_partway(update: Opened | Progress) -> None:
+        if isinstance(update, Progress) and update.stage == "ocr" and update.current == stop_at_ocr_page:
             raise ConversionStopped()
 
     failure = None

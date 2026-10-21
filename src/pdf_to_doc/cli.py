@@ -22,7 +22,7 @@ from pdf_to_doc.intake import (
 )
 from pdf_to_doc.ocr_models import ModelsMissing
 from pdf_to_doc.ocr import OcrEngine
-from pdf_to_doc.reading import Progress
+from pdf_to_doc.progress import Opened, Progress
 
 EXIT_OK = 0
 # Exit code 1 is Python's for a crash, and 2 is argparse's for bad arguments.
@@ -103,11 +103,12 @@ def _format_named_by(output: Path | None) -> OutputFormat:
     return next((name for name, known in _SUFFIXES.items() if known == suffix), "markdown")
 
 
-def _show_progress(update: Progress) -> None:
-    """One line per page; on a terminal, each page overwrites the last."""
-    overwrite = sys.stderr.isatty() and update.current < update.total
-    line = f"OCR หน้า {update.current}/{update.total}"
-    print(line, end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
+def _show_progress(update: Opened | Progress) -> None:
+    """One line per OCR page; on a terminal, each page overwrites the last. Other reports pass unseen."""
+    match update:
+        case Progress(stage="ocr", current=int(current), total=int(total)):
+            overwrite = sys.stderr.isatty() and current < total
+            print(f"OCR หน้า {current}/{total}", end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
 
 
 def _refusal(error: IntakeError) -> tuple[int, str]:

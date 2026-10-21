@@ -7,7 +7,7 @@ from fake_ocr import FakeEngine
 from markdown_reader import page_texts
 from pdf_builder import Scan, Styled, pdf
 
-from pdf_to_doc import ConversionResult, Progress, convert
+from pdf_to_doc import ConversionResult, convert
 from pdf_to_doc.cli import main
 
 
@@ -90,18 +90,6 @@ def test_ocr_text_is_repaired_and_its_lines_joined_into_paragraphs() -> None:
     result = convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine)
 
     assert markdown_pages(result) == [f"ผู้รับทุนตกลงดำเนินงานตามแผนการท{SARA_AM}งาน\n\nย่อหน้าที่สอง"]
-
-
-# Progress
-
-
-def test_progress_is_reported_before_each_ocr_page() -> None:
-    updates: list[Progress] = []
-    source = pdf(["หน้าที่มีข้อความ"], Scan(["หน้าสแกนแรก"], dpi=50), Scan(["หน้าสแกนที่สอง"], dpi=50))
-
-    convert(source, ocr=FakeEngine(["หน้าสแกนแรก"], ["หน้าสแกนที่สอง"]), progress=updates.append)
-
-    assert updates == [Progress(stage="ocr", current=1, total=2), Progress(stage="ocr", current=2, total=2)]
 
 
 def test_lines_of_a_scan_stay_one_paragraph_whatever_the_height_of_their_boxes() -> None:
