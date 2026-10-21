@@ -30,7 +30,7 @@ Everything is collected into one document model, and both output formats are ren
 
 Where the converter cannot confirm that it read text correctly, it marks that text as uncertain text instead of hiding the problem. Each output starts with a summary of which pages were read by OCR and how much text is uncertain.
 
-**Delivery order.** v1 is a command-line tool, built around one conversion function. It comes with a quality harness that measures broken text against reference text, and a Docker image for running the tests on Linux. The public web service is a later spec. It will wrap the same function once the converter passes the quality gate.
+**Delivery order.** v1 is a command-line tool, built around one conversion function. It comes with a quality harness that measures broken text against reference text, and a Docker image for running the tests on Linux. The public web service is a separate spec that wraps the same function. It launches once uncertain text (ticket 11) is done; the quality gate measures the converter but does not hold the launch back (decided 2026-10-21).
 
 ## User Stories
 
@@ -73,7 +73,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 37. As a maintainer, I want a test corpus of synthetic and public documents committed to the repo, so that anyone can run the quality checks without confidential files.
 38. As a maintainer, I want to point the quality harness at a local folder of confidential reference text, so that real documents are measured without entering the repo.
 39. As a maintainer, I want synthetic test PDFs generated from known text in several fonts, including a legacy font that produces Private Use Area glyphs, and with simulated scans, so that every known Thai failure mode has a fixture with exact reference text.
-40. As a maintainer, I want a quality gate of zero broken text on text pages and a recorded OCR baseline, so that "ready for the web" has an objective meaning.
+40. As a maintainer, I want a quality gate of zero broken text on text pages and a recorded OCR baseline, so that the converter's quality has an objective measure.
 41. As a maintainer, I want the test suite to run in a Linux Docker container, locally and in CI, so that results match the future server and not only Windows.
 42. As a quality reviewer, I want a per-page report (page kind, OCR engine, character error rate against reference text, broken-text counts by category, uncertain count), so that I can see where quality is lost.
 43. As a self-hoster, I want to run the converter from a Docker image, so that I can use it on my own machine, as the AGPL licence intends.
@@ -278,7 +278,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 ## Out of Scope
 
-- The public web service: upload page, queue and progress page, output retention, hosting, GPU. It gets its own spec after the quality gate.
+- The public web service: upload page, queue and progress page, output retention, hosting, GPU. It gets its own spec.
 - Converting legacy .doc files, and DOCX-to-DOCX.
 - Transcribing handwriting.
 - Languages other than Thai and English.
@@ -290,14 +290,17 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **Decided for the web spec, recorded here so they are not lost:**
 - Conversion runs on our server (ADR 0001).
-- The source file is deleted when conversion ends; the output is held until downloaded, or 10 minutes at most.
+- The source file is deleted when conversion ends; the outputs are held for 10 minutes after it ends, or until the user deletes them (changed 2026-10-21, ADR 0001).
 - No content logging and no third-party AI.
 - Free with no login; starts on a CPU-only server.
 - Limits: 50 MB and 150 pages.
 - Progress display and a queue, one file per user at a time.
 - Thai UI first, English later.
+- The web page explains, with pictures, how a conversion works: each page read from its text layer or with OCR, how an untrustworthy text layer is caught, the Thai repair, placeholders, one document model for both outputs, and where the file goes and when it is deleted. Its examples are synthetic, never taken from real documents (added 2026-10-21).
 - The Docker container runs with no network and in-memory scratch space.
 - The GitHub repo becomes public before the web service launches (AGPL).
+
+The web-service grilling on 2026-10-21 settled the rest, including the sandbox (ADR 0004) and the public entry (ADR 0005). The web spec records it.
 
 **Delivery branches.** Tickets are grouped into branches. Each ticket is a commit on its branch, and each branch merges into `main` through a PR once all of its tickets are done.
 

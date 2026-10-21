@@ -31,3 +31,10 @@ It then checks the text-page gate, records the OCR baseline, and the user sets t
 
 **Afterwards**
 - [ ] Note what the web spec needs to settle next: hosting, and whether a GPU is needed for Accurate mode.
+
+## Comments
+
+**2026-10-21, from the web-service grilling**
+
+- The web service launches before this gate, once ticket 11 is done. The gate still measures the converter, but no longer decides whether it goes behind a web page.
+- Hosting is settled (ADR 0004, ADR 0005). Accurate mode is off on the web at launch, so the GPU question above waits until Accurate mode is brought to the web.
