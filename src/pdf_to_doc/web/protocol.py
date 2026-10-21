@@ -31,6 +31,8 @@ from pdf_to_doc.summary import PageSummary, Summary
 
 # The longest event line taken: a summary of 150 pages is about 18 KB.
 MAX_EVENT_LINE = 1024 * 1024
+# The most a sandbox's outputs may hold, all of them together.
+MAX_OUTPUTS = 50 * 1024 * 1024
 # A name the sandbox sends that the page shows, such as an OCR engine's, can hold no Thai
 # and no more than a name's length, so it cannot carry the document's text.
 _NAME = "^[A-Za-z][A-Za-z0-9 ._-]{0,39}$"

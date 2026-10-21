@@ -12,12 +12,21 @@ from pdf_to_doc.web.protocol import MAX_EVENT_LINE
 
 
 @dataclass(frozen=True)
+class Usage:
+    """What a sandbox used, as Docker's stats showed it while it ran."""
+
+    peak_memory: int  # bytes, at the most
+    cpu_time: float  # seconds, in all
+
+
+@dataclass(frozen=True)
 class Ended:
     """How a sandbox's conversion ended: its exit code, and everything it wrote to stdout."""
 
     exit_code: int
     stdout: bytes
-    timed_out: bool = False  # stopped by the time limit (ticket 09)
+    timed_out: bool = False  # stopped by the launcher's time limit
+    usage: Usage | None = None  # the launcher's, when Docker's stats said
 
 
 class Sandbox(Protocol):
@@ -30,7 +39,7 @@ class Sandbox(Protocol):
 
 class LocalSandbox:
     """The sandbox entry point in a process of its own, for development on a machine
-    without Docker. It isolates nothing: the launcher's containers do that (ticket 09)."""
+    without Docker. It isolates nothing: the launcher's containers do that."""
 
     async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
         process = await asyncio.create_subprocess_exec(

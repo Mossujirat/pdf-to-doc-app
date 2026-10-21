@@ -71,6 +71,7 @@ class Conversion:
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
+    failure: FailureEvent | None = None  # the sandbox's own word that it failed
     timed_out: bool = False  # failed because the sandbox was stopped by the time limit
     ended_at: float | None = None  # on the app's clock
 
@@ -221,7 +222,7 @@ class Conversions:
             self._end(conversion, outcome, outputs)
 
     def _apply(self, conversion: Conversion, event: Event) -> None:
-        if conversion.summary is not None or conversion.refusal is not None:
+        if conversion.summary is not None or conversion.refusal is not None or conversion.failure is not None:
             raise Malformed("an event after the conversion's last")
         match event:
             case OpenedEvent():
@@ -233,6 +234,7 @@ class Conversions:
             case RefusalEvent():
                 conversion.refusal = event
             case FailureEvent():
+                conversion.failure = event
                 _log.warning("conversion failed in the sandbox: %s", event.error)
 
     def _charge(self, conversion: Conversion, opened: OpenedEvent) -> None:

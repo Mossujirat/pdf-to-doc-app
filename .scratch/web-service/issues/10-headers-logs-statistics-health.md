@@ -47,3 +47,9 @@
 - [ ] A request with a wrong `Origin` is refused.
 - [ ] The logs of a full conversion, a refusal and a failure hold no fragment of the document, its file name, the client IP or the link. This reuses the privacy tests' fragment search.
 - [ ] After scripted conversions, the counters are right, and the public app does not serve the statistics.
+
+## Comments
+
+**2026-10-21, from ticket 09**
+- `Ended.usage` carries each sandbox's highest memory use and its CPU time, from the launcher. It is `None` when Docker's stats said nothing, as for a sandbox shorter than one sample.
+- The launcher logs only `started`, `stopped`, how many leftover sandboxes it removed, a failed conversion by error type, and stats it could not read, by error type. httpx's line for each request to Docker is turned off.

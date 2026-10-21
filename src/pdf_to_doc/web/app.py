@@ -31,8 +31,9 @@ from pdf_to_doc.web.allowance import Allowance, WallClock
 from pdf_to_doc.web.bot_check import TOKEN_FIELD, BotCheck
 from pdf_to_doc.web.client_ip import ClientIp
 from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
+from pdf_to_doc.web.launcher import LauncherSandbox
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
-from pdf_to_doc.web.settings import Settings
+from pdf_to_doc.web.settings import Misconfigured, Settings, from_environment
 from pdf_to_doc.web.upload import NotAnUpload, UploadTooLarge, read_upload
 
 COOKIE = "browser"
@@ -48,6 +49,8 @@ _MEDIA_TYPES: dict[OutputFormat, str] = {
     "markdown": "text/markdown; charset=utf-8",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+# `pdf-to-doc-web --dev`, on a developer's machine.
+_DEVELOPMENT = Settings(sandbox="local", secure_cookies=False, bot_check_test_mode=True)
 
 
 def create_app(
@@ -59,10 +62,15 @@ def create_app(
 ) -> FastAPI:
     """The web app, converting in `sandbox`. `clock` times how long outputs are kept, `wall_clock`
     tells the day for the allowance, and `cloudflare` stands in for Cloudflare in tests. Raises
-    `Misconfigured` for a public service whose bot check would not really check, or that cannot
-    tell its clients apart, so that it never starts."""
+    `Misconfigured` for a public service whose bot check would not really check, that cannot tell
+    its clients apart, that would convert outside the launcher's sandboxes, or whose cookie would
+    not be Secure, so that it never starts."""
     bot_check = BotCheck.from_settings(settings, cloudflare)
     client_ip = ClientIp.from_settings(settings)
+    if settings.production and settings.sandbox != "launcher":
+        raise Misconfigured("the public service converts only in the launcher's sandboxes")
+    if settings.production and not settings.secure_cookies:
+        raise Misconfigured("the public service's cookie must be Secure")
     conversions = Conversions(
         sandbox,
         Allowance(settings.pages_per_day, wall_clock),
@@ -159,19 +167,31 @@ def create_app(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Serve the web app for local development: conversions run in subprocesses, the cookie is
-    not Secure, so that it works over plain HTTP, and the bot check uses Cloudflare's test keys."""
+    """Serve the web app with its settings from the environment, as its container does. With
+    `--dev`, for local development, it ignores them: conversions run in subprocesses, the cookie
+    is not Secure, so that it works over plain HTTP, and the bot check uses Cloudflare's test keys."""
     parser = argparse.ArgumentParser(
         prog="pdf-to-doc-web",
-        description="เปิดเว็บแปลงไฟล์บนเครื่องนี้ สำหรับพัฒนา: แต่ละการแปลงรันใน process ของตัวเอง โดยไม่มี sandbox",
+        description="เปิดเว็บแปลงไฟล์ ตามค่าที่ตั้งไว้ใน environment (PDF_TO_DOC_...)",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="สำหรับพัฒนาบนเครื่องนี้: แต่ละการแปลงรันใน process ของตัวเองโดยไม่มี sandbox, "
+        "cookie ใช้ได้กับ http และ bot check ใช้ test key ของ Cloudflare",
     )
     parser.add_argument("--host", default="127.0.0.1", help="ที่อยู่ที่รับการเชื่อมต่อ (ค่าเริ่มต้น: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="พอร์ต (ค่าเริ่มต้น: 8000)")
     args = parser.parse_args(argv)
-    # The access log would record visitors' IP addresses and conversion links.
-    app = create_app(LocalSandbox(), Settings(secure_cookies=False, bot_check_test_mode=True))
-    # The app reads the client's address itself, from the trusted proxy alone: uvicorn would
-    # otherwise take X-Forwarded-For from any local connection.
+    try:
+        settings = _DEVELOPMENT if args.dev else from_environment(Settings)
+        sandbox: Sandbox = LocalSandbox() if settings.sandbox == "local" else LauncherSandbox.at()
+        app = create_app(sandbox, settings)
+    except (Misconfigured, NotImplementedError) as error:
+        parser.exit(1, f"{parser.prog}: {error}\n")
+    # The access log would record visitors' IP addresses and conversion links. The app reads the
+    # client's address itself, from the trusted proxy alone: uvicorn would otherwise take
+    # X-Forwarded-For from any local connection.
     uvicorn.run(app, host=args.host, port=args.port, access_log=False, proxy_headers=False)
     return 0
 
