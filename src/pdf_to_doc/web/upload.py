@@ -1,4 +1,5 @@
-"""Reading an upload: the one file in a multipart form, held in memory and never written to disk.
+"""Reading an upload: the file in a multipart form, with the form's other fields, held in memory
+and never written to disk.
 
 An upload is refused as soon as it passes the size limit: from its Content-Length when
 it says one, otherwise while it is being read.
@@ -14,7 +15,7 @@ from pdf_to_doc.intake import MAX_BYTES
 
 # Room for the form's own framing around a file of the largest size taken.
 _FRAMING = 64 * 1024
-_FIELD = b"file"
+_FILE_FIELD = "file"
 
 
 class UploadTooLarge(Exception):
@@ -29,6 +30,7 @@ class NotAnUpload(Exception):
 class Upload:
     source: bytes
     file_name: str  # as the browser named it
+    fields: dict[str, str]  # the form's other fields, such as the bot check's token
 
 
 @dataclass
@@ -47,14 +49,23 @@ async def read_upload(request: Request) -> Upload:
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > MAX_BYTES + _FRAMING:
         raise UploadTooLarge()
-    parts = await _read_parts(request, options[b"boundary"])
-    for part in parts:
+    source: bytes | None = None
+    file_name = ""
+    fields: dict[str, str] = {}
+    for part in await _read_parts(request, options[b"boundary"]):
         disposition, details = parse_options_header(part.headers.get(b"content-disposition"))
-        if disposition == b"form-data" and details.get(b"name") == _FIELD and b"filename" in details:
+        if disposition != b"form-data" or b"name" not in details:
+            continue
+        name = details[b"name"].decode("utf-8", errors="replace")
+        if name != _FILE_FIELD or b"filename" not in details:
+            fields[name] = part.data.decode("utf-8", errors="replace")
+        elif source is None:  # the form has one file; any other is ignored
             if len(part.data) > MAX_BYTES:
                 raise UploadTooLarge()
-            return Upload(bytes(part.data), details[b"filename"].decode("utf-8", errors="replace"))
-    raise NotAnUpload()
+            source, file_name = bytes(part.data), details[b"filename"].decode("utf-8", errors="replace")
+    if source is None:
+        raise NotAnUpload()
+    return Upload(source, file_name, fields)
 
 
 async def _read_parts(request: Request, boundary: bytes) -> list[_Part]:

@@ -45,6 +45,36 @@ if (copy) {
 
 // A file dropped anywhere on the form is sent, as one picked with the button is.
 const form = document.getElementById("upload");
+
+// The bot check puts its token in the form a moment after the page loads. A file sent sooner
+// waits for it, for up to 15 seconds, rather than being refused for want of it. A token is good
+// for one upload only, so a page the browser shows again from its history gets a fresh one.
+if (form && form.querySelector(".cf-turnstile")) {
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted && window.turnstile) {
+      window.turnstile.reset();
+      delete form.dataset.waited;
+    }
+  });
+  const token = () => form.querySelector('[name="cf-turnstile-response"]')?.value;
+  form.addEventListener("submit", (event) => {
+    if (token() || form.dataset.waited) {
+      return;
+    }
+    event.preventDefault();
+    const started = Date.now();
+    const wait = () => {
+      if (token() || Date.now() - started > 15000) {
+        form.dataset.waited = "yes";
+        form.requestSubmit();
+      } else {
+        setTimeout(wait, 200);
+      }
+    };
+    wait();
+  });
+}
+
 if (form) {
   const input = form.querySelector("input[type=file]");
   form.addEventListener("dragover", (event) => event.preventDefault());

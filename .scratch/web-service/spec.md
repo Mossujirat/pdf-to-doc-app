@@ -402,7 +402,7 @@ A section of the home page that explains a conversion with pictures, in plain Th
 - Staging's smoke test passes, including on `gmt`'s speed.
 - On production, before the link is shared:
   - the forged-header check passes through Funnel
-  - Turnstile's hostname list holds `pdf.taila2e363.ts.net`
+  - Turnstile's hostname list holds `pdf.taila2e363.ts.net`, and its widget mode is "Invisible"
   - the tailnet policy is in place
 - The privacy page and the "how it works" section are reviewed.
 

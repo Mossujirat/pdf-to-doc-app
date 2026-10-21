@@ -13,6 +13,7 @@ from web_browser import (
     browser,
     browser_token,
     cancel,
+    send,
     title,
     upload,
     wait_for_state,
@@ -80,9 +81,7 @@ def test_a_fourth_conversion_waits_in_first_place_until_a_place_frees(client: Te
 def test_the_24th_upload_is_refused_as_queue_full_and_not_kept(client: TestClient, held: HeldSandbox) -> None:
     sent = send_from_new_browsers(client, 23)  # 3 converting and 20 waiting
 
-    response = as_browser(client, browser_token()).post(
-        "/conversions", files={"file": ("ไฟล์.pdf", source(24))}, follow_redirects=False
-    )
+    response = send(as_browser(client, browser_token()), source(24))
 
     assert response.status_code == 503
     assert "คิวเต็ม" in response.text
@@ -104,7 +103,7 @@ def test_a_browser_converts_one_file_at_a_time_and_others_are_not_held_up(
     mine, theirs = browser_token(), browser_token()
     link = upload(as_browser(client, mine), source(1))
 
-    second = as_browser(client, mine).post("/conversions", files={"file": ("ไฟล์.pdf", source(2))}, follow_redirects=False)
+    second = send(as_browser(client, mine), source(2))
 
     assert second.status_code == 409
     assert "มีไฟล์ที่กำลังแปลงอยู่แล้ว" in second.text

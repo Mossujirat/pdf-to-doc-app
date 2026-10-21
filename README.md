@@ -60,7 +60,7 @@ uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpu
 uv run pdf-to-doc-web                    # the web service at http://127.0.0.1:8000
 ```
 
-The web service is in development (see `.scratch/web-service/`). `pdf-to-doc-web` serves it for development only: each conversion runs in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP.
+The web service is in development (see `.scratch/web-service/`). `pdf-to-doc-web` serves it for development only: each conversion runs in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP. Its bot check, Cloudflare Turnstile, runs with Cloudflare's test keys, so it needs the internet.
 
 CI (`.github/workflows/ci.yml`) builds the Docker image for every pull request and every push to `main`. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
 

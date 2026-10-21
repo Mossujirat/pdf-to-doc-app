@@ -10,6 +10,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "fastapi==0.142.4",
+    "httpx==0.28.1",
     "numpy==2.3.5",
     "paddleocr==3.7.0",
     "paddlepaddle==3.2.2",
@@ -35,7 +36,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "httpx==0.28.1",
+    "httpx2==2.14.0",
     "mypy==2.4.0",
     "pytest==9.1.1",
 ]

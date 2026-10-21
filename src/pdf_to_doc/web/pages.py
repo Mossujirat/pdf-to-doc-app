@@ -5,6 +5,7 @@ from html import escape
 
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
 from pdf_to_doc.refusals import refusal_message, too_large_unmeasured
+from pdf_to_doc.web.bot_check import ACTION, SCRIPT
 from pdf_to_doc.web.conversions import Conversion
 from pdf_to_doc.web.protocol import RefusalEvent
 
@@ -12,15 +13,21 @@ _MB = 1024 * 1024
 _NAME = "pdf-to-doc"
 
 
-def home() -> str:
+def home(bot_check_site_key: str | None) -> str:
+    """The upload form, with the bot check's widget, whose token goes with the file. Without a
+    site key there is no widget, and every upload is refused."""
+    widget = script = ""
+    if bot_check_site_key is not None:
+        widget = f'\n<div class="cf-turnstile" data-sitekey="{escape(bot_check_site_key)}" data-action="{ACTION}"></div>'
+        script = f'\n<script src="{SCRIPT}" async defer></script>'
     return _page(
         _NAME,
         f"""<h1>แปลง PDF หรือ DOCX เป็นข้อความ</h1>
-<form id="upload" method="post" action="/conversions" enctype="multipart/form-data">
+<form id="upload" method="post" action="/conversions" enctype="multipart/form-data">{widget}
 <input type="file" name="file" accept=".pdf,.docx" required>
 <button type="submit">แปลงไฟล์</button>
 </form>
-<p>PDF หรือ DOCX ไม่เกิน {MAX_BYTES // _MB} MB และไม่เกิน {MAX_PAGES} หน้า</p>""",
+<p>PDF หรือ DOCX ไม่เกิน {MAX_BYTES // _MB} MB และไม่เกิน {MAX_PAGES} หน้า</p>{script}""",
     )
 
 
@@ -119,6 +126,15 @@ def too_large() -> str:
 
 def not_an_upload() -> str:
     return _page(_NAME, '<h1>ไม่ได้รับไฟล์</h1>\n<p><a href="/">กลับไปเลือกไฟล์</a></p>')
+
+
+def bot_check_failed() -> str:
+    return _page(
+        _NAME,
+        "<h1>ส่งไฟล์ไม่สำเร็จ</h1>\n"
+        "<p>ตรวจสอบไม่ได้ว่าไฟล์นี้ส่งมาจากผู้ใช้จริง กรุณากลับไปหน้าแรก รอสักครู่แล้วส่งไฟล์อีกครั้ง</p>\n"
+        '<p><a href="/">กลับไปหน้าแรก</a></p>',
+    )
 
 
 def queue_full() -> str:

@@ -7,6 +7,7 @@ all async, so that they read a conversion on the event loop that changes it.
 
 import argparse
 import asyncio
+import logging
 import secrets
 import string
 import sys
@@ -17,6 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import get_args
 from urllib.parse import quote
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -24,12 +26,14 @@ from fastapi.staticfiles import StaticFiles
 
 from pdf_to_doc.conversion import SUFFIXES, OutputFormat
 from pdf_to_doc.web import pages
+from pdf_to_doc.web.bot_check import TOKEN_FIELD, BotCheck
 from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Settings
 from pdf_to_doc.web.upload import NotAnUpload, UploadTooLarge, read_upload
 
 COOKIE = "browser"
+_log = logging.getLogger(__name__)
 _DAY = 24 * 60 * 60
 _TOKEN_BYTES = 32
 _TOKEN_LENGTH = len(secrets.token_urlsafe(_TOKEN_BYTES))
@@ -43,8 +47,16 @@ _MEDIA_TYPES: dict[OutputFormat, str] = {
 }
 
 
-def create_app(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock = time.monotonic) -> FastAPI:
-    """The web app, converting in `sandbox`. `clock` times how long outputs are kept."""
+def create_app(
+    sandbox: Sandbox,
+    settings: Settings = Settings(),
+    clock: Clock = time.monotonic,
+    cloudflare: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
+    """The web app, converting in `sandbox`. `clock` times how long outputs are kept, and
+    `cloudflare` stands in for Cloudflare in tests. Raises `Misconfigured` for a public
+    service whose bot check would not really check, so that it never starts."""
+    bot_check = BotCheck.from_settings(settings, cloudflare)
     conversions = Conversions(
         sandbox,
         max_running=settings.max_running,
@@ -76,7 +88,7 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock =
 
     @app.get("/")
     async def home() -> HTMLResponse:
-        return HTMLResponse(pages.home())
+        return HTMLResponse(pages.home(bot_check.site_key))
 
     @app.post("/conversions")
     async def start(request: Request) -> Response:
@@ -86,6 +98,10 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock =
             return HTMLResponse(pages.too_large(), status_code=413)
         except NotAnUpload:
             return HTMLResponse(pages.not_an_upload(), status_code=400)
+        verdict = await bot_check.check(upload.fields.get(TOKEN_FIELD))
+        if verdict != "passed":
+            _log.info("upload refused by the bot check: %s", verdict)
+            return HTMLResponse(pages.bot_check_failed(), status_code=403)
         token = _token(request.cookies.get(COOKIE))
         try:
             identifier = conversions.start(upload.source, upload.file_name, token)
@@ -136,8 +152,8 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock =
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Serve the web app for local development: conversions run in subprocesses, and the cookie
-    is not Secure, so that it works over plain HTTP."""
+    """Serve the web app for local development: conversions run in subprocesses, the cookie is
+    not Secure, so that it works over plain HTTP, and the bot check uses Cloudflare's test keys."""
     parser = argparse.ArgumentParser(
         prog="pdf-to-doc-web",
         description="เปิดเว็บแปลงไฟล์บนเครื่องนี้ สำหรับพัฒนา: แต่ละการแปลงรันใน process ของตัวเอง โดยไม่มี sandbox",
@@ -146,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8000, help="พอร์ต (ค่าเริ่มต้น: 8000)")
     args = parser.parse_args(argv)
     # The access log would record visitors' IP addresses and conversion links.
-    app = create_app(LocalSandbox(), Settings(secure_cookies=False))
+    app = create_app(LocalSandbox(), Settings(secure_cookies=False, bot_check_test_mode=True))
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
     return 0
 

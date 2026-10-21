@@ -4,6 +4,7 @@ downloads out. A fake sandbox runs the real conversion function with a fake OCR 
 import asyncio
 import threading
 from collections.abc import Iterator, MutableMapping
+from dataclasses import replace
 from typing import Any
 from urllib.parse import unquote
 
@@ -15,13 +16,12 @@ from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
 from pdf_builder import Scan, grown_to, pdf
 from scripted_sandbox import ScriptedSandbox
-from web_browser import browser, ended_state, upload, wait_for_state
+from web_browser import SETTINGS, browser, ended_state, send, upload, wait_for_state
 from word_builder import Image, PageBreak, document, legacy_doc
 
 from pdf_to_doc.ocr import Language, PageImage, TextBox
 from pdf_to_doc.web.app import create_app
 from pdf_to_doc.web.sandboxes import Ended, LocalSandbox
-from pdf_to_doc.web.settings import Settings
 
 SCANS = [["หน้าสแกนแรก"], ["หน้าสแกนที่สอง"]]
 PAGES = ["หน้าที่มีข้อความ", "หน้าสแกนแรก", "หน้าสแกนที่สอง"]
@@ -190,8 +190,8 @@ def test_an_unknown_link_is_not_found(client: TestClient) -> None:
 
 @pytest.mark.parametrize("secure", [True, False], ids=["production", "local development"])
 def test_the_browser_token_is_a_strict_http_only_cookie_for_a_day(secure: bool) -> None:
-    with browser(FakeSandbox(), Settings(secure_cookies=secure)) as client:
-        response = client.post("/conversions", files={"file": ("a.pdf", pdf(["หน้าแรก"]))}, follow_redirects=False)
+    with browser(FakeSandbox(), replace(SETTINGS, secure_cookies=secure)) as client:
+        response = send(client, pdf(["หน้าแรก"]))
 
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie
@@ -203,7 +203,7 @@ def test_the_browser_token_is_a_strict_http_only_cookie_for_a_day(secure: bool) 
 def test_a_token_the_service_did_not_make_is_replaced(client: TestClient) -> None:
     client.cookies.set("browser", "guessed")
 
-    response = client.post("/conversions", files={"file": ("a.pdf", pdf(["หน้าแรก"]))}, follow_redirects=False)
+    response = send(client, pdf(["หน้าแรก"]))
 
     token = response.headers["set-cookie"].split(";")[0].removeprefix("browser=")
     assert token != "guessed"

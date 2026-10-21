@@ -5,17 +5,31 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+import httpx2  # the test client's HTTP library
+from fake_cloudflare import HOSTNAME, TOKEN, passing
 from fastapi.testclient import TestClient
 
 from pdf_to_doc.web.app import COOKIE, create_app
+from pdf_to_doc.web.bot_check import TOKEN_FIELD
 from pdf_to_doc.web.conversions import Clock
 from pdf_to_doc.web.sandboxes import Sandbox
 from pdf_to_doc.web.settings import Settings
 
+# The service as the tests run it: with its bot check's keys, for this test site.
+SETTINGS = Settings(turnstile_site_key="site-key", turnstile_secret_key="secret-key", hostname=HOSTNAME)
 
-def browser(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock = time.monotonic) -> TestClient:
-    """A browser on the service, over HTTPS as in production."""
-    return TestClient(create_app(sandbox, settings, clock), base_url="https://testserver")
+
+def browser(
+    sandbox: Sandbox,
+    settings: Settings = SETTINGS,
+    clock: Clock = time.monotonic,
+    cloudflare: httpx.AsyncBaseTransport | None = None,
+) -> TestClient:
+    """A browser on the service, over HTTPS as in production. Cloudflare passes every bot check,
+    unless `cloudflare` stands in for it otherwise."""
+    app = create_app(sandbox, settings, clock, cloudflare=cloudflare or passing())
+    return TestClient(app, base_url="https://testserver")
 
 
 def browser_token() -> str:
@@ -31,9 +45,16 @@ def as_browser(client: TestClient, token: str) -> TestClient:
     return client
 
 
+def send(client: TestClient, source: bytes, name: str = "สัญญา.pdf") -> httpx2.Response:
+    """Send a file from the home page's form, with the token its bot check put there."""
+    return client.post(
+        "/conversions", data={TOKEN_FIELD: TOKEN}, files={"file": (name, source)}, follow_redirects=False
+    )
+
+
 def upload(client: TestClient, source: bytes, name: str = "สัญญา.pdf") -> str:
     """Send a file from the home page's form, and return the conversion's link."""
-    response = client.post("/conversions", files={"file": (name, source)}, follow_redirects=False)
+    response = send(client, source, name)
     assert response.status_code == 303, response.text
     return str(response.headers["location"])
 
