@@ -6,6 +6,8 @@ from typing import Literal
 
 from pdf_to_doc.intake import SourceType
 
+Stage = Literal["reading", "ocr", "writing"]
+
 
 @dataclass(frozen=True)
 class Opened:
@@ -20,7 +22,7 @@ class Progress:
     """A stage the conversion has reached. In the "ocr" stage, the `current` of `total` OCR pages,
     counting from 1, is about to be read; the other stages have no count."""
 
-    stage: Literal["reading", "ocr", "writing"]
+    stage: Stage
     current: int | None = None
     total: int | None = None
 

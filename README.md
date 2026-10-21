@@ -2,7 +2,7 @@
 
 Converts PDF files into Markdown or DOCX, and DOCX files into Markdown, whose Thai and English text reads exactly as the original: no floating or missing vowels and tone marks, no spaces inside words, no sentences cut at every printed line. The Markdown is meant to be pasted into AI chats, the DOCX to be edited in Word.
 
-Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode and the web service are planned (see `.scratch/converter-engine/`).
+Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode is planned (see `.scratch/converter-engine/`), and the web service is being built (see `.scratch/web-service/`).
 
 ## Usage
 
@@ -57,7 +57,10 @@ uv run pytest                            # fast tests (a fake OCR engine stands 
 uv run pytest -m ocr                     # real PaddleOCR on the corpus scans
 uv run mypy                              # type checking
 uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
+uv run pdf-to-doc-web                    # the web service at http://127.0.0.1:8000
 ```
+
+The web service is in development (see `.scratch/web-service/`). `pdf-to-doc-web` serves it for development only: each conversion runs in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP.
 
 CI (`.github/workflows/ci.yml`) builds the Docker image for every pull request and every push to `main`. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
 

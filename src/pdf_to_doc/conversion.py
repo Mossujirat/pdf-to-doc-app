@@ -16,6 +16,8 @@ from pdf_to_doc.reading import read_pdf
 from pdf_to_doc.summary import Summary, summarize
 
 OutputFormat = Literal["markdown", "docx"]
+# The file name extension of each output.
+SUFFIXES: dict[OutputFormat, str] = {"markdown": ".md", "docx": ".docx"}
 
 
 class DocxToDocx(IntakeError):

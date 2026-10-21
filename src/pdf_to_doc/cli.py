@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import get_args
 
 from pdf_to_doc.console import thai_safe_output
-from pdf_to_doc.conversion import DocxToDocx, OutputFormat, convert
+from pdf_to_doc.conversion import SUFFIXES, DocxToDocx, OutputFormat, convert
 from pdf_to_doc.exit_codes import (
     EXIT_COPY_RESTRICTED,
     EXIT_DAMAGED_FILE,
@@ -36,7 +36,6 @@ from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.progress import Opened, Progress
 
 _MB = 1024 * 1024
-_SUFFIXES: dict[OutputFormat, str] = {"markdown": ".md", "docx": ".docx"}
 _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
 
 _EXIT_CODES = f"""\
@@ -75,7 +74,7 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     thai_safe_output()
 
     output_format: OutputFormat = args.to or _format_named_by(args.output)
-    output_path: Path = args.output or args.source.with_suffix(_SUFFIXES[output_format])
+    output_path: Path = args.output or args.source.with_suffix(SUFFIXES[output_format])
     try:
         source = args.source.read_bytes()
     except OSError as error:
@@ -100,7 +99,7 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
 def _format_named_by(output: Path | None) -> OutputFormat:
     """The format an output file's name asks for, so a .docx file never gets Markdown by default."""
     suffix = output.suffix.lower() if output else ""
-    return next((name for name, known in _SUFFIXES.items() if known == suffix), "markdown")
+    return next((name for name, known in SUFFIXES.items() if known == suffix), "markdown")
 
 
 def _show_progress(update: Opened | Progress) -> None:

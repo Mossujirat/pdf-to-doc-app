@@ -10,12 +10,12 @@ from typing import Any
 import docx_reader
 import markdown_reader
 import pytest
-from fake_ocr import FakeEngine
+from fake_ocr import FailingEngine, FakeEngine
 from pdf_builder import Scan, pdf, protected
 from sandbox_reader import events, parts
 from word_builder import Image, PageBreak, document, legacy_doc
 
-from pdf_to_doc.ocr import Language, OcrEngine, PageImage, TextBox
+from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.sandbox import run
 
 SCANS = [["หน้าสแกนแรก"], ["หน้าสแกนที่สอง"]]
@@ -132,17 +132,8 @@ def test_a_refusal_is_one_event_with_its_exit_code_and_no_parts(
 # Failures
 
 
-class FailingEngine:
-    """Fails on the first page, with a message that quotes the document, as a library's error might."""
-
-    name = "failing"
-
-    def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:
-        raise RuntimeError(f"cannot read {SCANS[0][0]}")
-
-
 def test_an_unexpected_error_is_named_by_its_type_alone() -> None:
-    ran = sandbox(mixed_pdf(), FailingEngine())
+    ran = sandbox(mixed_pdf(), FailingEngine(f"cannot read {SCANS[0][0]}"))
 
     # Not Python's 1, so a failure it reported is told apart from a crash it could not.
     assert ran.exit_code == 10
