@@ -23,6 +23,10 @@ from pdf_to_doc.ocr_models import DETECTOR, THAI_RECOGNISER, model_path, models_
 _DETECTOR_LONGEST_SIDE = 1280
 # Only boxes at least this many times as wide as tall show the slant of the text.
 _SLANT_SHOWING_RATIO = 3
+# How many CPU threads OCR uses, when this environment variable is set. PaddleOCR
+# otherwise starts 10, whatever the CPUs, and under a 4-CPU limit that read a page
+# almost three times slower (ADR 0004); the sandbox sets it to its CPU limit.
+THREADS_VARIABLE = "PDF_TO_DOC_OCR_THREADS"
 
 
 def default_engine() -> OcrEngine:
@@ -34,14 +38,16 @@ def default_engine() -> OcrEngine:
     document. Loading again takes under a second; importing Paddle, the slow
     part, happens once per process.
     """
-    return PaddleOcrEngine(models_folder())
+    threads = os.environ.get(THREADS_VARIABLE)
+    return PaddleOcrEngine(models_folder(), threads=int(threads) if threads else None)
 
 
 class PaddleOcrEngine:
     name = "PaddleOCR"
 
-    def __init__(self, models: Path) -> None:
-        """Load the models from the models folder; raises ModelsMissing if they are not there."""
+    def __init__(self, models: Path, *, threads: int | None = None) -> None:
+        """Load the models from the models folder; raises ModelsMissing if they are not there.
+        `threads` is how many CPU threads to use, or None for PaddleOCR's default."""
         detector, recogniser = model_path(models, DETECTOR), model_path(models, THAI_RECOGNISER)
         # Never look for the models online, and keep Paddle's own log lines out of the output.
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
@@ -63,6 +69,7 @@ class PaddleOcrEngine:
             text_det_limit_type="max",
             text_det_limit_side_len=_DETECTOR_LONGEST_SIDE,
             device="cpu",
+            **({} if threads is None else {"cpu_threads": threads}),
         )
 
     def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:

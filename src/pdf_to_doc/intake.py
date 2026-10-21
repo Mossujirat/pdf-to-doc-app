@@ -17,6 +17,9 @@ import pymupdf
 from pymupdf.mupdf import PDF_PERM_COPY
 
 SourceType = Literal["pdf", "docx"]
+# A type recognised and not converted: legacy Word, or an Office file locked with a password.
+Unconverted = Literal["doc", "locked office"]
+SizeUnit = Literal["bytes", "pages", "unpacked bytes"]
 
 MAX_BYTES = 50 * 1024 * 1024
 MAX_PAGES = 150
@@ -47,7 +50,7 @@ class UnsupportedFormat(IntakeError):
     None for anything else.
     """
 
-    def __init__(self, found: Literal["doc", "locked office"] | None) -> None:
+    def __init__(self, found: Unconverted | None) -> None:
         super().__init__(f"unsupported source type: {found or 'unknown'}")
         self.found = found
 
@@ -56,7 +59,7 @@ class TooLarge(IntakeError):
     """The source is over a limit: `size` is its size in `unit`, and `limit` the most allowed.
     A DOCX's "unpacked bytes" are what its zip archive holds once unpacked."""
 
-    def __init__(self, unit: Literal["bytes", "pages", "unpacked bytes"], size: int, limit: int) -> None:
+    def __init__(self, unit: SizeUnit, size: int, limit: int) -> None:
         super().__init__(f"{size} {unit}, over the limit of {limit}")
         self.unit = unit
         self.size = size

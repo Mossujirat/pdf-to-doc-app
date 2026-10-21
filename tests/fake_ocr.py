@@ -59,3 +59,15 @@ class BlankEngine:
 
     def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:
         return ()
+
+
+class FailingEngine:
+    """Fails on the first page with the given message, which can quote the document, as a library's error might."""
+
+    name = "failing"
+
+    def __init__(self, message: str = "the engine broke") -> None:
+        self.message = message
+
+    def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:
+        raise RuntimeError(self.message)

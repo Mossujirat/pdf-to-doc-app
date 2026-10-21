@@ -2,7 +2,7 @@
 
 Converts PDF files into Markdown or DOCX, and DOCX files into Markdown, whose Thai and English text reads exactly as the original: no floating or missing vowels and tone marks, no spaces inside words, no sentences cut at every printed line. The Markdown is meant to be pasted into AI chats, the DOCX to be edited in Word.
 
-Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode and the web service are planned (see `.scratch/converter-engine/`).
+Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode is planned (see `.scratch/converter-engine/`), and the web service is being built (see `.scratch/web-service/`).
 
 ## Usage
 
@@ -42,6 +42,14 @@ docker run --rm --network none -v "$PWD:/work" pdf-to-doc pdf-to-doc /work/docum
 
 The container runs as a non-root user. On a Linux host, add `--user "$(id -u):$(id -g)"` so it can write to your folder and the output belongs to you. It can also run with a read-only file system: add `--read-only --tmpfs /tmp`.
 
+OCR starts 10 CPU threads, whatever the CPUs. When you limit the container's CPUs, set `PDF_TO_DOC_OCR_THREADS` to the same number, or OCR runs several times slower: add `--cpus 4 -e PDF_TO_DOC_OCR_THREADS=4`.
+
+The image also holds `pdf-to-doc-sandbox`, which the web service runs in a throwaway container for each conversion. It takes the source file's bytes on stdin and no other input, writes both outputs to stdout, each after a line with its format and length in bytes, and reports progress on stderr as one JSON object per line:
+
+```sh
+docker run --rm -i --network none --read-only --tmpfs /tmp pdf-to-doc pdf-to-doc-sandbox < document.pdf > parts
+```
+
 ## Development
 
 ```sh
@@ -49,7 +57,10 @@ uv run pytest                            # fast tests (a fake OCR engine stands 
 uv run pytest -m ocr                     # real PaddleOCR on the corpus scans
 uv run mypy                              # type checking
 uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
+uv run pdf-to-doc-web                    # the web service at http://127.0.0.1:8000
 ```
+
+The web service is in development (see `.scratch/web-service/`). `pdf-to-doc-web` serves it for development only: each conversion runs in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP. Its bot check, Cloudflare Turnstile, runs with Cloudflare's test keys, so it needs the internet.
 
 CI (`.github/workflows/ci.yml`) builds the Docker image for every pull request and every push to `main`. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
 

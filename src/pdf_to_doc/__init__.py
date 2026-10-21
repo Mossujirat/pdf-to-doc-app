@@ -12,7 +12,7 @@ from pdf_to_doc.intake import (
 )
 from pdf_to_doc.ocr import Language, OcrEngine, PageImage, TextBox
 from pdf_to_doc.ocr_models import ModelsMissing
-from pdf_to_doc.reading import Progress, ProgressCallback
+from pdf_to_doc.progress import Opened, Progress, ProgressCallback
 from pdf_to_doc.summary import PageSummary, Summary
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "Language",
     "ModelsMissing",
     "OcrEngine",
+    "Opened",
     "PageImage",
     "PageSummary",
     "PasswordRequired",

@@ -1,41 +1,30 @@
 """Command-line wrapper around the conversion function."""
 
 import argparse
-import math
 import sys
 from pathlib import Path
 from typing import get_args
 
 from pdf_to_doc.console import thai_safe_output
-from pdf_to_doc.conversion import DocxToDocx, OutputFormat, convert
-from pdf_to_doc.intake import (
-    MAX_BYTES,
-    MAX_PAGES,
-    MAX_UNPACKED_BYTES,
-    CopyRestricted,
-    DamagedFile,
-    IntakeError,
-    PasswordRequired,
-    TooLarge,
-    UnsupportedFormat,
-    WrongPassword,
+from pdf_to_doc.conversion import SUFFIXES, DocxToDocx, OutputFormat, convert
+from pdf_to_doc.exit_codes import (
+    EXIT_COPY_RESTRICTED,
+    EXIT_DAMAGED_FILE,
+    EXIT_MODELS_MISSING,
+    EXIT_OK,
+    EXIT_PASSWORD_REQUIRED,
+    EXIT_TOO_LARGE,
+    EXIT_UNSUPPORTED_FORMAT,
+    EXIT_WRONG_PASSWORD,
+    REFUSAL_EXIT_CODES,
 )
+from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, MAX_UNPACKED_BYTES, IntakeError, PasswordRequired
 from pdf_to_doc.ocr_models import ModelsMissing
 from pdf_to_doc.ocr import OcrEngine
-from pdf_to_doc.reading import Progress
-
-EXIT_OK = 0
-# Exit code 1 is Python's for a crash, and 2 is argparse's for bad arguments.
-EXIT_UNSUPPORTED_FORMAT = 3
-EXIT_TOO_LARGE = 4
-EXIT_PASSWORD_REQUIRED = 5
-EXIT_WRONG_PASSWORD = 6
-EXIT_COPY_RESTRICTED = 7
-EXIT_DAMAGED_FILE = 8
-EXIT_MODELS_MISSING = 9
+from pdf_to_doc.progress import Opened, Progress
+from pdf_to_doc.refusals import refusal_message
 
 _MB = 1024 * 1024
-_SUFFIXES: dict[OutputFormat, str] = {"markdown": ".md", "docx": ".docx"}
 _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
 
 _EXIT_CODES = f"""\
@@ -74,7 +63,7 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     thai_safe_output()
 
     output_format: OutputFormat = args.to or _format_named_by(args.output)
-    output_path: Path = args.output or args.source.with_suffix(_SUFFIXES[output_format])
+    output_path: Path = args.output or args.source.with_suffix(SUFFIXES[output_format])
     try:
         source = args.source.read_bytes()
     except OSError as error:
@@ -82,9 +71,8 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     try:
         result = convert(source, to=output_format, password=args.password, ocr=ocr, progress=_show_progress)
     except IntakeError as error:
-        exit_code, message = _refusal(error)
-        print(f"{args.source}: {message}", file=sys.stderr)
-        return exit_code
+        print(f"{args.source}: {_refusal(error)}", file=sys.stderr)
+        return REFUSAL_EXIT_CODES[type(error)]
     except ModelsMissing as error:
         print(
             f"ยังไม่ได้ติดตั้ง model สำหรับ OCR ที่ {error.folder} กรุณาสั่ง pdf-to-doc-models ก่อน",
@@ -100,58 +88,29 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
 def _format_named_by(output: Path | None) -> OutputFormat:
     """The format an output file's name asks for, so a .docx file never gets Markdown by default."""
     suffix = output.suffix.lower() if output else ""
-    return next((name for name, known in _SUFFIXES.items() if known == suffix), "markdown")
+    return next((name for name, known in SUFFIXES.items() if known == suffix), "markdown")
 
 
-def _show_progress(update: Progress) -> None:
-    """One line per page; on a terminal, each page overwrites the last."""
-    overwrite = sys.stderr.isatty() and update.current < update.total
-    line = f"OCR หน้า {update.current}/{update.total}"
-    print(line, end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
+def _show_progress(update: Opened | Progress) -> None:
+    """One line per OCR page; on a terminal, each page overwrites the last. Other reports pass unseen."""
+    match update:
+        case Progress(stage="ocr", current=int(current), total=int(total)):
+            overwrite = sys.stderr.isatty() and current < total
+            print(f"OCR หน้า {current}/{total}", end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
 
 
-def _refusal(error: IntakeError) -> tuple[int, str]:
-    """The exit code and the Thai message for a source file that was refused."""
+def _refusal(error: IntakeError) -> str:
+    """The Thai message for a source file that was refused: the shared one, or the command
+    line's own where the advice is about its options."""
     match error:
-        case UnsupportedFormat(found="doc"):
-            return EXIT_UNSUPPORTED_FORMAT, (
-                "ไฟล์นี้เป็น Word รุ่นเก่า (.doc) ซึ่งแปลงไม่ได้ กรุณาเปิดใน Word แล้วบันทึกเป็น .docx ก่อน"
-            )
-        case UnsupportedFormat(found="locked office"):
-            return EXIT_UNSUPPORTED_FORMAT, (
-                "ไฟล์ Office นี้ล็อกด้วยรหัสผ่าน จึงแปลงไม่ได้ ถ้าเป็นไฟล์ Word"
-                " กรุณาเปิดใน Word แล้วบันทึกใหม่โดยไม่ตั้งรหัสผ่าน"
-            )
-        case UnsupportedFormat():
-            return EXIT_UNSUPPORTED_FORMAT, "ไฟล์นี้ไม่ใช่ PDF หรือ DOCX จึงแปลงไม่ได้"
-        case DocxToDocx():
-            return EXIT_UNSUPPORTED_FORMAT, "ไฟล์นี้เป็น DOCX อยู่แล้ว จึงไม่แปลงเป็น DOCX อีก แปลงเป็น Markdown ได้ด้วย --to markdown"
-        case TooLarge(unit="bytes", size=size, limit=limit):
-            return EXIT_TOO_LARGE, f"ไฟล์นี้ใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
-        case TooLarge(unit="unpacked bytes", size=size, limit=limit):
-            return EXIT_TOO_LARGE, (
-                f"ไฟล์ DOCX นี้เมื่อแตกออกมาใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
-            )
-        case TooLarge(unit="pages", size=size, limit=limit):
-            return EXIT_TOO_LARGE, (
-                f"ไฟล์นี้มี {size} หน้า เกินจำนวนสูงสุดที่แปลงได้ {limit} หน้า กรุณาแบ่งไฟล์แล้วแปลงทีละส่วน"
-            )
         case PasswordRequired():
-            return EXIT_PASSWORD_REQUIRED, "ไฟล์ PDF นี้ล็อกด้วยรหัสผ่าน กรุณาใส่รหัสผ่านด้วย --password"
-        case WrongPassword():
-            return EXIT_WRONG_PASSWORD, "รหัสผ่านไม่ถูกต้อง เปิดไฟล์ PDF นี้ไม่ได้"
-        case CopyRestricted():
-            return EXIT_COPY_RESTRICTED, (
-                "ไฟล์ PDF นี้ตั้งสิทธิ์ห้ามคัดลอกข้อความ ผู้สร้างเอกสารไม่อนุญาตให้นำข้อความออกไปใช้ จึงไม่แปลงไฟล์นี้"
-            )
-        case DamagedFile():
-            return EXIT_DAMAGED_FILE, "ไฟล์เสียหรือไม่สมบูรณ์ จึงเปิดอ่านไม่ได้ ลองดาวน์โหลดหรือคัดลอกไฟล์มาใหม่"
-    raise error
-
-
-def _megabytes(size: int) -> str:
-    """A size in megabytes to one decimal place, rounded up, so a file just over a limit never shows as the limit."""
-    return f"{math.ceil(size * 10 / _MB) / 10:.1f}"
+            return "ไฟล์ PDF นี้ล็อกด้วยรหัสผ่าน กรุณาใส่รหัสผ่านด้วย --password"
+        case DocxToDocx():
+            return "ไฟล์นี้เป็น DOCX อยู่แล้ว จึงไม่แปลงเป็น DOCX อีก แปลงเป็น Markdown ได้ด้วย --to markdown"
+    message = refusal_message(error)
+    if message is None:
+        raise error
+    return message
 
 
 if __name__ == "__main__":

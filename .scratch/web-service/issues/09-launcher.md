@@ -40,6 +40,7 @@ A compose file for local development runs the web app and the launcher on Docker
 
 **Web app**
 - [ ] A setting selects the launcher as the web app's sandbox.
+- [ ] The web app's server runs with uvicorn's proxy headers off (`proxy_headers=False`), as `pdf-to-doc-web` does: only the app's own rule may read the client's address from a header (ticket 08).
 
 **Local development**
 - [ ] A compose file runs the web app and the launcher on Docker Desktop, with the normal runtime and Turnstile in test mode.

@@ -4,7 +4,8 @@ A fresh process loads the converter and PaddleOCR from scratch, as a user's
 first conversion does. Run as a script, this module refuses network access
 before it loads the converter, converts one source file, and reports what the
 conversion left behind while the process is still running, as a web service's
-would be.
+would be. It converts either through the conversion function, or through the
+sandbox entry point with the source file on its stdin, as the launcher runs it.
 """
 
 import gc
@@ -50,6 +51,18 @@ class Run:
     log: str  # everything the process wrote to stdout and stderr, its error included
 
 
+@dataclass(frozen=True)
+class SandboxRun:
+    """What the sandbox entry point did in a fresh process."""
+
+    exit_code: int
+    stdout: bytes
+    stderr: bytes
+    network: list[str]  # the network calls it tried, each one refused
+    left_behind: list[str]  # files left in the temp area once it ended
+    paddle_objects_alive: int  # Paddle predictors and tensors still alive once it ended; they hold what they last read
+
+
 class ConversionStopped(Exception):
     """Raised to make a conversion fail partway."""
 
@@ -63,23 +76,12 @@ def convert_in_fresh_process(
     files in it, as in the image. `stop_at_ocr_page` makes the conversion fail
     just before it reads that OCR page.
     """
-    temp = folder / "temp"
-    temp.mkdir()
     source_path, output_path, report_path = folder / "source.pdf", folder / "output", folder / "report.json"
     source_path.write_bytes(source)
-    environment = {
-        **os.environ,
-        "TMPDIR": str(temp),
-        "TEMP": str(temp),
-        "TMP": str(temp),
-        "PADDLE_PDX_CACHE_HOME": str(temp / "paddlex"),
-        # Thai written to a Windows console code page would turn into escapes, and hide in the log.
-        "PYTHONIOENCODING": "utf-8",
-    }
     stop_argument = [] if stop_at_ocr_page is None else [str(stop_at_ocr_page)]
     process = subprocess.run(
         [sys.executable, __file__, str(source_path), str(output_path), str(report_path), to, *stop_argument],
-        env=environment,
+        env=_environment_with_temp_area(folder),
         capture_output=True,
         encoding="utf-8",
         errors="replace",
@@ -98,22 +100,51 @@ def convert_in_fresh_process(
     )
 
 
+def sandbox_in_fresh_process(folder: Path, source: bytes, *, ocr_threads: int) -> SandboxRun:
+    """Run the sandbox entry point in a fresh process, with `source` on its stdin and the OCR
+    thread count set, as the launcher runs it. The temp area is as for `convert_in_fresh_process`."""
+    report_path = folder / "report.json"
+    process = subprocess.run(
+        [sys.executable, __file__, "sandbox", str(report_path)],
+        input=source,
+        env={**_environment_with_temp_area(folder), "PDF_TO_DOC_OCR_THREADS": str(ocr_threads)},
+        capture_output=True,
+        check=False,
+    )
+    if not report_path.exists():
+        raise AssertionError(f"the fresh process crashed:\n{process.stderr.decode('utf-8', errors='replace')}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    return SandboxRun(
+        exit_code=process.returncode,
+        stdout=process.stdout,
+        stderr=process.stderr,
+        network=report["network"],
+        left_behind=report["left_behind"],
+        paddle_objects_alive=report["paddle_objects_alive"],
+    )
+
+
+def _environment_with_temp_area(folder: Path) -> dict[str, str]:
+    """The fresh process's environment, with its temp area in `folder/temp`."""
+    temp = folder / "temp"
+    temp.mkdir()
+    return {
+        **os.environ,
+        "TMPDIR": str(temp),
+        "TEMP": str(temp),
+        "TMP": str(temp),
+        "PADDLE_PDX_CACHE_HOME": str(temp / "paddlex"),
+        # Thai written to a Windows console code page would turn into escapes, and hide in the log.
+        "PYTHONIOENCODING": "utf-8",
+    }
+
+
 def _convert(source: Path, output: Path, report: Path, to: "OutputFormat", stop_at_ocr_page: int | None) -> None:
-    refused: list[str] = []
+    refused = _refuse_network_and_log_everything()
+    from pdf_to_doc import Opened, Progress, convert
 
-    def refuse_network(event: str, args: tuple[object, ...]) -> None:
-        if event in _NETWORK_EVENTS:
-            refused.append(f"{event} {args!r:.200}")
-            raise OSError(f"network access refused: {event}")
-
-    sys.addaudithook(refuse_network)
-    # Everything a logger lets through, as when a deployment turns logging up. Paddle's
-    # own loggers stay at ERROR, where the OCR adapter sets them.
-    logging.basicConfig(level=logging.DEBUG)
-    from pdf_to_doc import Progress, convert
-
-    def stop_partway(update: Progress) -> None:
-        if update.current == stop_at_ocr_page:
+    def stop_partway(update: Opened | Progress) -> None:
+        if isinstance(update, Progress) and update.stage == "ocr" and update.current == stop_at_ocr_page:
             raise ConversionStopped()
 
     failure = None
@@ -123,17 +154,40 @@ def _convert(source: Path, output: Path, report: Path, to: "OutputFormat", stop_
         failure = type(error).__name__
         # Logged with its message and traceback, as a service would log a failed conversion.
         logging.exception("conversion failed")
+    _write_report(report, {"failure": failure, "network": refused})
+
+
+def _sandbox(report: Path) -> int:
+    refused = _refuse_network_and_log_everything()
+    from pdf_to_doc.sandbox import main
+
+    exit_code = main()
+    _write_report(report, {"network": refused})
+    return exit_code
+
+
+def _refuse_network_and_log_everything() -> list[str]:
+    """Refuse every network call from now on, and log everything a logger lets through,
+    as when a deployment turns logging up. Paddle's own loggers stay at ERROR, where the
+    OCR adapter sets them. Returns the list the refused calls go into."""
+    refused: list[str] = []
+
+    def refuse_network(event: str, args: tuple[object, ...]) -> None:
+        if event in _NETWORK_EVENTS:
+            refused.append(f"{event} {args!r:.200}")
+            raise OSError(f"network access refused: {event}")
+
+    sys.addaudithook(refuse_network)
+    logging.basicConfig(level=logging.DEBUG)
+    return refused
+
+
+def _write_report(report: Path, findings: dict[str, object]) -> None:
+    """Write the findings, with what the conversion left behind, while the process still runs."""
     temp = Path(tempfile.gettempdir())
     left_behind = sorted(str(path.relative_to(temp)) for path in temp.rglob("*") if path.is_file())
     report.write_text(
-        json.dumps(
-            {
-                "failure": failure,
-                "network": refused,
-                "left_behind": left_behind,
-                "paddle_objects_alive": _paddle_objects_alive(),
-            }
-        ),
+        json.dumps({**findings, "left_behind": left_behind, "paddle_objects_alive": _paddle_objects_alive()}),
         encoding="utf-8",
     )
 
@@ -162,6 +216,8 @@ def _paddle_objects_alive() -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "sandbox":
+        sys.exit(_sandbox(Path(sys.argv[2])))
     source, output, report, to, *stop_argument = sys.argv[1:]
     _convert(
         Path(source),

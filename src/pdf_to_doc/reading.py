@@ -4,8 +4,7 @@ A page whose text layer is there but cannot be trusted is also an OCR page.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from typing import Literal
+from dataclasses import replace
 
 import numpy as np
 import pymupdf
@@ -14,6 +13,7 @@ from pdf_to_doc.layout import EDGE_BAND, PageRows, body_text_share, page_blocks
 from pdf_to_doc.model import Document, Page
 from pdf_to_doc.ocr import LANGUAGES, OcrEngine, ocr_page, render
 from pdf_to_doc.pdf_text import text_rows
+from pdf_to_doc.progress import Progress
 from pdf_to_doc.validation import trusted
 
 # The body is the page outside the edge bands, where stamped headers and page
@@ -29,19 +29,7 @@ _DRAWN_DPI = 50
 _BLANK = 245
 
 
-@dataclass(frozen=True)
-class Progress:
-    """How far a conversion has got: the `current` of `total` pages in a stage, counting from 1."""
-
-    stage: Literal["ocr"]
-    current: int
-    total: int
-
-
-ProgressCallback = Callable[[Progress], None]
-
-
-def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: ProgressCallback | None = None) -> Document:
+def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Callable[[Progress], None]) -> Document:
     """Read every page. `ocr` gives the engine, and is called once, when the first OCR page needs one.
     `progress` hears before each OCR page is read."""
     pages = list(pdf.pages())
@@ -53,8 +41,7 @@ def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Prog
     # The engine lives only as long as this call: an engine holds what it last read.
     engine: OcrEngine | None = None
     for count, index in enumerate(ocr_pages, start=1):
-        if progress:
-            progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
+        progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         if engine is None:
             engine = ocr()
         image = render(pages[index])

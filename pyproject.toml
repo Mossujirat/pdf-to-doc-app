@@ -9,19 +9,26 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi==0.142.4",
+    "httpx==0.28.1",
     "numpy==2.3.5",
     "paddleocr==3.7.0",
     "paddlepaddle==3.2.2",
+    "pydantic==2.14.1",
     "pymupdf==1.28.2",
     "pythainlp==5.4.0",
     "python-docx==1.2.0",
+    "python-multipart==0.0.32",
     "rapidfuzz==3.14.6",
+    "uvicorn==0.54.0",
 ]
 
 [project.scripts]
 pdf-to-doc = "pdf_to_doc.cli:main"
 pdf-to-doc-eval = "pdf_to_doc.evaluate_cli:main"
 pdf-to-doc-models = "pdf_to_doc.ocr_models:main"
+pdf-to-doc-sandbox = "pdf_to_doc.sandbox:main"
+pdf-to-doc-web = "pdf_to_doc.web.app:main"
 
 [build-system]
 requires = ["hatchling==1.32.4"]
@@ -29,6 +36,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "httpx2==2.14.0",
     "mypy==2.4.0",
     "pytest==9.1.1",
 ]

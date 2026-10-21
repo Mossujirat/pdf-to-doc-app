@@ -16,7 +16,7 @@
   - the launcher, with the gVisor runtime (or the fallback recorded in ticket 14)
   - the Tailscale node `pdf`, with Funnel on 443
 - [ ] The tailnet policy gives the node's tag the `funnel` attribute, and grants it no access to any other device.
-- [ ] Turnstile's production keys are in the server's env file. The widget's hostname list holds `pdf.taila2e363.ts.net`.
+- [ ] Turnstile's production keys are in the server's env file. The widget's hostname list holds `pdf.taila2e363.ts.net`, and it was created with the widget mode "Invisible": the page cannot choose the mode, the dashboard does (ticket 07).
 - [ ] The first production deploy goes through the deploy gate from ticket 14.
 
 **Launch checklist**
