@@ -8,13 +8,14 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from pdf_to_doc.web.app import COOKIE, create_app
+from pdf_to_doc.web.conversions import Clock
 from pdf_to_doc.web.sandboxes import Sandbox
 from pdf_to_doc.web.settings import Settings
 
 
-def browser(sandbox: Sandbox, settings: Settings = Settings()) -> TestClient:
+def browser(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock = time.monotonic) -> TestClient:
     """A browser on the service, over HTTPS as in production."""
-    return TestClient(create_app(sandbox, settings), base_url="https://testserver")
+    return TestClient(create_app(sandbox, settings, clock), base_url="https://testserver")
 
 
 def browser_token() -> str:

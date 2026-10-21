@@ -228,16 +228,17 @@ def test_a_conversion_that_fails_says_so() -> None:
 
 
 class ScriptedSandbox:
-    """Sends back the given event lines and ending, whatever the source file."""
+    """Sends back the given event lines and ending, if any, whatever the source file."""
 
-    def __init__(self, lines: list[bytes], ended: Ended) -> None:
+    def __init__(self, lines: list[bytes], ended: Ended | None) -> None:
         self._lines = lines
         self._ended = ended
 
     async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
         for line in self._lines:
             yield line
-        yield self._ended
+        if self._ended is not None:
+            yield self._ended
 
 
 SUMMARY = b'{"event": "summary", "pages": []}'
@@ -263,9 +264,10 @@ SUMMARY = b'{"event": "summary", "pages": []}'
         pytest.param([SUMMARY], Ended(0, b"markdown 99\nshort"), id="a part shorter than it says"),
         pytest.param([SUMMARY], Ended(0, b"docx 0\n"), id="no Markdown"),
         pytest.param([SUMMARY], Ended(1, b"markdown 0\n"), id="a crash after the summary"),
+        pytest.param([SUMMARY], None, id="no ending at all"),
     ],
 )
-def test_what_a_sandbox_sends_is_checked_and_anything_off_fails(lines: list[bytes], ended: Ended) -> None:
+def test_what_a_sandbox_sends_is_checked_and_anything_off_fails(lines: list[bytes], ended: Ended | None) -> None:
     with browser(ScriptedSandbox(lines, ended)) as client:
         link = upload(client, pdf(["หน้าแรก"]))
 

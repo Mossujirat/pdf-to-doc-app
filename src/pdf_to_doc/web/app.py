@@ -6,9 +6,11 @@ all async, so that they read a conversion on the event loop that changes it.
 """
 
 import argparse
+import asyncio
 import secrets
 import string
 import sys
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
@@ -22,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pdf_to_doc.conversion import SUFFIXES, OutputFormat
 from pdf_to_doc.web import pages
-from pdf_to_doc.web.conversions import AlreadyConverting, Conversion, Conversions, QueueFull
+from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Settings
 from pdf_to_doc.web.upload import NotAnUpload, UploadTooLarge, read_upload
@@ -33,19 +35,29 @@ _TOKEN_BYTES = 32
 _TOKEN_LENGTH = len(secrets.token_urlsafe(_TOKEN_BYTES))
 _TOKEN_CHARACTERS = frozenset(string.ascii_letters + string.digits + "-_")  # URL-safe base64
 _STATIC = Path(__file__).parent / "static"
+# How often expired conversions are looked for when no request comes, in seconds.
+_FORGET_EVERY = 15
 _MEDIA_TYPES: dict[OutputFormat, str] = {
     "markdown": "text/markdown; charset=utf-8",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
-def create_app(sandbox: Sandbox, settings: Settings = Settings()) -> FastAPI:
-    """The web app, converting in `sandbox`."""
-    conversions = Conversions(sandbox, max_running=settings.max_running, max_waiting=settings.max_waiting)
+def create_app(sandbox: Sandbox, settings: Settings = Settings(), clock: Clock = time.monotonic) -> FastAPI:
+    """The web app, converting in `sandbox`. `clock` times how long outputs are kept."""
+    conversions = Conversions(
+        sandbox,
+        max_running=settings.max_running,
+        max_waiting=settings.max_waiting,
+        keep_for=settings.keep_for,
+        clock=clock,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        forgetting = asyncio.create_task(conversions.forget_expired_every(_FORGET_EVERY))
         yield
+        forgetting.cancel()
         await conversions.stop()
 
     # There is no API for programs, so no API documentation either.
@@ -54,7 +66,7 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings()) -> FastAPI:
 
     @app.exception_handler(404)
     async def not_found(request: Request, error: Exception) -> HTMLResponse:
-        return HTMLResponse(pages.not_found(), status_code=404)
+        return HTMLResponse(pages.not_found(settings.keep_for), status_code=404)
 
     def conversion_or_404(request: Request, identifier: str) -> Conversion:
         conversion = conversions.get(identifier, request.cookies.get(COOKIE))
@@ -90,7 +102,8 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings()) -> FastAPI:
     @app.get("/conversions/{identifier}")
     async def conversion_page(request: Request, identifier: str) -> HTMLResponse:
         conversion = conversion_or_404(request, identifier)
-        return HTMLResponse(pages.conversion_page(identifier, conversion, conversions.place(identifier)))
+        time_left = None if conversion.ongoing else conversions.time_left(conversion)
+        return HTMLResponse(pages.conversion_page(identifier, conversion, conversions.place(identifier), time_left))
 
     @app.get("/conversions/{identifier}/state")
     async def state(request: Request, identifier: str) -> JSONResponse:
@@ -103,6 +116,12 @@ def create_app(sandbox: Sandbox, settings: Settings = Settings()) -> FastAPI:
         conversion_or_404(request, identifier)
         conversions.cancel(identifier)
         return RedirectResponse(f"/conversions/{identifier}", status_code=303)
+
+    @app.post("/conversions/{identifier}/delete")
+    async def delete(request: Request, identifier: str) -> HTMLResponse:
+        conversion_or_404(request, identifier)
+        conversions.forget(identifier)
+        return HTMLResponse(pages.deleted())
 
     @app.get("/conversions/{identifier}/{output}")
     async def download(request: Request, identifier: str, output: str) -> Response:

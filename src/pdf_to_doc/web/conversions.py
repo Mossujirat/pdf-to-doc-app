@@ -8,6 +8,7 @@ only while its conversion waits or runs.
 import asyncio
 import logging
 import secrets
+from collections.abc import Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from functools import partial
@@ -30,6 +31,8 @@ from pdf_to_doc.web.protocol import (
 from pdf_to_doc.web.sandboxes import Ended, Sandbox
 
 State = Literal["waiting", "running", "finished", "refused", "failed", "cancelled"]
+# Seconds on a clock that never goes back, such as time.monotonic. It tells no date.
+Clock = Callable[[], float]
 
 _log = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ class Conversion:
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
+    ended_at: float | None = None  # on the app's clock
 
     @property
     def ongoing(self) -> bool:
@@ -67,12 +71,15 @@ class Conversion:
 
 class Conversions:
     """Every conversion the web app holds: at most `max_running` converting at once, and at most
-    `max_waiting` waiting for a place."""
+    `max_waiting` waiting for a place. A conversion is forgotten `keep_for` seconds after it
+    ends, however it ends, or as soon as the visitor deletes it."""
 
-    def __init__(self, sandbox: Sandbox, *, max_running: int, max_waiting: int) -> None:
+    def __init__(self, sandbox: Sandbox, *, max_running: int, max_waiting: int, keep_for: float, clock: Clock) -> None:
         self._sandbox = sandbox
         self._max_running = max_running
         self._max_waiting = max_waiting
+        self._keep_for = keep_for
+        self._clock = clock
         self._held: dict[str, Conversion] = {}
         self._waiting: dict[str, bytes] = {}  # each waiting conversion's source file, in the order they came
         self._running: dict[str, asyncio.Task[None]] = {}
@@ -85,8 +92,9 @@ class Conversions:
         Raises `AlreadyConverting` when that browser has a conversion waiting or running, and
         `QueueFull` when no more may wait. Either way, nothing of the file is kept.
         """
-        for other in (*self._waiting, *self._running):
-            if self._held[other].ongoing and secrets.compare_digest(self._held[other].token, token):
+        self.forget_expired()
+        for other, conversion in self._held.items():
+            if conversion.ongoing and secrets.compare_digest(conversion.token, token):
                 raise AlreadyConverting(other)
         # A cancelled conversion keeps its place until its sandbox has stopped.
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
@@ -98,7 +106,8 @@ class Conversions:
         return identifier
 
     def get(self, identifier: str, token: str | None) -> Conversion | None:
-        """The conversion, if it exists and `token` is the one that started it."""
+        """The conversion, if it is still held and `token` is the one that started it."""
+        self.forget_expired()
         conversion = self._held.get(identifier)
         if conversion is None or token is None or not secrets.compare_digest(conversion.token, token):
             return None
@@ -108,17 +117,40 @@ class Conversions:
         """A waiting conversion's place in the queue, counting from 1."""
         return list(self._waiting).index(identifier) + 1 if identifier in self._waiting else None
 
+    def time_left(self, conversion: Conversion) -> float:
+        """How many more seconds an ended conversion is kept."""
+        assert conversion.ended_at is not None
+        return conversion.ended_at + self._keep_for - self._clock()
+
     def cancel(self, identifier: str) -> None:
         """Cancel a conversion that waits or runs. A waiting one leaves the queue. A running one's
         sandbox is told to stop, and its place goes to the next one waiting once it has."""
         conversion = self._held[identifier]
         if not conversion.ongoing:
             return
-        conversion.state = "cancelled"
+        self._end(conversion, "cancelled")
         if identifier in self._waiting:
             del self._waiting[identifier]
         else:
             self._running[identifier].cancel()
+
+    def forget(self, identifier: str) -> None:
+        """Forget an ended conversion now, and its outputs with it, as when the visitor deletes them."""
+        if not self._held[identifier].ongoing:
+            del self._held[identifier]
+
+    def forget_expired(self) -> None:
+        """Forget every conversion that ended `keep_for` seconds ago or more."""
+        for identifier, conversion in list(self._held.items()):
+            if conversion.ended_at is not None and self.time_left(conversion) <= 0:
+                del self._held[identifier]
+
+    async def forget_expired_every(self, seconds: float) -> None:
+        """Forget expired conversions for as long as the app runs, even when no one asks for
+        anything, so that their outputs leave memory on time."""
+        while True:
+            await asyncio.sleep(seconds)
+            self.forget_expired()
 
     async def stop(self) -> None:
         """Stop every running conversion, and start none of those waiting, as when the service
@@ -145,18 +177,27 @@ class Conversions:
         self._start_next()
 
     async def _convert(self, conversion: Conversion, source: bytes) -> None:
+        outcome: State = "failed"  # unless the sandbox says how it ended
+        outputs: dict[OutputFormat, bytes] = {}
         try:
             async with aclosing(self._sandbox.convert(source)) as sent:
                 async for item in sent:
                     if isinstance(item, Ended):
-                        _end(conversion, item)
+                        outcome, outputs = _outcome(conversion, item)
                     else:
                         _apply(conversion, read_event(item))
         except Exception as error:
             # Only the type: a message could quote what the sandbox sent.
             _log.warning("conversion failed: %s", type(error).__name__)
-            if conversion.state == "running":  # a cancel that went wrong while stopping is still a cancel
-                conversion.state = "failed"
+            outcome = "failed"
+        if conversion.state == "running":  # a cancel, even one that went wrong while stopping, stays a cancel
+            self._end(conversion, outcome, outputs)
+
+    def _end(self, conversion: Conversion, state: State, outputs: dict[OutputFormat, bytes] | None = None) -> None:
+        """End the conversion, keeping its outputs only if it finished."""
+        conversion.state = state
+        conversion.ended_at = self._clock()
+        conversion.outputs = outputs if state == "finished" and outputs else {}
 
 
 def _apply(conversion: Conversion, event: Event) -> None:
@@ -175,14 +216,13 @@ def _apply(conversion: Conversion, event: Event) -> None:
             _log.warning("conversion failed in the sandbox: %s", event.error)
 
 
-def _end(conversion: Conversion, ended: Ended) -> None:
+def _outcome(conversion: Conversion, ended: Ended) -> tuple[State, dict[OutputFormat, bytes]]:
+    """How the conversion ended, by what the sandbox sent, and the outputs if it finished."""
     if conversion.summary is not None and ended.exit_code == EXIT_OK:
         outputs = read_parts(ended.stdout)
         if "markdown" not in outputs:  # every source file gives Markdown
             raise Malformed("a conversion that gave no Markdown")
-        conversion.outputs = outputs
-        conversion.state = "finished"
-    elif conversion.refusal is not None and ended.exit_code != EXIT_OK:
-        conversion.state = "refused"
-    else:
-        conversion.state = "failed"
+        return "finished", outputs
+    if conversion.refusal is not None and ended.exit_code != EXIT_OK:
+        return "refused", {}
+    return "failed", {}
