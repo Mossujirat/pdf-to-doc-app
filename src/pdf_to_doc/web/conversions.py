@@ -61,6 +61,7 @@ class Conversion:
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
+    timed_out: bool = False  # failed because the sandbox was stopped by the time limit
     ended_at: float | None = None  # on the app's clock
 
     @property
@@ -183,6 +184,7 @@ class Conversions:
             async with aclosing(self._sandbox.convert(source)) as sent:
                 async for item in sent:
                     if isinstance(item, Ended):
+                        conversion.timed_out = item.timed_out
                         outcome, outputs = _outcome(conversion, item)
                     else:
                         _apply(conversion, read_event(item))
@@ -218,6 +220,8 @@ def _apply(conversion: Conversion, event: Event) -> None:
 
 def _outcome(conversion: Conversion, ended: Ended) -> tuple[State, dict[OutputFormat, bytes]]:
     """How the conversion ended, by what the sandbox sent, and the outputs if it finished."""
+    if ended.timed_out:
+        return "failed", {}
     if conversion.summary is not None and ended.exit_code == EXIT_OK:
         outputs = read_parts(ended.stdout)
         if "markdown" not in outputs:  # every source file gives Markdown

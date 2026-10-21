@@ -5,12 +5,26 @@ framing (the sandbox entry point's protocol, ticket 02). Anything else is `Malfo
 whose message never quotes what was sent, as it could hold the document.
 """
 
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal, Self, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
-from pdf_to_doc.conversion import OutputFormat
-from pdf_to_doc.intake import SizeUnit, SourceType, Unconverted
+from pdf_to_doc.conversion import DocxToDocx, OutputFormat
+from pdf_to_doc.intake import (
+    MAX_BYTES,
+    MAX_PAGES,
+    MAX_UNPACKED_BYTES,
+    CopyRestricted,
+    DamagedFile,
+    IntakeError,
+    PasswordRequired,
+    SizeUnit,
+    SourceType,
+    TooLarge,
+    Unconverted,
+    UnsupportedFormat,
+    WrongPassword,
+)
 from pdf_to_doc.model import PageKind, PlaceholderKind
 from pdf_to_doc.progress import Stage
 from pdf_to_doc.summary import PageSummary, Summary
@@ -20,6 +34,19 @@ MAX_EVENT_LINE = 1024 * 1024
 # A name the sandbox sends that the page shows, such as an OCR engine's, can hold no Thai
 # and no more than a name's length, so it cannot carry the document's text.
 _NAME = "^[A-Za-z][A-Za-z0-9 ._-]{0,39}$"
+# The refusals that carry nothing but their kind.
+PlainRefusal = Literal["DamagedFile", "PasswordRequired", "WrongPassword", "CopyRestricted", "DocxToDocx"]
+_PLAIN_REFUSALS: dict[PlainRefusal, type[IntakeError]] = {
+    "DamagedFile": DamagedFile,
+    "PasswordRequired": PasswordRequired,
+    "WrongPassword": WrongPassword,
+    "CopyRestricted": CopyRestricted,
+    "DocxToDocx": DocxToDocx,
+}
+# A file too large is refused at the service's own limits, and its size is shown: no larger
+# than this, so that a sandbox cannot send a number too long to show.
+_LIMITS: dict[SizeUnit, int] = {"bytes": MAX_BYTES, "pages": MAX_PAGES, "unpacked bytes": MAX_UNPACKED_BYTES}
+_LARGEST_SIZE = 2**53
 
 
 class Malformed(Exception):
@@ -62,13 +89,35 @@ class SummaryEvent(_Event):
 
 class RefusalEvent(_Event):
     event: Literal["refusal"]
-    kind: Literal[  # the intake errors' type names
-        "UnsupportedFormat", "TooLarge", "DamagedFile", "PasswordRequired", "WrongPassword", "CopyRestricted", "DocxToDocx"
-    ]
+    kind: Literal["UnsupportedFormat", "TooLarge"] | PlainRefusal  # the intake errors' type names
     found: Unconverted | None = None
     unit: SizeUnit | None = None
-    size: int | None = None
+    size: int | None = Field(default=None, ge=0, le=_LARGEST_SIZE)
     limit: int | None = None
+
+    @model_validator(mode="after")
+    def _details_fit_the_kind(self) -> Self:
+        """A size only for a file too large, over the service's own limit; what was found only
+        for an unsupported file."""
+        if self.kind == "TooLarge":
+            if self.unit is None or self.size is None or self.limit != _LIMITS[self.unit] or self.size <= self.limit:
+                raise ValueError("a file too large without a size over the service's limit")
+        elif (self.unit, self.size, self.limit) != (None, None, None):
+            raise ValueError("a size for a refusal that has none")
+        if self.found is not None and self.kind != "UnsupportedFormat":
+            raise ValueError("a type found for a refusal that has none")
+        return self
+
+    def intake_error(self) -> IntakeError:
+        """The intake error the sandbox refused the file with."""
+        match self.kind:
+            case "UnsupportedFormat":
+                return UnsupportedFormat(self.found)
+            case "TooLarge":
+                assert self.unit is not None and self.size is not None and self.limit is not None
+                return TooLarge(self.unit, self.size, self.limit)
+            case _:
+                return _PLAIN_REFUSALS[self.kind]()
 
 
 class FailureEvent(_Event):

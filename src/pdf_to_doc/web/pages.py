@@ -3,8 +3,10 @@
 import math
 from html import escape
 
-from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES
+from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
+from pdf_to_doc.refusals import refusal_message, too_large_unmeasured
 from pdf_to_doc.web.conversions import Conversion
+from pdf_to_doc.web.protocol import RefusalEvent
 
 _MB = 1024 * 1024
 _NAME = "pdf-to-doc"
@@ -69,11 +71,25 @@ def conversion_page(identifier: str, conversion: Conversion, place: int | None, 
 <p>ไฟล์ผลลัพธ์จะถูกลบภายใน {_minutes(time_left)} นาที</p>
 <form method="post" action="{link}/delete"><button type="submit">ลบเดี๋ยวนี้</button></form>
 {again}"""
+        case "refused":
+            assert conversion.refusal is not None
+            body = f"<p>{escape(_refusal(conversion.refusal))}</p>\n{again}"
+        case "failed" if conversion.timed_out:
+            body = f"<p>การแปลงใช้เวลานานเกินกำหนดจึงถูกหยุด กรุณาลองใหม่อีกครั้ง</p>\n{again}"
         case "failed":
             body = f"<p>กรุณาลองใหม่อีกครั้ง</p>\n{again}"
-        case _:  # refused or cancelled
+        case _:  # cancelled
             body = again
     return _page(text, f"{heading}\n{body}")
+
+
+def _refusal(refusal: RefusalEvent) -> str:
+    """Why the file was refused, in the command line's words, or the web's own where only the web
+    meets it. The sandbox's own text never shows: only the kind of refusal it sent."""
+    error = refusal.intake_error()
+    if isinstance(error, PasswordRequired):  # the web takes no password yet
+        return "ยังแปลง PDF ที่ล็อกด้วยรหัสผ่านไม่ได้ กรุณาปลดรหัสผ่านออกแล้วส่งไฟล์มาใหม่"
+    return refusal_message(error) or "ไฟล์นี้แปลงไม่ได้"
 
 
 def not_found(keep_for: float) -> str:
@@ -93,7 +109,12 @@ def deleted() -> str:
 
 
 def too_large() -> str:
-    return _page(_NAME, f'<h1>ไฟล์ใหญ่เกิน {MAX_BYTES // _MB} MB</h1>\n<p><a href="/">เลือกไฟล์อื่น</a></p>')
+    """For an upload past the size limit. Unlike the command line's, its message gives no size:
+    reading stopped at the limit, before the whole file came."""
+    return _page(
+        _NAME,
+        f'<h1>แปลงไฟล์นี้ไม่ได้</h1>\n<p>{too_large_unmeasured(MAX_BYTES)}</p>\n<p><a href="/">เลือกไฟล์อื่น</a></p>',
+    )
 
 
 def not_an_upload() -> str:

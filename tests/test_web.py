@@ -3,7 +3,7 @@ downloads out. A fake sandbox runs the real conversion function with a fake OCR 
 
 import asyncio
 import threading
-from collections.abc import AsyncGenerator, Iterator, MutableMapping
+from collections.abc import Iterator, MutableMapping
 from typing import Any
 from urllib.parse import unquote
 
@@ -14,6 +14,7 @@ from fake_ocr import FailingEngine, FakeEngine
 from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
 from pdf_builder import Scan, grown_to, pdf
+from scripted_sandbox import ScriptedSandbox
 from web_browser import browser, ended_state, upload, wait_for_state
 from word_builder import Image, PageBreak, document, legacy_doc
 
@@ -115,7 +116,7 @@ def test_a_file_just_over_50_mb_is_refused(client: TestClient) -> None:
     response = client.post("/conversions", files={"file": ("ใหญ่.pdf", bytes(50 * MB + 1))}, follow_redirects=False)
 
     assert response.status_code == 413
-    assert "ใหญ่เกิน 50 MB" in response.text
+    assert "ใหญ่เกินขนาดสูงสุดที่แปลงได้ 50 MB" in response.text
 
 
 def test_an_upload_that_says_it_is_over_50_mb_is_refused_before_any_of_it_is_read() -> None:
@@ -154,7 +155,7 @@ def test_a_file_over_50_mb_sent_without_a_length_is_refused_while_reading(client
     )
 
     assert response.status_code == 413
-    assert "ใหญ่เกิน 50 MB" in response.text
+    assert "ใหญ่เกินขนาดสูงสุดที่แปลงได้ 50 MB" in response.text
 
 
 def test_a_file_of_exactly_50_mb_is_taken(client: TestClient) -> None:
@@ -227,20 +228,6 @@ def test_a_conversion_that_fails_says_so() -> None:
         assert "การแปลงล้มเหลว" in client.get(link).text
 
 
-class ScriptedSandbox:
-    """Sends back the given event lines and ending, if any, whatever the source file."""
-
-    def __init__(self, lines: list[bytes], ended: Ended | None) -> None:
-        self._lines = lines
-        self._ended = ended
-
-    async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
-        for line in self._lines:
-            yield line
-        if self._ended is not None:
-            yield self._ended
-
-
 SUMMARY = b'{"event": "summary", "pages": []}'
 
 
@@ -265,6 +252,27 @@ SUMMARY = b'{"event": "summary", "pages": []}'
         pytest.param([SUMMARY], Ended(0, b"docx 0\n"), id="no Markdown"),
         pytest.param([SUMMARY], Ended(1, b"markdown 0\n"), id="a crash after the summary"),
         pytest.param([SUMMARY], None, id="no ending at all"),
+        pytest.param([b'{"event": "refusal", "kind": "TooLarge"}'], Ended(4, b""), id="a size refusal without its size"),
+        pytest.param(
+            [b'{"event": "refusal", "kind": "DamagedFile", "size": 1}'],
+            Ended(8, b""),
+            id="a refusal with a size it does not have",
+        ),
+        pytest.param(
+            [b'{"event": "refusal", "kind": "TooLarge", "unit": "pages", "size": 1' + b"0" * 400 + b', "limit": 150}'],
+            Ended(4, b""),
+            id="a size too long to show",
+        ),
+        pytest.param(
+            [b'{"event": "refusal", "kind": "TooLarge", "unit": "pages", "size": 151, "limit": 100}'],
+            Ended(4, b""),
+            id="a limit that is not the service's",
+        ),
+        pytest.param(
+            [b'{"event": "refusal", "kind": "TooLarge", "unit": "pages", "size": 20, "limit": 150}'],
+            Ended(4, b""),
+            id="a size within the limit",
+        ),
     ],
 )
 def test_what_a_sandbox_sends_is_checked_and_anything_off_fails(lines: list[bytes], ended: Ended | None) -> None:

@@ -17,6 +17,7 @@ class Ended:
 
     exit_code: int
     stdout: bytes
+    timed_out: bool = False  # stopped by the time limit (ticket 09)
 
 
 class Sandbox(Protocol):

@@ -1,7 +1,6 @@
 """Command-line wrapper around the conversion function."""
 
 import argparse
-import math
 import sys
 from pathlib import Path
 from typing import get_args
@@ -19,21 +18,11 @@ from pdf_to_doc.exit_codes import (
     EXIT_WRONG_PASSWORD,
     REFUSAL_EXIT_CODES,
 )
-from pdf_to_doc.intake import (
-    MAX_BYTES,
-    MAX_PAGES,
-    MAX_UNPACKED_BYTES,
-    CopyRestricted,
-    DamagedFile,
-    IntakeError,
-    PasswordRequired,
-    TooLarge,
-    UnsupportedFormat,
-    WrongPassword,
-)
+from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, MAX_UNPACKED_BYTES, IntakeError, PasswordRequired
 from pdf_to_doc.ocr_models import ModelsMissing
 from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.progress import Opened, Progress
+from pdf_to_doc.refusals import refusal_message
 
 _MB = 1024 * 1024
 _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
@@ -111,39 +100,17 @@ def _show_progress(update: Opened | Progress) -> None:
 
 
 def _refusal(error: IntakeError) -> str:
-    """The Thai message for a source file that was refused."""
+    """The Thai message for a source file that was refused: the shared one, or the command
+    line's own where the advice is about its options."""
     match error:
-        case UnsupportedFormat(found="doc"):
-            return "ไฟล์นี้เป็น Word รุ่นเก่า (.doc) ซึ่งแปลงไม่ได้ กรุณาเปิดใน Word แล้วบันทึกเป็น .docx ก่อน"
-        case UnsupportedFormat(found="locked office"):
-            return (
-                "ไฟล์ Office นี้ล็อกด้วยรหัสผ่าน จึงแปลงไม่ได้ ถ้าเป็นไฟล์ Word"
-                " กรุณาเปิดใน Word แล้วบันทึกใหม่โดยไม่ตั้งรหัสผ่าน"
-            )
-        case UnsupportedFormat():
-            return "ไฟล์นี้ไม่ใช่ PDF หรือ DOCX จึงแปลงไม่ได้"
-        case DocxToDocx():
-            return "ไฟล์นี้เป็น DOCX อยู่แล้ว จึงไม่แปลงเป็น DOCX อีก แปลงเป็น Markdown ได้ด้วย --to markdown"
-        case TooLarge(unit="bytes", size=size, limit=limit):
-            return f"ไฟล์นี้ใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
-        case TooLarge(unit="unpacked bytes", size=size, limit=limit):
-            return f"ไฟล์ DOCX นี้เมื่อแตกออกมาใหญ่ {_megabytes(size)} MB เกินขนาดสูงสุดที่แปลงได้ {limit // _MB} MB"
-        case TooLarge(unit="pages", size=size, limit=limit):
-            return f"ไฟล์นี้มี {size} หน้า เกินจำนวนสูงสุดที่แปลงได้ {limit} หน้า กรุณาแบ่งไฟล์แล้วแปลงทีละส่วน"
         case PasswordRequired():
             return "ไฟล์ PDF นี้ล็อกด้วยรหัสผ่าน กรุณาใส่รหัสผ่านด้วย --password"
-        case WrongPassword():
-            return "รหัสผ่านไม่ถูกต้อง เปิดไฟล์ PDF นี้ไม่ได้"
-        case CopyRestricted():
-            return "ไฟล์ PDF นี้ตั้งสิทธิ์ห้ามคัดลอกข้อความ ผู้สร้างเอกสารไม่อนุญาตให้นำข้อความออกไปใช้ จึงไม่แปลงไฟล์นี้"
-        case DamagedFile():
-            return "ไฟล์เสียหรือไม่สมบูรณ์ จึงเปิดอ่านไม่ได้ ลองดาวน์โหลดหรือคัดลอกไฟล์มาใหม่"
-    raise error
-
-
-def _megabytes(size: int) -> str:
-    """A size in megabytes to one decimal place, rounded up, so a file just over a limit never shows as the limit."""
-    return f"{math.ceil(size * 10 / _MB) / 10:.1f}"
+        case DocxToDocx():
+            return "ไฟล์นี้เป็น DOCX อยู่แล้ว จึงไม่แปลงเป็น DOCX อีก แปลงเป็น Markdown ได้ด้วย --to markdown"
+    message = refusal_message(error)
+    if message is None:
+        raise error
+    return message
 
 
 if __name__ == "__main__":
