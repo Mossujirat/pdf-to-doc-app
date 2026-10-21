@@ -45,3 +45,12 @@ jobs:
             -v "$PWD/corpus/synthetic:/in:ro" -v "$PWD/output:/out" \
             pdf-to-doc pdf-to-doc /in/tables.pdf -o /out/tables.md
           grep -q "<table>" output/tables.md
+
+          # Pipe a file through the sandbox entry point, as the web service's launcher
+          # will: every line on stderr is an event, the last one the summary, and both
+          # outputs come back on stdout.
+          sandbox -i -e PDF_TO_DOC_OCR_THREADS=2 pdf-to-doc pdf-to-doc-sandbox \
+            < corpus/synthetic/mixed-text-and-scan.pdf > output/parts 2> output/events
+          jq -se 'all(has("event")) and .[-1].event == "summary"' output/events
+          grep -aq "^markdown [0-9]*$" output/parts
+          grep -aq "^docx [0-9]*$" output/parts

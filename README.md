@@ -42,6 +42,14 @@ docker run --rm --network none -v "$PWD:/work" pdf-to-doc pdf-to-doc /work/docum
 
 The container runs as a non-root user. On a Linux host, add `--user "$(id -u):$(id -g)"` so it can write to your folder and the output belongs to you. It can also run with a read-only file system: add `--read-only --tmpfs /tmp`.
 
+OCR starts 10 CPU threads, whatever the CPUs. When you limit the container's CPUs, set `PDF_TO_DOC_OCR_THREADS` to the same number, or OCR runs several times slower: add `--cpus 4 -e PDF_TO_DOC_OCR_THREADS=4`.
+
+The image also holds `pdf-to-doc-sandbox`, which the web service runs in a throwaway container for each conversion. It takes the source file's bytes on stdin and no other input, writes both outputs to stdout, each after a line with its format and length in bytes, and reports progress on stderr as one JSON object per line:
+
+```sh
+docker run --rm -i --network none --read-only --tmpfs /tmp pdf-to-doc pdf-to-doc-sandbox < document.pdf > parts
+```
+
 ## Development
 
 ```sh
