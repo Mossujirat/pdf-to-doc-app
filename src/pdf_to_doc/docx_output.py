@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import docx
 from docx.document import Document as WordDocument
+from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.oxml.xmlchemy import BaseOxmlElement
@@ -13,7 +14,18 @@ from docx.shared import Cm, Mm, Pt
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph as WordParagraph
 
-from pdf_to_doc.model import DEEPEST_HEADING, Block, Document, Heading, ListItem, Table, TableCell
+from pdf_to_doc.model import (
+    DEEPEST_HEADING,
+    Block,
+    Document,
+    Heading,
+    ListItem,
+    Span,
+    Table,
+    TableCell,
+    stretches,
+    uncertain_text,
+)
 from pdf_to_doc.summary import Summary
 from pdf_to_doc.thai import THAI_LETTER
 
@@ -44,7 +56,7 @@ def render_docx(document: Document, summary: Summary) -> bytes:
     unmarked_list_id = _add_unmarked_list(word.part.numbering_part.element)
     summary_paragraph = word.add_paragraph()
     _add_text(summary_paragraph, "สรุปการแปลง", bold=True)
-    _add_text(summary_paragraph, f" {summary.headline()}")
+    _add_text(summary_paragraph, f" {summary.headline(uncertain_marked_as='ไฮไลต์สีเหลือง')}")
     for index, page in enumerate(document.pages):
         first: WordParagraph | None = None
         previous: Block | None = None
@@ -84,7 +96,7 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
         numbering.get_or_add_numId().val = unmarked_list_id
     else:
         paragraph = word.add_paragraph()
-    _add_text(paragraph, block.text)
+    _add_text(paragraph, block.text, uncertain=uncertain_text(block))
     return paragraph
 
 
@@ -173,16 +185,20 @@ def _set_font(run_properties: BaseOxmlElement, size: float) -> None:
         element.set(qn("w:val"), str(round(size * 2)))  # half-points
 
 
-def _add_text(paragraph: WordParagraph, text: str, *, bold: bool = False) -> None:
+def _add_text(paragraph: WordParagraph, text: str, *, bold: bool = False, uncertain: tuple[Span, ...] = ()) -> None:
     """Thai goes in runs marked complex script, so Word breaks its lines between words. English
-    words get runs of their own without the mark, or Word would proof them as Thai."""
-    for latin, piece in _pieces(text):
-        run = paragraph.add_run(piece)
-        if not latin and _THAI.search(piece):
-            run.font.complex_script = True
-        if bold:
-            # Thai is drawn with the complex-script bold, other text with the plain one.
-            run.font.bold = run.font.cs_bold = True
+    words get runs of their own without the mark, or Word would proof them as Thai. Uncertain
+    text is highlighted yellow."""
+    for highlighted, stretch in stretches(text, uncertain):
+        for latin, piece in _pieces(stretch):
+            run = paragraph.add_run(piece)
+            if not latin and _THAI.search(piece):
+                run.font.complex_script = True
+            if bold:
+                # Thai is drawn with the complex-script bold, other text with the plain one.
+                run.font.bold = run.font.cs_bold = True
+            if highlighted:
+                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
 
 def _pieces(text: str) -> list[tuple[bool, str]]:

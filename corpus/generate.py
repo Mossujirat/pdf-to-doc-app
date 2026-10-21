@@ -17,6 +17,9 @@ from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Scan, Space
 from pdf_to_doc.quality import reference_file_name
 
 SYNTHETIC = Path(__file__).parent / "synthetic"
+# Scans damaged on purpose, for measuring how much of what OCR misreads is marked as
+# uncertain text. They are kept apart because OCR is expected to get them wrong.
+DEGRADED = Path(__file__).parent / "degraded"
 
 
 @dataclass(frozen=True)
@@ -429,18 +432,66 @@ WORD_DOCUMENTS = (
 )
 
 
+CONTRACT_LINES = [
+    "ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้",
+    "และส่งรายงานความก้าวหน้าต่อผู้ให้ทุนทุกหกเดือน",
+    "โครงการ BCG Economy ระยะที่ 2 ปี 2567",
+    "ค่าตอบแทนผู้วิจัย 100,000 บาท ค่าวัสดุ 30,000 บาท",
+    "ข้อ ๓ ผู้รับทุนต้องไม่โอนสิทธิตามสัญญานี้ให้ผู้อื่น",
+    "หากผู้รับทุนผิดสัญญา ผู้ให้ทุนมีสิทธิบอกเลิกสัญญาได้ทันที",
+    "การแก้ไขเพิ่มเติมสัญญาต้องทำเป็นหนังสือลงนามโดยคู่สัญญา",
+    "ระยะเวลาดำเนินงาน ๑๒ เดือน นับแต่วันที่ลงนามในสัญญา",
+    "The grantee shall submit the final report within 30 days.",
+    "เงื่อนไขการเบิกจ่ายเป็นไปตามระเบียบของสำนักงานฯ",
+    "หลักฐานการจ่ายเงินต้องมีลายมือชื่อผู้รับเงินทุกฉบับ",
+    "ในกรณีมีข้อพิพาท ให้ใช้กฎหมายไทยบังคับแก่สัญญานี้",
+]
+# Resolution, grain and skew, from the corpus's own level of damage to a fax-like scan.
+DAMAGE = [(200, 6, 0.4), (150, 18, 0.8), (110, 28, 1.2), (90, 36, 1.5), (75, 45, 1.8)]
+
+DEGRADED_DOCUMENTS = (
+    SyntheticDocument(
+        name="damaged-scans",
+        font_file=SARABUN,
+        pages=tuple(
+            SyntheticPage(
+                # A blank line between lines makes each a paragraph of its own.
+                lines=Scan(
+                    [line for text in CONTRACT_LINES for line in (text, "")],
+                    dpi=dpi,
+                    angle=angle,
+                    noise=noise,
+                    seed=10 + level,
+                ),
+                reference="\n\n".join(CONTRACT_LINES),
+            )
+            for level, (dpi, noise, angle) in enumerate(DAMAGE)
+        ),
+    ),
+)
+
+
 def generate(folder: Path) -> None:
     """Write every document as `<name>.pdf` or `<name>.docx` plus `<name>/page-NNN.reference.md`."""
+    _write_documents(folder, ALL_DOCUMENTS)
+    for word_document in WORD_DOCUMENTS:
+        (folder / f"{word_document.name}.docx").write_bytes(word.document(*word_document.blocks))
+        _write_references(folder / word_document.name, list(word_document.references))
+
+
+def generate_degraded(folder: Path) -> None:
+    """Write the damaged scans the same way."""
+    _write_documents(folder, DEGRADED_DOCUMENTS)
+
+
+def _write_documents(folder: Path, documents: Sequence[SyntheticDocument]) -> None:
     folder.mkdir(parents=True, exist_ok=True)
-    for document in ALL_DOCUMENTS:
+    for document in documents:
         source = pdf(*(page.lines for page in document.pages), font_file=document.font_file)
         if document.remap:
             source = remapped(source, document.remap)
         (folder / f"{document.name}.pdf").write_bytes(source)
         _write_references(folder / document.name, [page.reference for page in document.pages])
-    for word_document in WORD_DOCUMENTS:
-        (folder / f"{word_document.name}.docx").write_bytes(word.document(*word_document.blocks))
-        _write_references(folder / word_document.name, list(word_document.references))
 
 
 def _write_references(folder: Path, references: list[str]) -> None:
@@ -453,3 +504,6 @@ if __name__ == "__main__":
     shutil.rmtree(SYNTHETIC, ignore_errors=True)
     generate(SYNTHETIC)
     print(f"wrote {len(ALL_DOCUMENTS) + len(WORD_DOCUMENTS)} documents to {SYNTHETIC}")
+    shutil.rmtree(DEGRADED, ignore_errors=True)
+    generate_degraded(DEGRADED)
+    print(f"wrote {len(DEGRADED_DOCUMENTS)} documents to {DEGRADED}")

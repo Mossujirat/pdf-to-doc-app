@@ -1,0 +1,124 @@
+"""Uncertain text: OCR text the converter cannot confirm is marked where it appears, and counted."""
+
+from docx.text.paragraph import Paragraph
+from docx_reader import read_docx, runs
+from fake_ocr import FakeEngine, Unsure
+from markdown_reader import page_texts
+from pdf_builder import Scan, Styled, pdf
+
+from pdf_to_doc import ConversionResult, convert
+
+
+def markdown_pages(result: ConversionResult) -> list[str]:
+    return page_texts(result.output.decode("utf-8"))
+
+
+def scan() -> bytes:
+    return pdf(Scan(["ภาพสแกน"], dpi=50))
+
+
+def test_a_word_misread_into_one_that_is_not_in_the_dictionary_is_marked() -> None:
+    # The engine dropped mai ek from "ผู้อื่น".
+    result = convert(scan(), ocr=FakeEngine(["ผู้รับทุนต้องไม่โอนสิทธิให้ผู้อืน"]))
+
+    assert markdown_pages(result) == ["ผู้รับทุนต้องไม่โอนสิทธิให้ผู้<mark>อืน</mark>"]
+
+
+def test_neighbouring_uncertain_words_are_marked_as_one() -> None:
+    # "เดือน ศูนย์" misread as two words that are not words.
+    result = convert(scan(), ocr=FakeEngine(["ส่งรายงานทุกหกเคือน ศนย์ตรวจรับแล้ว"]))
+
+    assert markdown_pages(result) == ["ส่งรายงานทุกหก<mark>เคือน ศนย์</mark>ตรวจรับแล้ว"]
+
+
+def test_a_line_the_engine_reads_with_low_confidence_is_marked_whole() -> None:
+    engine = FakeEngine(["ผู้รับทุนตกลงดำเนินงาน", Unsure("ตามแผนที่กำหนดไว้")])
+
+    result = convert(scan(), ocr=engine)
+
+    assert markdown_pages(result) == ["ผู้รับทุนตกลงดำเนินงาน<mark>ตามแผนที่กำหนดไว้</mark>"]
+
+
+def test_uncertain_text_in_a_list_item_is_marked() -> None:
+    engine = FakeEngine(["• ส่งรายงานทุกหกเคือน", "• จ่ายเงินตามงวดงาน"])
+
+    result = convert(scan(), ocr=engine)
+
+    assert markdown_pages(result) == ["- ส่งรายงานทุกหก<mark>เคือน</mark>\n- จ่ายเงินตามงวดงาน"]
+
+
+def test_text_from_a_text_layer_is_never_marked() -> None:
+    # A surname the word list does not hold ("มณฑน์"), on a text page and stamped as text over a scan.
+    signed = "ลงชื่อ นายสมชาย ชุติมณฑน์"
+    body = ["ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้"] * 12
+    source = pdf([signed], Scan(body, overlay=[Styled(signed, y=500)], dpi=50))
+
+    result = convert(source, ocr=FakeEngine([*body, Styled("ลงชื่อ นายสมชาย ชุติมณฑบ์", y=500)]))
+
+    text_page, scanned = markdown_pages(result)
+    assert text_page == signed
+    assert signed in scanned
+    assert "<mark>" not in scanned
+
+
+def test_text_layer_text_in_the_same_paragraph_as_ocr_text_is_not_marked() -> None:
+    # The note is stamped as text just below the scanned body, close enough to make one paragraph.
+    body = ["ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้"] * 2 + ["ส่งรายงานทุกหกเคือน"]
+    note = Styled("ลงชื่อ นายสมชาย ชุติมณฑน์", y=170)
+
+    result = convert(pdf(Scan(body, overlay=[note], dpi=50)), ocr=FakeEngine([*body, note]))
+
+    [page] = markdown_pages(result)
+    assert page.endswith("ส่งรายงานทุกหก<mark>เคือน</mark>ลงชื่อ นายสมชาย ชุติมณฑน์")
+
+
+def test_a_low_confidence_box_is_marked_where_it_was_read_and_nowhere_else() -> None:
+    # The bullet the engine read is not in the list item's text, and "9" appears twice.
+    lines: list[str | Unsure] = [Unsure("• ส่งรายงานทุกหกเดือนให้ผู้ให้ทุน"), "ตรวจสอบจนจบโครงการ", "", "ข้อ 9 วันที่", Unsure("9")]
+
+    result = convert(scan(), ocr=FakeEngine(lines))
+
+    assert markdown_pages(result) == [
+        "- <mark>ส่งรายงานทุกหกเดือนให้ผู้ให้ทุน</mark>ตรวจสอบจนจบโครงการ\n\nข้อ 9 วันที่ <mark>9</mark>"
+    ]
+
+
+# The summary
+
+
+def summary_of(result: ConversionResult) -> str:
+    return result.output.decode("utf-8").split("<!-- page 1 -->")[0]
+
+
+def test_the_summary_counts_the_uncertain_text_and_says_how_it_is_marked() -> None:
+    source = pdf(Scan(["สแกน"], dpi=50), ["หน้าที่มีข้อความ"], Scan(["สแกน"], dpi=50))
+    engine = FakeEngine(["ให้ผู้อืนรับรอง", "", "ส่งทุกหกเคือน"], ["ข้อความที่อ่านได้ถูกต้อง"])
+
+    result = convert(source, ocr=engine)
+
+    summary = summary_of(result)
+    assert "ข้อความที่ไม่แน่ใจ 2 จุด ในหน้า 1 ควรตรวจกับต้นฉบับ (ครอบไว้ด้วย `<mark>`)" in summary
+    # Written as code, so that a viewer shows the tag rather than highlighting, and no one counts it.
+    assert summary.count("<mark>") == summary.count("`<mark>`")
+
+
+def test_the_summary_says_nothing_of_uncertain_text_when_there_is_none() -> None:
+    result = convert(scan(), ocr=FakeEngine(["ข้อความที่อ่านได้ถูกต้อง"]))
+
+    assert "ไม่แน่ใจ" not in summary_of(result)
+
+
+# DOCX
+
+
+def test_uncertain_text_is_highlighted_yellow_in_docx_and_counted_on_the_first_page() -> None:
+    result = convert(scan(), to="docx", ocr=FakeEngine(["ผู้รับทุนต้องไม่โอนสิทธิให้ผู้อืน"]))
+
+    output = read_docx(result.output)
+    [[paragraph]] = output.pages
+    assert isinstance(paragraph, Paragraph)
+    assert [(run.text, run.highlight) for run in runs(paragraph)] == [
+        ("ผู้รับทุนต้องไม่โอนสิทธิให้ผู้", None),
+        ("อืน", "yellow"),
+    ]
+    assert "ข้อความที่ไม่แน่ใจ 1 จุด ในหน้า 1 ควรตรวจกับต้นฉบับ (ไฮไลต์สีเหลือง)" in output.summary.text

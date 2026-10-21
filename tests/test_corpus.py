@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from docx_reader import page_texts
 from fake_ocr import BlankEngine
-from generate import SYNTHETIC, generate
+from generate import DEGRADED, SYNTHETIC, generate, generate_degraded
 
 from pdf_to_doc import convert
 from pdf_to_doc.quality import evaluate, reference_file_name, score_page
@@ -30,6 +30,12 @@ def test_the_committed_corpus_is_what_the_generator_makes(tmp_path: Path) -> Non
     generate(tmp_path)
 
     assert files(tmp_path) == files(SYNTHETIC), "run: uv run python corpus/generate.py"
+
+
+def test_the_committed_damaged_scans_are_what_the_generator_makes(tmp_path: Path) -> None:
+    generate_degraded(tmp_path)
+
+    assert files(tmp_path) == files(DEGRADED), "run: uv run python corpus/generate.py"
 
 
 def test_the_text_pages_of_the_committed_corpus_have_no_broken_text() -> None:

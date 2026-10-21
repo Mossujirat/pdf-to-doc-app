@@ -4,7 +4,7 @@
 
 - Tests: `uv run pytest`. Real PaddleOCR tests are marked `ocr` and left out by default: `uv run pytest -m ocr`. They, the harness and any conversion with OCR pages need the models, fetched once with `uv run pdf-to-doc-models`.
 - Type checking: `uv run mypy`
-- Quality harness: `uv run pdf-to-doc-eval corpus/synthetic` (format in `corpus/README.md`)
+- Quality harness: `uv run pdf-to-doc-eval corpus/synthetic` (format in `corpus/README.md`). `corpus/degraded` holds scans damaged on purpose, outside the gate, for measuring uncertain-text marking.
 - Regenerate the synthetic corpus after changing `corpus/generate.py`: `uv run python corpus/generate.py`
 - Linux container: build the image and run the checks the way `.github/workflows/ci.yml` does. In Git Bash, set `MSYS_NO_PATHCONV=1`, or it rewrites container paths such as `/tmp` into Windows paths.
 - Escapes in Python source are easy to lose in this environment:

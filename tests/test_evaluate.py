@@ -114,7 +114,9 @@ def test_the_command_prints_a_table_and_writes_a_json_report(
     exit_code = main([str(corpus), "--json", str(json_path)])
 
     assert exit_code == 0
-    assert "contract" in capsys.readouterr().out
+    table = capsys.readouterr().out
+    assert "contract" in table
+    assert "unmarked" in table.splitlines()[0]
     report = json.loads(json_path.read_text(encoding="utf-8"))
     categories = {
         "orphan_marks",
@@ -183,3 +185,20 @@ def test_ocr_pages_are_measured_with_their_engine_but_the_limits_cover_text_page
     table = capsys.readouterr().out
     assert "TOTAL text" in table
     assert "TOTAL ocr" in table
+
+
+def test_uncertain_text_on_ocr_pages_is_counted_and_errors_left_unmarked_are_reported(tmp_path: Path) -> None:
+    # Two misreads: "เคือน" is not a word and gets marked; "ทาก" for "หาก" is a word and does not.
+    source = pdf(Scan(["สแกน"], dpi=50))
+    add_document(tmp_path / "corpus", "scan", source, {1: "ส่งรายงานทุกหกเดือน หากล่าช้าต้องแจ้ง"})
+    json_path = tmp_path / "report.json"
+
+    main([str(tmp_path / "corpus"), "--json", str(json_path)], ocr=FakeEngine(["ส่งรายงานทุกหกเคือน ทากล่าช้าต้องแจ้ง"]))
+
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    [page] = report["pages"]
+    assert page["uncertain"] == 1
+    assert page["edits"] == 2
+    assert page["unmarked_edits"] == 1
+    assert page["marked_characters"] == len("เคือน")
+    assert report["by_kind"]["ocr"]["unmarked_share"] == 0.5

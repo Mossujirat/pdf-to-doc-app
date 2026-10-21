@@ -2,11 +2,9 @@
 
 import re
 
-from pythainlp.corpus import thai_words
-from pythainlp.tokenize import word_tokenize
-
 from pdf_to_doc.layout import PageRows
-from pdf_to_doc.thai import MARK, SARA_AM, THAI_CONSONANT, THAI_LETTER, repair
+from pdf_to_doc.thai import MARK, SARA_AM, THAI_CONSONANT, repair
+from pdf_to_doc.words import in_word_list, thai_words_in
 
 # Thai words are checked against PyThaiNLP's word list. A text layer whose words
 # are dictionary words less often than this is wrong, as when a font's ToUnicode
@@ -15,10 +13,6 @@ from pdf_to_doc.thai import MARK, SARA_AM, THAI_CONSONANT, THAI_LETTER, repair
 _MIN_DICTIONARY_SHARE = 0.95
 # Fewer Thai words than this are too few to judge, such as a page of names.
 _MIN_WORDS_TO_JUDGE = 20
-_THAI = re.compile(THAI_LETTER)
-# Mai yamok (repeat the word) and paiyannoi (abbreviation) are tokens of their
-# own when they follow a word, and no word list has them.
-_NOT_WORDS = f"{chr(0x0E46)}{chr(0x0E2F)}"
 # A correct text layer never holds these: the replacement character and NUL,
 # which glyphs without a Unicode mapping become, and Private Use Area
 # characters that are neither legacy Thai glyphs (repair maps those back) nor
@@ -34,28 +28,10 @@ def trusted(page: PageRows) -> bool:
     text = repair(" ".join([row.text for row in page.rows] + _cell_lines(page)))
     if _UNREADABLE.search(text) or _SARA_AM_ANOMALY.search(text):
         return False
-    words = _thai_words(text)
+    words = thai_words_in(text)
     if len(words) < _MIN_WORDS_TO_JUDGE:
         return True
-    return sum(1 for word in words if _known(word)) / len(words) >= _MIN_DICTIONARY_SHARE
-
-
-def unknown_words(text: str) -> int:
-    """How many of the text's Thai words are not in the word list."""
-    return sum(1 for word in _thai_words(repair(text)) if not _known(word))
-
-
-def _thai_words(text: str) -> list[str]:
-    return [
-        word
-        for word in word_tokenize(text, engine="newmm", keep_whitespace=False)
-        if _THAI.search(word) and word.strip(_NOT_WORDS)
-    ]
-
-
-def _known(word: str) -> bool:
-    dictionary = thai_words()
-    return word in dictionary or word.strip(_NOT_WORDS) in dictionary
+    return sum(1 for word in words if in_word_list(word)) / len(words) >= _MIN_DICTIONARY_SHARE
 
 
 def _cell_lines(page: PageRows) -> list[str]:
