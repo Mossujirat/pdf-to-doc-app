@@ -16,7 +16,7 @@ _Avoid_: intermediate format, AST
 A DOCX or Markdown file produced from the document model.
 
 **Conversion**:
-One request to turn a source file into an output, from submission until the output is downloaded or discarded.
+One request to turn a source file into one or both outputs, from submission until nothing of it is held any more.
 _Avoid_: job, task
 
 **Accurate mode**:
