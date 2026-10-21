@@ -11,25 +11,31 @@ _NAME = "pdf-to-doc"
 
 def home() -> str:
     return _page(
+        _NAME,
         f"""<h1>แปลง PDF หรือ DOCX เป็นข้อความ</h1>
 <form id="upload" method="post" action="/conversions" enctype="multipart/form-data">
 <input type="file" name="file" accept=".pdf,.docx" required>
 <button type="submit">แปลงไฟล์</button>
 </form>
-<p>PDF หรือ DOCX ไม่เกิน {MAX_BYTES // _MB} MB และไม่เกิน {MAX_PAGES} หน้า</p>"""
+<p>PDF หรือ DOCX ไม่เกิน {MAX_BYTES // _MB} MB และไม่เกิน {MAX_PAGES} หน้า</p>""",
     )
 
 
-def status(conversion: Conversion) -> str:
-    """What the conversion is doing, or how it ended, in a few words."""
+def status(conversion: Conversion, place: int | None) -> str:
+    """What the conversion is doing, or how it ended, in a few words. `place` is a waiting
+    conversion's place in the queue. The tab's title shows it too."""
     progress = conversion.progress
     match conversion.state:
+        case "waiting":
+            return f"รอคิว ลำดับที่ {place}"
         case "finished":
             return "แปลงเสร็จแล้ว"
         case "refused":
             return "แปลงไฟล์นี้ไม่ได้"
         case "failed":
             return "การแปลงล้มเหลว"
+        case "cancelled":
+            return "ยกเลิกการแปลงแล้ว"
     if progress is not None and progress.stage == "ocr":
         return f"OCR หน้า {progress.current}/{progress.total}"
     if progress is not None and progress.stage == "writing":
@@ -39,13 +45,17 @@ def status(conversion: Conversion) -> str:
     return "กำลังเริ่มแปลง"
 
 
-def conversion_page(identifier: str, conversion: Conversion) -> str:
-    """The status as the heading, and below it what the visitor can do now."""
+def conversion_page(identifier: str, conversion: Conversion, place: int | None) -> str:
+    """The status as the title and the heading, and below it what the visitor can do now."""
     link = f"/conversions/{escape(identifier)}"
+    text = status(conversion, place)
+    heading = f"<h1>{escape(text)}</h1>"
     again = '<p><a href="/">แปลงไฟล์อื่น</a></p>'
     match conversion.state:
-        case "running":
-            body = f'<p id="status" data-state="{link}/state" aria-live="polite">{escape(status(conversion))}</p>'
+        case _ if conversion.ongoing:
+            # The script keeps the heading up to date.
+            heading = f'<h1 id="status" data-state="{link}/state" aria-live="polite">{escape(text)}</h1>'
+            body = f'<form method="post" action="{link}/cancel"><button type="submit">ยกเลิก</button></form>'
         case "finished":
             assert conversion.summary is not None
             downloads = [f'<a href="{link}/markdown" download>ดาวน์โหลด Markdown</a>']
@@ -55,32 +65,46 @@ def conversion_page(identifier: str, conversion: Conversion) -> str:
 <p><button type="button" id="copy" data-markdown="{link}/markdown">คัดลอก Markdown</button></p>
 <p>{" ".join(downloads)}</p>
 {again}"""
-        case "refused":
-            body = again
         case "failed":
             body = f"<p>กรุณาลองใหม่อีกครั้ง</p>\n{again}"
-    return _page(f"<h1>{escape(status(conversion))}</h1>\n{body}")
+        case _:  # refused or cancelled
+            body = again
+    return _page(text, f"{heading}\n{body}")
 
 
 def not_found() -> str:
-    return _page('<h1>ไม่พบหน้านี้</h1>\n<p><a href="/">กลับไปหน้าแรก</a></p>')
+    return _page(_NAME, '<h1>ไม่พบหน้านี้</h1>\n<p><a href="/">กลับไปหน้าแรก</a></p>')
 
 
 def too_large() -> str:
-    return _page(f'<h1>ไฟล์ใหญ่เกิน {MAX_BYTES // _MB} MB</h1>\n<p><a href="/">เลือกไฟล์อื่น</a></p>')
+    return _page(_NAME, f'<h1>ไฟล์ใหญ่เกิน {MAX_BYTES // _MB} MB</h1>\n<p><a href="/">เลือกไฟล์อื่น</a></p>')
 
 
 def not_an_upload() -> str:
-    return _page('<h1>ไม่ได้รับไฟล์</h1>\n<p><a href="/">กลับไปเลือกไฟล์</a></p>')
+    return _page(_NAME, '<h1>ไม่ได้รับไฟล์</h1>\n<p><a href="/">กลับไปเลือกไฟล์</a></p>')
 
 
-def _page(body: str) -> str:
+def queue_full() -> str:
+    return _page(_NAME, '<h1>คิวเต็ม</h1>\n<p>กรุณาลองใหม่อีกสักครู่</p>\n<p><a href="/">กลับไปหน้าแรก</a></p>')
+
+
+def already_converting(identifier: str) -> str:
+    """For a browser that sends a file while its conversion of another waits or runs."""
+    return _page(
+        _NAME,
+        "<h1>มีไฟล์ที่กำลังแปลงอยู่แล้ว</h1>\n"
+        "<p>แปลงได้ทีละไฟล์ กรุณารอให้ไฟล์ก่อนหน้าแปลงเสร็จ หรือยกเลิกไฟล์นั้นก่อน</p>\n"
+        f'<p><a href="/conversions/{escape(identifier)}">ไปที่ไฟล์ที่กำลังแปลง</a></p>',
+    )
+
+
+def _page(title: str, body: str) -> str:
     return f"""<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_NAME}</title>
+<title>{escape(title)}</title>
 </head>
 <body>
 {body}

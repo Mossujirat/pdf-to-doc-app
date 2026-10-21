@@ -9,6 +9,8 @@ import argparse
 import secrets
 import string
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import get_args
 from urllib.parse import quote
@@ -20,8 +22,9 @@ from fastapi.staticfiles import StaticFiles
 
 from pdf_to_doc.conversion import SUFFIXES, OutputFormat
 from pdf_to_doc.web import pages
-from pdf_to_doc.web.conversions import Conversion, Conversions
+from pdf_to_doc.web.conversions import AlreadyConverting, Conversion, Conversions, QueueFull
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
+from pdf_to_doc.web.settings import Settings
 from pdf_to_doc.web.upload import NotAnUpload, UploadTooLarge, read_upload
 
 COOKIE = "browser"
@@ -36,10 +39,17 @@ _MEDIA_TYPES: dict[OutputFormat, str] = {
 }
 
 
-def create_app(sandbox: Sandbox, *, secure_cookies: bool = True) -> FastAPI:
-    """The web app, converting in `sandbox`. The browser's cookie is Secure, except in local development."""
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)  # there is no API for programs
-    conversions = Conversions(sandbox)
+def create_app(sandbox: Sandbox, settings: Settings = Settings()) -> FastAPI:
+    """The web app, converting in `sandbox`."""
+    conversions = Conversions(sandbox, max_running=settings.max_running, max_waiting=settings.max_waiting)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await conversions.stop()
+
+    # There is no API for programs, so no API documentation either.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
     @app.exception_handler(404)
@@ -65,19 +75,34 @@ def create_app(sandbox: Sandbox, *, secure_cookies: bool = True) -> FastAPI:
         except NotAnUpload:
             return HTMLResponse(pages.not_an_upload(), status_code=400)
         token = _token(request.cookies.get(COOKIE))
-        identifier = conversions.start(upload.source, upload.file_name, token)
+        try:
+            identifier = conversions.start(upload.source, upload.file_name, token)
+        except AlreadyConverting as converting:
+            return HTMLResponse(pages.already_converting(converting.identifier), status_code=409)
+        except QueueFull:
+            return HTMLResponse(pages.queue_full(), status_code=503)
         response = RedirectResponse(f"/conversions/{identifier}", status_code=303)
-        response.set_cookie(COOKIE, token, max_age=_DAY, secure=secure_cookies, httponly=True, samesite="strict")
+        response.set_cookie(
+            COOKIE, token, max_age=_DAY, secure=settings.secure_cookies, httponly=True, samesite="strict"
+        )
         return response
 
     @app.get("/conversions/{identifier}")
     async def conversion_page(request: Request, identifier: str) -> HTMLResponse:
-        return HTMLResponse(pages.conversion_page(identifier, conversion_or_404(request, identifier)))
+        conversion = conversion_or_404(request, identifier)
+        return HTMLResponse(pages.conversion_page(identifier, conversion, conversions.place(identifier)))
 
     @app.get("/conversions/{identifier}/state")
     async def state(request: Request, identifier: str) -> JSONResponse:
         conversion = conversion_or_404(request, identifier)
-        return JSONResponse({"state": conversion.state, "text": pages.status(conversion)})
+        text = pages.status(conversion, conversions.place(identifier))
+        return JSONResponse({"state": conversion.state, "text": text, "ongoing": conversion.ongoing})
+
+    @app.post("/conversions/{identifier}/cancel")
+    async def cancel(request: Request, identifier: str) -> RedirectResponse:
+        conversion_or_404(request, identifier)
+        conversions.cancel(identifier)
+        return RedirectResponse(f"/conversions/{identifier}", status_code=303)
 
     @app.get("/conversions/{identifier}/{output}")
     async def download(request: Request, identifier: str, output: str) -> Response:
@@ -102,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8000, help="พอร์ต (ค่าเริ่มต้น: 8000)")
     args = parser.parse_args(argv)
     # The access log would record visitors' IP addresses and conversion links.
-    uvicorn.run(create_app(LocalSandbox(), secure_cookies=False), host=args.host, port=args.port, access_log=False)
+    app = create_app(LocalSandbox(), Settings(secure_cookies=False))
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False)
     return 0
 
 

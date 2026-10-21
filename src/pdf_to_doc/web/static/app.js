@@ -1,7 +1,7 @@
 // The pages' only script: no build step, and no inline script anywhere.
 
-// A conversion in progress asks for its state every 2 seconds, and shows the page
-// again once it has ended.
+// A conversion waiting or in progress asks for its state every 2 seconds, shows it on the
+// page and in the tab's title, and shows the page again once it has ended.
 const status = document.getElementById("status");
 if (status) {
   const ask = async () => {
@@ -13,11 +13,12 @@ if (status) {
       }
       if (response.ok) {
         const state = await response.json();
-        if (state.state !== "running") {
+        if (!state.ongoing) {
           location.reload();
           return;
         }
         status.textContent = state.text;
+        document.title = state.text;
       }
     } catch {
       // Offline for a moment, or the phone suspended the tab: ask again later.

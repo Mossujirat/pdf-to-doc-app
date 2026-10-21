@@ -3,8 +3,7 @@ downloads out. A fake sandbox runs the real conversion function with a fake OCR 
 
 import asyncio
 import threading
-import time
-from collections.abc import AsyncGenerator, Callable, Iterator, MutableMapping
+from collections.abc import AsyncGenerator, Iterator, MutableMapping
 from typing import Any
 from urllib.parse import unquote
 
@@ -15,11 +14,13 @@ from fake_ocr import FailingEngine, FakeEngine
 from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
 from pdf_builder import Scan, grown_to, pdf
+from web_browser import browser, ended_state, upload, wait_for_state
 from word_builder import Image, PageBreak, document, legacy_doc
 
 from pdf_to_doc.ocr import Language, PageImage, TextBox
 from pdf_to_doc.web.app import create_app
-from pdf_to_doc.web.sandboxes import Ended, LocalSandbox, Sandbox
+from pdf_to_doc.web.sandboxes import Ended, LocalSandbox
+from pdf_to_doc.web.settings import Settings
 
 SCANS = [["หน้าสแกนแรก"], ["หน้าสแกนที่สอง"]]
 PAGES = ["หน้าที่มีข้อความ", "หน้าสแกนแรก", "หน้าสแกนที่สอง"]
@@ -29,35 +30,10 @@ def mixed_pdf() -> bytes:
     return pdf([PAGES[0]], *(Scan(lines, dpi=50) for lines in SCANS))
 
 
-def browser(sandbox: Sandbox, *, secure_cookies: bool = True) -> TestClient:
-    """A browser on the service, over HTTPS as in production."""
-    return TestClient(create_app(sandbox, secure_cookies=secure_cookies), base_url="https://testserver")
-
-
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     with browser(FakeSandbox(lambda: FakeEngine(*SCANS))) as client:
         yield client
-
-
-def upload(client: TestClient, source: bytes, name: str = "สัญญา.pdf") -> str:
-    """Send a file from the home page's form, and return the conversion's link."""
-    response = client.post("/conversions", files={"file": (name, source)}, follow_redirects=False)
-    assert response.status_code == 303
-    return str(response.headers["location"])
-
-
-def wait_for_state(client: TestClient, link: str, done: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
-    """Ask for the conversion's state as its page does, until `done` holds."""
-    deadline = time.monotonic() + 30
-    while not done(state := dict(client.get(f"{link}/state").json())):
-        assert time.monotonic() < deadline, f"waited too long, at {state}"
-        time.sleep(0.05)
-    return state
-
-
-def ended_state(client: TestClient, link: str) -> str:
-    return str(wait_for_state(client, link, lambda state: state["state"] != "running")["state"])
 
 
 class HeldEngine(FakeEngine):
@@ -213,7 +189,7 @@ def test_an_unknown_link_is_not_found(client: TestClient) -> None:
 
 @pytest.mark.parametrize("secure", [True, False], ids=["production", "local development"])
 def test_the_browser_token_is_a_strict_http_only_cookie_for_a_day(secure: bool) -> None:
-    with browser(FakeSandbox(), secure_cookies=secure) as client:
+    with browser(FakeSandbox(), Settings(secure_cookies=secure)) as client:
         response = client.post("/conversions", files={"file": ("a.pdf", pdf(["หน้าแรก"]))}, follow_redirects=False)
 
     cookie = response.headers["set-cookie"].lower()
