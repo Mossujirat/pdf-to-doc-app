@@ -14,8 +14,7 @@ from pdf_builder import pdf
 from web_browser import SETTINGS, browser, send
 
 from pdf_to_doc.web.app import create_app
-from pdf_to_doc.web.bot_check import Misconfigured
-from pdf_to_doc.web.settings import Settings
+from pdf_to_doc.web.settings import Misconfigured, Settings
 
 REFUSED = "ตรวจสอบไม่ได้ว่าไฟล์นี้ส่งมาจากผู้ใช้จริง"
 
@@ -135,5 +134,6 @@ def test_production_refuses_to_start_without_real_keys(settings: Settings) -> No
 
 
 def test_production_starts_with_real_keys() -> None:
-    with TestClient(create_app(FakeSandbox(), replace(SETTINGS, production=True))) as client:
+    production = replace(SETTINGS, production=True, trusted_proxy="100.64.0.7", client_ip_header="X-Forwarded-For")
+    with TestClient(create_app(FakeSandbox(), production)) as client:
         assert 'data-sitekey="site-key"' in client.get("/").text

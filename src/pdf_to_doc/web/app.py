@@ -14,6 +14,7 @@ import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import get_args
 from urllib.parse import quote
@@ -26,7 +27,9 @@ from fastapi.staticfiles import StaticFiles
 
 from pdf_to_doc.conversion import SUFFIXES, OutputFormat
 from pdf_to_doc.web import pages
+from pdf_to_doc.web.allowance import Allowance, WallClock
 from pdf_to_doc.web.bot_check import TOKEN_FIELD, BotCheck
+from pdf_to_doc.web.client_ip import ClientIp
 from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Settings
@@ -51,14 +54,18 @@ def create_app(
     sandbox: Sandbox,
     settings: Settings = Settings(),
     clock: Clock = time.monotonic,
+    wall_clock: WallClock = lambda: datetime.now(UTC),
     cloudflare: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
-    """The web app, converting in `sandbox`. `clock` times how long outputs are kept, and
-    `cloudflare` stands in for Cloudflare in tests. Raises `Misconfigured` for a public
-    service whose bot check would not really check, so that it never starts."""
+    """The web app, converting in `sandbox`. `clock` times how long outputs are kept, `wall_clock`
+    tells the day for the allowance, and `cloudflare` stands in for Cloudflare in tests. Raises
+    `Misconfigured` for a public service whose bot check would not really check, or that cannot
+    tell its clients apart, so that it never starts."""
     bot_check = BotCheck.from_settings(settings, cloudflare)
+    client_ip = ClientIp.from_settings(settings)
     conversions = Conversions(
         sandbox,
+        Allowance(settings.pages_per_day, wall_clock),
         max_running=settings.max_running,
         max_waiting=settings.max_waiting,
         keep_for=settings.keep_for,
@@ -104,7 +111,7 @@ def create_app(
             return HTMLResponse(pages.bot_check_failed(), status_code=403)
         token = _token(request.cookies.get(COOKIE))
         try:
-            identifier = conversions.start(upload.source, upload.file_name, token)
+            identifier = conversions.start(upload.source, upload.file_name, token, client_ip.of(request))
         except AlreadyConverting as converting:
             return HTMLResponse(pages.already_converting(converting.identifier), status_code=409)
         except QueueFull:
@@ -163,7 +170,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # The access log would record visitors' IP addresses and conversion links.
     app = create_app(LocalSandbox(), Settings(secure_cookies=False, bot_check_test_mode=True))
-    uvicorn.run(app, host=args.host, port=args.port, access_log=False)
+    # The app reads the client's address itself, from the trusted proxy alone: uvicorn would
+    # otherwise take X-Forwarded-For from any local connection.
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False, proxy_headers=False)
     return 0
 
 

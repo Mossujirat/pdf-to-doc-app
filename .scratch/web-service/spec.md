@@ -207,6 +207,7 @@ A small service, the only part with access to Docker. It reaches the Docker Engi
 | refused | the refusal's kind |
 | failed | — (also covers timed out) |
 | cancelled | — |
+| over the allowance | the pages left, stopped at the page count (ticket 08) |
 
 - **Expiry:** finished outputs are dropped 10 minutes after the conversion finishes, or at once when the visitor deletes them. Downloading does not delete them (ADR 0001).
 - **Restarts:** a restart or deploy loses every conversion. A link to an unknown conversion shows a page explaining that it expired, was deleted, or was lost to a restart, and offers to convert again.

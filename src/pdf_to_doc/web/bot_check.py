@@ -12,7 +12,7 @@ from typing import Literal, Self
 
 import httpx
 
-from pdf_to_doc.web.settings import Settings
+from pdf_to_doc.web.settings import Misconfigured, Settings
 
 SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js"
 TOKEN_FIELD = "cf-turnstile-response"  # the form field the widget puts its token in
@@ -28,10 +28,6 @@ _TEST_KEY = re.compile("[123]x0+[A-F]{2}")  # the shape of every test key, site 
 
 # How a check came out, for the logs; only "passed" lets the upload in.
 Verdict = Literal["passed", "not configured", "no token", "failed", "unreachable", "another site"]
-
-
-class Misconfigured(Exception):
-    """The public service's settings would let bots through, or let no one in."""
 
 
 @dataclass(frozen=True)

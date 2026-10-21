@@ -17,6 +17,7 @@ from typing import Literal
 from pdf_to_doc.conversion import OutputFormat
 from pdf_to_doc.exit_codes import EXIT_OK
 from pdf_to_doc.summary import Summary
+from pdf_to_doc.web.allowance import Allowance, Charge
 from pdf_to_doc.web.protocol import (
     Event,
     FailureEvent,
@@ -30,7 +31,7 @@ from pdf_to_doc.web.protocol import (
 )
 from pdf_to_doc.web.sandboxes import Ended, Sandbox
 
-State = Literal["waiting", "running", "finished", "refused", "failed", "cancelled"]
+State = Literal["waiting", "running", "finished", "refused", "failed", "cancelled", "over_allowance"]
 # Seconds on a clock that never goes back, such as time.monotonic. It tells no date.
 Clock = Callable[[], float]
 
@@ -49,13 +50,22 @@ class AlreadyConverting(Exception):
         self.identifier = identifier  # that conversion's
 
 
+class _OverAllowance(Exception):
+    """The source file has more pages than its client has left today."""
+
+
 @dataclass
 class Conversion:
     """One conversion. Only the browser whose token started it may see it."""
 
     token: str
     file_name: str  # only to name the downloads
+    # The client's address as its allowance counts it; held in memory only, and dropped when the
+    # conversion ends.
+    client_ip: str | None
     state: State = "waiting"
+    charge: Charge | None = None  # its pages, charged to the client's allowance
+    pages_left: int | None = None  # what the client had left today, when the file had more pages
     opened: OpenedEvent | None = None
     progress: ProgressEvent | None = None
     summary: Summary | None = None
@@ -73,10 +83,21 @@ class Conversion:
 class Conversions:
     """Every conversion the web app holds: at most `max_running` converting at once, and at most
     `max_waiting` waiting for a place. A conversion is forgotten `keep_for` seconds after it
-    ends, however it ends, or as soon as the visitor deletes it."""
+    ends, however it ends, or as soon as the visitor deletes it. Its pages are charged to its
+    client's allowance as soon as the sandbox has counted them, and given back if it fails."""
 
-    def __init__(self, sandbox: Sandbox, *, max_running: int, max_waiting: int, keep_for: float, clock: Clock) -> None:
+    def __init__(
+        self,
+        sandbox: Sandbox,
+        allowance: Allowance,
+        *,
+        max_running: int,
+        max_waiting: int,
+        keep_for: float,
+        clock: Clock,
+    ) -> None:
         self._sandbox = sandbox
+        self._allowance = allowance
         self._max_running = max_running
         self._max_waiting = max_waiting
         self._keep_for = keep_for
@@ -86,9 +107,10 @@ class Conversions:
         self._running: dict[str, asyncio.Task[None]] = {}
         self._stopping = False
 
-    def start(self, source: bytes, file_name: str, token: str) -> str:
-        """Queue the source file for the browser holding `token`, to convert as soon as a place
-        is free, and return the conversion's identifier: 128 random bits, for its link.
+    def start(self, source: bytes, file_name: str, token: str, client_ip: str) -> str:
+        """Queue the source file for the browser holding `token`, at the client address `client_ip`,
+        to convert as soon as a place is free, and return the conversion's identifier: 128 random
+        bits, for its link.
 
         Raises `AlreadyConverting` when that browser has a conversion waiting or running, and
         `QueueFull` when no more may wait. Either way, nothing of the file is kept.
@@ -101,7 +123,7 @@ class Conversions:
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
             raise QueueFull()
         identifier = secrets.token_urlsafe(16)
-        self._held[identifier] = Conversion(token, file_name)
+        self._held[identifier] = Conversion(token, file_name, client_ip)
         self._waiting[identifier] = source
         self._start_next()
         return identifier
@@ -187,35 +209,53 @@ class Conversions:
                         conversion.timed_out = item.timed_out
                         outcome, outputs = _outcome(conversion, item)
                     else:
-                        _apply(conversion, read_event(item))
+                        self._apply(conversion, read_event(item))
         except Exception as error:
-            # Only the type: a message could quote what the sandbox sent.
-            _log.warning("conversion failed: %s", type(error).__name__)
-            outcome = "failed"
+            if conversion.pages_left is None:
+                # Only the type: a message could quote what the sandbox sent.
+                _log.warning("conversion failed: %s", type(error).__name__)
+            # Over the allowance, leaving the loop has stopped the sandbox before any page was
+            # read; that stays the outcome even if stopping it went wrong.
+            outcome = "over_allowance" if conversion.pages_left is not None else "failed"
         if conversion.state == "running":  # a cancel, even one that went wrong while stopping, stays a cancel
             self._end(conversion, outcome, outputs)
 
+    def _apply(self, conversion: Conversion, event: Event) -> None:
+        if conversion.summary is not None or conversion.refusal is not None:
+            raise Malformed("an event after the conversion's last")
+        match event:
+            case OpenedEvent():
+                self._charge(conversion, event)
+            case ProgressEvent():
+                conversion.progress = event
+            case SummaryEvent():
+                conversion.summary = event.summary()
+            case RefusalEvent():
+                conversion.refusal = event
+            case FailureEvent():
+                _log.warning("conversion failed in the sandbox: %s", event.error)
+
+    def _charge(self, conversion: Conversion, opened: OpenedEvent) -> None:
+        """Charge the source file's pages to its client, or stop it if they do not fit."""
+        if conversion.opened is not None:
+            raise Malformed("a second count of the pages")
+        assert conversion.client_ip is not None  # held until the conversion ends
+        conversion.opened = opened
+        conversion.charge = self._allowance.charge(conversion.client_ip, opened.pages)
+        if conversion.charge is None:
+            conversion.pages_left = self._allowance.left(conversion.client_ip)
+            raise _OverAllowance()
+
     def _end(self, conversion: Conversion, state: State, outputs: dict[OutputFormat, bytes] | None = None) -> None:
-        """End the conversion, keeping its outputs only if it finished."""
+        """End the conversion, keeping its outputs only if it finished. A failure, the service's
+        own, gives its pages back; a cancel does not. Its client's address is dropped."""
         conversion.state = state
         conversion.ended_at = self._clock()
         conversion.outputs = outputs if state == "finished" and outputs else {}
-
-
-def _apply(conversion: Conversion, event: Event) -> None:
-    if conversion.summary is not None or conversion.refusal is not None:
-        raise Malformed("an event after the conversion's last")
-    match event:
-        case OpenedEvent():
-            conversion.opened = event
-        case ProgressEvent():
-            conversion.progress = event
-        case SummaryEvent():
-            conversion.summary = event.summary()
-        case RefusalEvent():
-            conversion.refusal = event
-        case FailureEvent():
-            _log.warning("conversion failed in the sandbox: %s", event.error)
+        if state == "failed" and conversion.charge is not None:
+            self._allowance.give_back(conversion.charge)
+        conversion.charge = None
+        conversion.client_ip = None
 
 
 def _outcome(conversion: Conversion, ended: Ended) -> tuple[State, dict[OutputFormat, bytes]]:

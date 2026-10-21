@@ -7,12 +7,12 @@ from typing import Any
 
 import httpx
 import httpx2  # the test client's HTTP library
+from fake_clock import FakeClock
 from fake_cloudflare import HOSTNAME, TOKEN, passing
 from fastapi.testclient import TestClient
 
 from pdf_to_doc.web.app import COOKIE, create_app
 from pdf_to_doc.web.bot_check import TOKEN_FIELD
-from pdf_to_doc.web.conversions import Clock
 from pdf_to_doc.web.sandboxes import Sandbox
 from pdf_to_doc.web.settings import Settings
 
@@ -23,13 +23,19 @@ SETTINGS = Settings(turnstile_site_key="site-key", turnstile_secret_key="secret-
 def browser(
     sandbox: Sandbox,
     settings: Settings = SETTINGS,
-    clock: Clock = time.monotonic,
+    clock: FakeClock | None = None,
     cloudflare: httpx.AsyncBaseTransport | None = None,
+    address: str = "203.0.113.10",
 ) -> TestClient:
-    """A browser on the service, over HTTPS as in production. Cloudflare passes every bot check,
-    unless `cloudflare` stands in for it otherwise."""
-    app = create_app(sandbox, settings, clock, cloudflare=cloudflare or passing())
-    return TestClient(app, base_url="https://testserver")
+    """A browser on the service, over HTTPS as in production, connecting from `address`.
+    Cloudflare passes every bot check, unless `cloudflare` stands in for it otherwise.
+    `clock` stands in for the time, monotonic and on the wall."""
+    cloudflare = cloudflare or passing()
+    if clock is None:
+        app = create_app(sandbox, settings, cloudflare=cloudflare)
+    else:
+        app = create_app(sandbox, settings, clock, clock.wall, cloudflare=cloudflare)
+    return TestClient(app, base_url="https://testserver", client=(address, 50000))
 
 
 def browser_token() -> str:
@@ -45,18 +51,33 @@ def as_browser(client: TestClient, token: str) -> TestClient:
     return client
 
 
-def send(client: TestClient, source: bytes, name: str = "สัญญา.pdf") -> httpx2.Response:
-    """Send a file from the home page's form, with the token its bot check put there."""
+def send(
+    client: TestClient, source: bytes, name: str = "สัญญา.pdf", headers: list[tuple[str, str]] | None = None
+) -> httpx2.Response:
+    """Send a file from the home page's form, with the token its bot check put there, and any
+    `headers` of the request's own."""
     return client.post(
-        "/conversions", data={TOKEN_FIELD: TOKEN}, files={"file": (name, source)}, follow_redirects=False
+        "/conversions",
+        data={TOKEN_FIELD: TOKEN},
+        files={"file": (name, source)},
+        headers=headers,
+        follow_redirects=False,
     )
 
 
-def upload(client: TestClient, source: bytes, name: str = "สัญญา.pdf") -> str:
+def upload(
+    client: TestClient, source: bytes, name: str = "สัญญา.pdf", headers: list[tuple[str, str]] | None = None
+) -> str:
     """Send a file from the home page's form, and return the conversion's link."""
-    response = send(client, source, name)
+    response = send(client, source, name, headers)
     assert response.status_code == 303, response.text
     return str(response.headers["location"])
+
+
+def converted(client: TestClient, source: bytes, headers: list[tuple[str, str]] | None = None) -> tuple[str, str]:
+    """Send a file, wait for its conversion to end, and return how it ended and what its page says."""
+    link = upload(client, source, headers=headers)
+    return ended_state(client, link), client.get(link).text
 
 
 def cancel(client: TestClient, link: str) -> None:

@@ -46,6 +46,8 @@ def status(conversion: Conversion, place: int | None) -> str:
             return "การแปลงล้มเหลว"
         case "cancelled":
             return "ยกเลิกการแปลงแล้ว"
+        case "over_allowance":
+            return "เกินจำนวนหน้าที่แปลงได้ในวันนี้"
     if progress is not None and progress.stage == "ocr":
         return f"OCR หน้า {progress.current}/{progress.total}"
     if progress is not None and progress.stage == "writing":
@@ -85,6 +87,13 @@ def conversion_page(identifier: str, conversion: Conversion, place: int | None, 
             body = f"<p>การแปลงใช้เวลานานเกินกำหนดจึงถูกหยุด กรุณาลองใหม่อีกครั้ง</p>\n{again}"
         case "failed":
             body = f"<p>กรุณาลองใหม่อีกครั้ง</p>\n{again}"
+        case "over_allowance":
+            assert conversion.opened is not None and conversion.pages_left is not None
+            body = (
+                f"<p>ไฟล์นี้มี {conversion.opened.pages} หน้า แต่วันนี้แปลงได้อีก {conversion.pages_left} หน้า"
+                " จำนวนหน้าจะเริ่มนับใหม่เที่ยงคืนนี้ เวลาประเทศไทย</p>\n"
+                f"{again}"
+            )
         case _:  # cancelled
             body = again
     return _page(text, f"{heading}\n{body}")
