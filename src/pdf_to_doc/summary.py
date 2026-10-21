@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import get_args
 
-from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind
+from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind, uncertain_text
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,7 @@ class PageSummary:
     engine: str | None = None
     untrusted_text_layer: bool = False
     placeholders: tuple[PlaceholderKind, ...] = ()  # the kind of each placeholder, in reading order
+    uncertain: int = 0  # stretches of uncertain text
 
 
 @dataclass(frozen=True)
@@ -25,9 +26,14 @@ class Summary:
     def placeholder_count(self, kind: PlaceholderKind) -> int:
         return sum(page.placeholders.count(kind) for page in self.pages)
 
-    def headline(self) -> str:
+    @property
+    def uncertain(self) -> int:
+        return sum(page.uncertain for page in self.pages)
+
+    def headline(self, uncertain_marked_as: str | None = None) -> str:
         """One Thai sentence for people: how many pages, how each was read, which were read with
-        OCR, and how many placeholders of each kind stand in for what was not transcribed."""
+        OCR, how many placeholders of each kind stand in for what was not transcribed, and how
+        much text is uncertain and where. `uncertain_marked_as` says how an output marks it."""
         sentence = (
             f"{len(self.pages)} หน้า: "
             f"อ่านจากข้อความในไฟล์ {self.count('text')} หน้า, "
@@ -43,6 +49,11 @@ class Summary:
         counts = [(Placeholder(kind).name, self.placeholder_count(kind)) for kind in get_args(PlaceholderKind)]
         if any(count for _, count in counts):
             sentence += " ส่วนที่ไม่ได้ถอดเป็นข้อความ: " + ", ".join(f"{name} {count} จุด" for name, count in counts if count)
+        if self.uncertain:
+            pages = _page_ranges([page.number for page in self.pages if page.uncertain])
+            sentence += f" ข้อความที่ไม่แน่ใจ {self.uncertain} จุด ในหน้า {pages} ควรตรวจกับต้นฉบับ"
+            if uncertain_marked_as:
+                sentence += f" ({uncertain_marked_as})"
         return sentence
 
 
@@ -66,6 +77,7 @@ def summarize(document: Document) -> Summary:
                 page.engine,
                 page.untrusted_text_layer,
                 tuple(block.kind for block in page.blocks if isinstance(block, Placeholder)),
+                sum(len(uncertain_text(block)) for block in page.blocks),
             )
             for page in document.pages
         )

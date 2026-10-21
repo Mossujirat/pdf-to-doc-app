@@ -3,12 +3,13 @@
 import html
 import re
 
-from pdf_to_doc.model import Block, Document, Heading, ListItem, Table
+from pdf_to_doc.model import Block, Document, Heading, ListItem, Paragraph, Span, Table, stretches
 from pdf_to_doc.summary import Summary
 
 
 def render_markdown(document: Document, summary: Summary) -> str:
-    parts = [f"> **สรุปการแปลง** {summary.headline()}"]
+    # The tag is written as code, so that viewers show it instead of highlighting, and it is not counted.
+    parts = [f"> **สรุปการแปลง** {summary.headline(uncertain_marked_as='ครอบไว้ด้วย `<mark>`')}"]
     for page in document.pages:
         parts.append(_page_marker(page.number))
         previous: Block | None = None
@@ -26,10 +27,17 @@ def _render_block(block: Block) -> str:
     if isinstance(block, Heading):
         return f"{'#' * block.level} {block.text}"
     if isinstance(block, ListItem):
-        return f"{'  ' * block.level}- {block.text}"
+        return f"{'  ' * block.level}- {_marked(block.text, block.uncertain)}"
     if isinstance(block, Table):
         return _html_table(block) if block.has_merged_cells else _gfm_table(block)
+    if isinstance(block, Paragraph):
+        return _marked(block.text, block.uncertain)
     return block.text
+
+
+def _marked(text: str, uncertain: tuple[Span, ...]) -> str:
+    """The text with each stretch of uncertain text wrapped in a <mark> element."""
+    return "".join(f"<mark>{piece}</mark>" if marked else piece for marked, piece in stretches(text, uncertain))
 
 
 def _gfm_table(table: Table) -> str:

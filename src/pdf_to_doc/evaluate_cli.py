@@ -71,6 +71,7 @@ def _total_dict(report: Report) -> dict[str, Any]:
         "thai_cer": report.thai_cer,
         "broken": _broken_dict(report.broken),
         "uncertain": report.uncertain,
+        "unmarked_share": report.unmarked_share,
     }
 
 
@@ -86,6 +87,8 @@ def _page_dict(page: PageReport) -> dict[str, Any]:
         "thai_cer": score.thai_cer,
         "edits": score.edits,
         "characters": score.characters,
+        "unmarked_edits": score.unmarked_edits,
+        "marked_characters": score.marked_characters,
         "broken": _broken_dict(score.broken),
     }
 
@@ -95,28 +98,32 @@ def _broken_dict(broken: BrokenText) -> dict[str, int]:
 
 
 _BROKEN_KINDS = [field.name for field in fields(BrokenText)]
-_COLUMNS = ["source", "page", "kind", "engine", "CER", "Thai CER", *_BROKEN_KINDS, "broken", "uncertain"]
+# "unmarked" is the share of edits that fall outside uncertain text.
+_COLUMNS = ["source", "page", "kind", "engine", "CER", "Thai CER", *_BROKEN_KINDS, "broken", "uncertain", "unmarked"]
 
 
 def format_table(report: Report) -> str:
     rows = [[column.replace("_", " ") for column in _COLUMNS]]
     for page in report.pages:
-        rows.append(
-            [page.source, str(page.number), page.kind, page.engine or "-"]
-            + _measures(page.score.cer, page.score.thai_cer, page.score.broken, page.uncertain)
-        )
+        rows.append([page.source, str(page.number), page.kind, page.engine or "-"] + _measures(Report(pages=(page,))))
     totals = [("TOTAL", report)] + [(f"TOTAL {kind}", report.of_kind(kind)) for kind in _KINDS]
     for label, part in totals:
         if part.pages:
-            measures = _measures(part.cer, part.thai_cer, part.broken, part.uncertain)
-            rows.append([label, str(len(part.pages)), "", ""] + measures)
+            rows.append([label, str(len(part.pages)), "", ""] + _measures(part))
     widths = [max(len(row[i]) for row in rows) for i in range(len(_COLUMNS))]
     return "\n".join("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip() for row in rows)
 
 
-def _measures(cer: float, thai_cer: float, broken: BrokenText, uncertain: int) -> list[str]:
-    counts = [str(getattr(broken, kind)) for kind in _BROKEN_KINDS]
-    return [f"{cer:.4f}", f"{thai_cer:.4f}", *counts, str(broken.total), str(uncertain)]
+def _measures(report: Report) -> list[str]:
+    counts = [str(getattr(report.broken, kind)) for kind in _BROKEN_KINDS]
+    return [
+        f"{report.cer:.4f}",
+        f"{report.thai_cer:.4f}",
+        *counts,
+        str(report.broken.total),
+        str(report.uncertain),
+        f"{report.unmarked_share:.2f}",
+    ]
 
 
 if __name__ == "__main__":

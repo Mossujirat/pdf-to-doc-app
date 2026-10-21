@@ -6,11 +6,14 @@ from typing import Literal, assert_never
 PageKind = Literal["text", "ocr"]
 # Markdown and Word both have six heading levels.
 DEEPEST_HEADING = 6
+# Where a stretch of a block's text starts and ends, as positions in its text.
+Span = tuple[int, int]
 
 
 @dataclass(frozen=True)
 class Paragraph:
     text: str
+    uncertain: tuple[Span, ...] = ()  # uncertain text, in order
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,7 @@ class ListItem:
     text: str  # keeps its own number or letter, such as "1." or "(ก)"; bullets are dropped
     bulleted: bool  # the item had a bullet rather than its own number or letter
     level: int = 0  # how deep in a list within a list, 0 the outermost; text pages tell no depth
+    uncertain: tuple[Span, ...] = ()  # uncertain text, in order
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,26 @@ class Placeholder:
 
 
 Block = Paragraph | Heading | ListItem | Table | Placeholder
+
+
+def uncertain_text(block: Block) -> tuple[Span, ...]:
+    """The block's uncertain text. Only paragraphs and list items hold any: OCR pages give
+    no headings, and no tables until scanned tables are read."""
+    return block.uncertain if isinstance(block, (Paragraph, ListItem)) else ()
+
+
+def stretches(text: str, uncertain: tuple[Span, ...]) -> list[tuple[bool, str]]:
+    """The text cut into its uncertain stretches and the rest, in order, each flagged True if uncertain."""
+    pieces: list[tuple[bool, str]] = []
+    position = 0
+    for start, end in uncertain:
+        if start > position:
+            pieces.append((False, text[position:start]))
+        pieces.append((True, text[start:end]))
+        position = end
+    if position < len(text):
+        pieces.append((False, text[position:]))
+    return pieces
 
 
 @dataclass(frozen=True)

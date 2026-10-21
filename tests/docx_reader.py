@@ -38,6 +38,7 @@ class Run:
     thai_font: str
     thai_size: float
     thai_bold: bool
+    highlight: str | None  # the highlight colour, such as "yellow"
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ def runs(paragraph: Paragraph) -> list[Run]:
                 thai_font=_font(levels, "w:cs", "w:cstheme"),
                 thai_size=_size(levels, "w:szCs"),
                 thai_bold=_toggle(levels, "w:bCs"),
+                highlight=_value(levels, "w:highlight"),
             )
         )
     return looks
@@ -171,6 +173,11 @@ def _first(levels: list[BaseOxmlElement | None], tag: str) -> BaseOxmlElement | 
 def _toggle(levels: list[BaseOxmlElement | None], tag: str) -> bool:
     element = _first(levels, tag)
     return element is not None and element.get(qn("w:val")) not in ("0", "false")
+
+
+def _value(levels: list[BaseOxmlElement | None], tag: str) -> str | None:
+    element = _first(levels, tag)
+    return None if element is None else str(element.get(qn("w:val")))
 
 
 def _size(levels: list[BaseOxmlElement | None], tag: str) -> float:

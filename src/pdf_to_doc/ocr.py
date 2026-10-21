@@ -8,7 +8,8 @@ from typing import Literal, Protocol
 import pymupdf
 
 from pdf_to_doc.layout import PageRows, Row
-from pdf_to_doc.validation import unknown_words
+from pdf_to_doc.uncertain import Piece
+from pdf_to_doc.words import unknown_words
 
 Language = Literal["th", "en"]
 LANGUAGES: tuple[Language, ...] = ("th", "en")
@@ -105,6 +106,7 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
         x1=line[-1].box[2] * scale,
         y1=centre + half,
         size=size,
+        pieces=tuple(Piece(box.text, box.confidence) for box in line),
     )
 
 

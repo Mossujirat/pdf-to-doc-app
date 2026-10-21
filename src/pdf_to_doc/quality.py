@@ -6,7 +6,7 @@ import unicodedata
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from rapidfuzz.distance import Indel, Levenshtein, Opcode
+from rapidfuzz.distance import Editop, Indel, Levenshtein, Opcode
 
 from pdf_to_doc.conversion import convert
 from pdf_to_doc.markdown import split_pages
@@ -54,6 +54,8 @@ class PageScore:
     thai_edits: int
     thai_characters: int
     broken: BrokenText
+    unmarked_edits: int  # edits outside uncertain text, where a reader is not told to check
+    marked_characters: int  # output characters marked as uncertain text
 
     @property
     def cer(self) -> float:
@@ -73,7 +75,8 @@ def error_rate(edits: int, characters: int) -> float:
 
 def score_page(output: str, reference: str) -> PageScore:
     """Score one page. Both sides are compared as visible text: markup and spacing are ignored."""
-    output, reference = visible_text(output), visible_text(reference)
+    output, marked = _visible_and_marked(output)
+    reference = visible_text(reference)
     thai_output, thai_reference = _thai_only(output), _thai_only(reference)
     return PageScore(
         edits=Levenshtein.distance(output, reference),
@@ -81,7 +84,17 @@ def score_page(output: str, reference: str) -> PageScore:
         thai_edits=Levenshtein.distance(thai_output, thai_reference),
         thai_characters=len(thai_reference),
         broken=_broken_text(output, reference),
+        unmarked_edits=sum(1 for edit in Levenshtein.editops(output, reference) if not _marked_at(edit, marked)),
+        marked_characters=sum(marked),
     )
+
+
+def _marked_at(edit: Editop, marked: list[bool]) -> bool:
+    """Whether an edit falls in uncertain text: the output character it changes or deletes is
+    marked, or, for text the output lacks, a marked character stands next to the gap."""
+    if edit.tag == "insert":
+        return any(marked[position] for position in (edit.src_pos - 1, edit.src_pos) if 0 <= position < len(marked))
+    return marked[edit.src_pos]
 
 
 def _broken_text(output: str, reference: str) -> BrokenText:
@@ -174,6 +187,30 @@ def visible_text(markdown: str) -> str:
     return _WHITESPACE.sub(" ", text).strip()
 
 
+# Stand-ins for the tags of uncertain text, as the converter writes them, while the rest of the markup is taken out.
+_MARK_TAG = re.compile(r"<(/?)mark>")
+_MARK_START, _MARK_END = chr(1), chr(2)
+
+
+def _visible_and_marked(markdown: str) -> tuple[str, list[bool]]:
+    """The visible text, and for each of its characters whether a <mark> element holds it."""
+    text = visible_text(_MARK_TAG.sub(lambda tag: _MARK_END if tag[1] else _MARK_START, markdown))
+    characters: list[str] = []
+    marked: list[bool] = []
+    inside = False
+    for character in text:
+        if character in (_MARK_START, _MARK_END):
+            inside = character == _MARK_START
+        # A tag between two spaces leaves one space, as visible_text does without it.
+        elif not (character == " " and (not characters or characters[-1] == " ")):
+            characters.append(character)
+            marked.append(inside)
+    while characters and characters[-1] == " ":
+        characters.pop()
+        marked.pop()
+    return "".join(characters), marked
+
+
 @dataclass(frozen=True)
 class PageReport:
     source: str
@@ -181,9 +218,7 @@ class PageReport:
     kind: PageKind
     score: PageScore
     engine: str | None = None
-    # The conversion summary does not report this yet; uncertain-text marking
-    # (ticket 11) will fill it in.
-    uncertain: int = 0
+    uncertain: int = 0  # stretches of uncertain text, as the conversion summary counts them
 
 
 @dataclass(frozen=True)
@@ -212,6 +247,12 @@ class Report:
     @property
     def uncertain(self) -> int:
         return sum(page.uncertain for page in self.pages)
+
+    @property
+    def unmarked_share(self) -> float:
+        """The share of all edits that fall outside uncertain text."""
+        edits = sum(page.score.edits for page in self.pages)
+        return sum(page.score.unmarked_edits for page in self.pages) / edits if edits else 0.0
 
     def of_kind(self, kind: PageKind) -> "Report":
         """The report for text pages only, or for OCR pages only."""
@@ -244,7 +285,7 @@ def evaluate(corpus: Path, ocr: OcrEngine | None = None) -> Report:
                 raise CorpusError(f"{source.name} has no page {number}, but has reference text for it")
             score = score_page(outputs.get(number, ""), reference)
             summary = summaries[number]
-            pages.append(PageReport(source.stem, number, summary.kind, score, summary.engine))
+            pages.append(PageReport(source.stem, number, summary.kind, score, summary.engine, summary.uncertain))
     if not pages:
         raise CorpusError(f"no reference text found in {corpus}")
     return Report(pages=tuple(pages))

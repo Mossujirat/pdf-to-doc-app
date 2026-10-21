@@ -153,8 +153,15 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - It outputs HTML tables, which feed the document model's tables.
   - It writes descriptions of images; these are replaced by placeholders.
 
-**Uncertain text**
-- OCR text below a confidence threshold is uncertain text. Set the threshold from the corpus.
+**Uncertain text** (ticket 11)
+- Only text that OCR read can be uncertain. Text taken from a text layer never is.
+- Two signals mark it, decided with the user on 2026-10-21:
+  - **A Thai word that the word list does not hold.** A misread mark or letter usually leaves one, such as "ผู้อืน" for "ผู้อื่น". The word is marked, not its whole line. This works for any engine, Typhoon included, which gives no confidence at all.
+  - **A box the engine read with a confidence below 0.85.** The whole box is marked.
+- The confidence alone could not be the signal. PaddleOCR scores a whole line, and one wrong mark barely moves the score. On synthetic scans at six levels of damage, lines with one or two wrong characters scored 0.93–0.96, as did lines with none, while lines read as nonsense scored 0.64–0.75. Catching small misreads by confidence would have meant marking about a third of all text.
+- Neighbouring uncertain words, with only whitespace between them, are marked as one stretch.
+- **Known gap:** a misread that is itself a word is not marked, such as "ที" for "ที่" or "ทาก" for "หาก". Neither are lost digits or punctuation. The harness reports the share of errors left unmarked, so that ticket 17 can measure it on real scans.
+- `corpus/degraded/` holds scans damaged on purpose, outside the quality gate, for measuring this with the harness.
 - Handwriting is not transcribed:
   - Where it can be identified, it becomes a placeholder: Typhoon tags it, and it can be an image object on a text page.
   - Otherwise, low-confidence handwriting becomes uncertain text, never silent output.
@@ -311,13 +318,17 @@ The web-service grilling on 2026-10-21 settled the rest, including the sandbox (
 | `feat/ocr` | 08, 10–12, 14, 15 |
 | `chore/quality-gate` | 16, 17 |
 
-`feat/ocr` merges in two PRs, at the user's choice (2026-10-20). The first holds 08, 10 and 12, so `feat/docx` starts from a `main` that already reads OCR pages. Tickets 11, 14 and 15 need 07 and 09 from `feat/docx`, so they follow in a second PR.
+`feat/ocr` merges in three PRs, at the user's choice:
+1. **08, 10 and 12** (2026-10-20), so that `feat/docx` starts from a `main` that already reads OCR pages.
+2. **11 alone** (2026-10-21), because the web service launches once it is in.
+3. **14 and 15.**
+
+Tickets 11, 14 and 15 need 07 and 09 from `feat/docx`.
 
 **Glossary.** Domain terms follow `GLOSSARY.md`: source file, document model, output, conversion, Accurate mode, broken text, uncertain text, placeholder, reference text, text layer, text page, OCR page.
 
 **Open questions to settle during implementation:**
 - Does PaddleOCR's Thai recogniser handle English words and digits on the same line, or does a page need both recognisers?
-- The confidence threshold for uncertain text, and the dictionary threshold for text-layer validation.
 - Whether PP-StructureV3 gives usable scanned tables on CPU.
 - Whether speed and results on Linux match the Windows benchmarks.
 - How multi-column layouts behave. This was not discussed, and the samples are single-column.

@@ -12,10 +12,12 @@ from pdf_to_doc.model import (
     PageKind,
     Paragraph,
     Placeholder,
+    Span,
     Table,
     TableCell,
 )
 from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
+from pdf_to_doc.uncertain import Piece, uncertain_spans
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
 EDGE_BAND = 0.10
@@ -83,6 +85,9 @@ class Row:
     size: float
     bold: bool = False  # every character in the row is bold
     in_columns: bool = False  # parts of the row are set apart in columns, as with tab stops
+    # What the row was read from, in reading order: the OCR engine's boxes, and text
+    # from the text layer beside them. Empty for a row taken from the text layer alone.
+    pieces: tuple[Piece, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -240,6 +245,7 @@ def _join_on_baselines(rows: tuple[Row, ...]) -> tuple[Row, ...]:
                 y1=max(previous.y1, row.y1),
                 bold=previous.bold and row.bold,
                 in_columns=previous.in_columns or row.x0 - previous.x1 > _COLUMN_GAP * row.size,
+                pieces=_pieces(previous) + _pieces(row) if previous.pieces or row.pieces else (),
             )
         else:
             joined.append(row)
@@ -426,7 +432,19 @@ def _block(group: list[Row], levels: dict[float, int]) -> Block:
     if short and group[0].size in levels:
         return Heading(level=min(levels[group[0].size], DEEPEST_HEADING), text=text)
     if _starts_list_item(text) and not group[0].in_columns:
-        return ListItem(_BULLET_ITEM.sub("", text), bulleted=bool(_BULLET_ITEM.match(text)))
+        item = _BULLET_ITEM.sub("", text)
+        return ListItem(item, bulleted=bool(_BULLET_ITEM.match(text)), uncertain=_uncertain(item, group))
     if short and all(row.bold and not row.in_columns for row in group):
         return Heading(level=min(max(levels.values(), default=0) + 1, DEEPEST_HEADING), text=text)
-    return Paragraph(text)
+    return Paragraph(text, _uncertain(text, group))
+
+
+def _uncertain(text: str, group: list[Row]) -> tuple[Span, ...]:
+    """The uncertain text of a block made of the group's rows. Only text that OCR read can be uncertain."""
+    if not any(row.pieces for row in group):
+        return ()
+    return uncertain_spans(text, [piece for row in group for piece in _pieces(row)])
+
+
+def _pieces(row: Row) -> tuple[Piece, ...]:
+    return row.pieces or (Piece(row.text),)

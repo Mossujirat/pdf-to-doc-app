@@ -30,7 +30,7 @@ Any place where the output's text differs from what a reader sees in the origina
 _Avoid_: garbled text, ตัวหนังสือขาด (when used loosely)
 
 **Uncertain text**:
-Text in an output that the converter could not confirm reads correctly, such as a low-confidence OCR result. It is always marked in the output and counted in the output's summary.
+Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
 _Avoid_: low-quality text, error
 
 **Placeholder**:

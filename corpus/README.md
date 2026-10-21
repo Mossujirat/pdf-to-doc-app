@@ -64,7 +64,8 @@ The harness then reports, per page and in total:
   - **missing text**: a run of 10 or more reference characters that the output lacks altogether. This does not depend on how the reference is wrapped into lines.
 - **Page kind**: text page or OCR page.
 - **OCR engine**: the engine that read an OCR page, `-` for a text page.
-- **Uncertain-text count**: 0 until uncertain-text marking exists.
+- **Uncertain text**: how many stretches the output marks as uncertain text, as its summary counts them.
+- **Unmarked**: the share of edits that fall outside uncertain text, where a reader is not told to check. An edit counts as marked when the output character it changes or deletes is inside a `<mark>`, or, for text the output lacks, when a marked character stands next to the gap. The JSON report also gives each page's `unmarked_edits` and `marked_characters`, which show how much correct text is marked too.
 
 Totals are given for all pages, and separately for text pages and for OCR pages. `--max-cer` and `--max-broken` apply to text pages only: the quality gate is zero broken text on text pages. OCR pages are measured, and their gate comes with the OCR baseline.
 
@@ -88,6 +89,18 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - The same inputs always give the same bytes.
-- A test fails when the committed files in `synthetic/` differ from what the generator makes.
+- A test fails when the committed files in `synthetic/` or `degraded/` differ from what the generator makes.
+
+## Damaged scans
+
+`degraded/` holds one document, `damaged-scans`. Its five pages are the same twelve contract lines, scanned at rising damage: from the corpus's own 200 dpi with mild grain down to 75 dpi with heavy grain and 1.8° of skew. Each line is a paragraph of its own.
+
+OCR is expected to get these pages wrong, so they sit outside the quality gate and outside CI. They are there to measure uncertain-text marking with the harness:
+
+```sh
+uv run pdf-to-doc-eval corpus/degraded
+```
+
+The **unmarked** column shows how much of what OCR got wrong was left unmarked. The JSON report's `marked_characters` shows how much was marked in all, including correct text.
 
 The fonts are Sarabun and Niramit. Both are under the SIL Open Font License, and their licence files sit beside them.
