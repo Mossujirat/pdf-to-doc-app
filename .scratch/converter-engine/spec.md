@@ -318,7 +318,12 @@ The web-service grilling on 2026-10-21 settled the rest, including the sandbox (
 | `feat/ocr` | 08, 10–12, 14, 15 |
 | `chore/quality-gate` | 16, 17 |
 
-`feat/ocr` merges in two PRs, at the user's choice (2026-10-20). The first holds 08, 10 and 12, so `feat/docx` starts from a `main` that already reads OCR pages. Tickets 11, 14 and 15 need 07 and 09 from `feat/docx`, so they follow in a second PR.
+`feat/ocr` merges in three PRs, at the user's choice:
+1. **08, 10 and 12** (2026-10-20), so that `feat/docx` starts from a `main` that already reads OCR pages.
+2. **11 alone** (2026-10-21), because the web service launches once it is in.
+3. **14 and 15.**
+
+Tickets 11, 14 and 15 need 07 and 09 from `feat/docx`.
 
 **Glossary.** Domain terms follow `GLOSSARY.md`: source file, document model, output, conversion, Accurate mode, broken text, uncertain text, placeholder, reference text, text layer, text page, OCR page.
 
