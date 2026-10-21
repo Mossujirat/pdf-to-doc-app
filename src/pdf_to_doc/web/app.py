@@ -12,28 +12,30 @@ import secrets
 import string
 import sys
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import get_args
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from pdf_to_doc.conversion import SUFFIXES, OutputFormat
 from pdf_to_doc.web import pages
 from pdf_to_doc.web.allowance import Allowance, WallClock
-from pdf_to_doc.web.bot_check import TOKEN_FIELD, BotCheck
+from pdf_to_doc.web.bot_check import CLOUDFLARE, TOKEN_FIELD, BotCheck
 from pdf_to_doc.web.client_ip import ClientIp
 from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
 from pdf_to_doc.web.launcher import LauncherSandbox
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Misconfigured, Settings, from_environment
+from pdf_to_doc.web.statistics import PORT as STATISTICS_PORT
+from pdf_to_doc.web.statistics import Statistics
 from pdf_to_doc.web.upload import NotAnUpload, UploadTooLarge, read_upload
 
 COOKIE = "browser"
@@ -51,17 +53,29 @@ _MEDIA_TYPES: dict[OutputFormat, str] = {
 }
 # `pdf-to-doc-web --dev`, on a developer's machine.
 _DEVELOPMENT = Settings(sandbox="local", secure_cookies=False, bot_check_test_mode=True)
+# This site alone, and Cloudflare's for the bot check's script and frame, as Turnstile asks
+# (developers.cloudflare.com, read 2026-10-21). There is no inline script or style.
+_CONTENT_SECURITY_POLICY = (
+    f"default-src 'self'; script-src 'self' {CLOUDFLARE}; frame-src {CLOUDFLARE}; object-src 'none'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def create_app(
     sandbox: Sandbox,
     settings: Settings = Settings(),
     clock: Clock = time.monotonic,
-    wall_clock: WallClock = lambda: datetime.now(UTC),
+    wall_clock: WallClock = _now,
     cloudflare: httpx.AsyncBaseTransport | None = None,
+    statistics: Statistics | None = None,
 ) -> FastAPI:
     """The web app, converting in `sandbox`. `clock` times how long outputs are kept, `wall_clock`
-    tells the day for the allowance, and `cloudflare` stands in for Cloudflare in tests. Raises
+    tells the day for the allowance and the statistics, `cloudflare` stands in for Cloudflare in
+    tests, and `statistics` counts how the service is used, for `statistics_app`. Raises
     `Misconfigured` for a public service whose bot check would not really check, that cannot tell
     its clients apart, that would convert outside the launcher's sandboxes, or whose cookie would
     not be Secure, so that it never starts."""
@@ -71,9 +85,11 @@ def create_app(
         raise Misconfigured("the public service converts only in the launcher's sandboxes")
     if settings.production and not settings.secure_cookies:
         raise Misconfigured("the public service's cookie must be Secure")
+    statistics = statistics or Statistics(wall_clock)
     conversions = Conversions(
         sandbox,
         Allowance(settings.pages_per_day, wall_clock),
+        statistics,
         max_running=settings.max_running,
         max_waiting=settings.max_waiting,
         keep_for=settings.keep_for,
@@ -83,17 +99,63 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         forgetting = asyncio.create_task(conversions.forget_expired_every(_FORGET_EVERY))
+        _log.info("started")
         yield
         forgetting.cancel()
         await conversions.stop()
+        _log.info("stopped")
 
     # There is no API for programs, so no API documentation either.
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
+    @app.middleware("http")
+    async def guard(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Every request that changes something, an upload, a cancel or a delete, must come from
+        one of this site's own pages; an upload is refused before it is read. The site loads
+        nothing from elsewhere but the bot check, and tells no other site where a visitor came
+        from. A conversion's pages and downloads are neither cached nor indexed. An unexpected
+        error is logged by its type and its route alone: its message could quote a conversion,
+        and the address holds the conversion's link."""
+        if request.method not in ("GET", "HEAD") and not from_this_site(request):
+            response: Response = refuse("another site", pages.from_another_site(), 403)
+        else:
+            try:
+                response = await call_next(request)
+            except Exception as error:
+                route = getattr(request.scope.get("route"), "path", "an unknown route")
+                _log.error("failed: %s at %s", type(error).__name__, route)
+                response = HTMLResponse(pages.unexpected_error(), status_code=500)
+        response.headers.setdefault("Content-Security-Policy", _CONTENT_SECURITY_POLICY)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # Not no-referrer: a browser then names no origin on a form it posts, so that the
+        # checks on where a request came from would refuse every cancel and delete.
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        if request.url.path.startswith("/conversions"):  # the answer to an upload too
+            response.headers.setdefault("Cache-Control", "no-store")
+            response.headers.setdefault("X-Robots-Tag", "noindex")
+        return response
+
+    def refuse(kind: str, page: str, status_code: int) -> HTMLResponse:
+        statistics.refused(kind)
+        return HTMLResponse(page, status_code=status_code)
+
+    def from_this_site(request: Request) -> bool:
+        """Whether a request that changes something came from one of this site's own pages, by
+        the origin the browser names: the site is its hostname, or without one, wherever the
+        request was sent. Another site's page can make a browser post to this one, but cannot
+        make it name this site as the origin."""
+        origin = request.headers.get("origin")
+        site = settings.hostname or request.headers.get("host")
+        return origin is not None and site is not None and urlsplit(origin).netloc == site
+
     @app.exception_handler(404)
     async def not_found(request: Request, error: Exception) -> HTMLResponse:
         return HTMLResponse(pages.not_found(settings.keep_for), status_code=404)
+
+    @app.get("/health")
+    async def health() -> PlainTextResponse:
+        return PlainTextResponse("ok")
 
     def conversion_or_404(request: Request, identifier: str) -> Conversion:
         conversion = conversions.get(identifier, request.cookies.get(COOKIE))
@@ -110,20 +172,21 @@ def create_app(
         try:
             upload = await read_upload(request)
         except UploadTooLarge:
-            return HTMLResponse(pages.too_large(), status_code=413)
+            return refuse("too large", pages.too_large(), 413)
         except NotAnUpload:
-            return HTMLResponse(pages.not_an_upload(), status_code=400)
+            return refuse("not an upload", pages.not_an_upload(), 400)
         verdict = await bot_check.check(upload.fields.get(TOKEN_FIELD))
         if verdict != "passed":
             _log.info("upload refused by the bot check: %s", verdict)
+            statistics.bot_check_failed(verdict)
             return HTMLResponse(pages.bot_check_failed(), status_code=403)
         token = _token(request.cookies.get(COOKIE))
         try:
             identifier = conversions.start(upload.source, upload.file_name, token, client_ip.of(request))
         except AlreadyConverting as converting:
-            return HTMLResponse(pages.already_converting(converting.identifier), status_code=409)
+            return refuse("one at a time", pages.already_converting(converting.identifier), 409)
         except QueueFull:
-            return HTMLResponse(pages.queue_full(), status_code=503)
+            return refuse("queue full", pages.queue_full(), 503)
         response = RedirectResponse(f"/conversions/{identifier}", status_code=303)
         response.set_cookie(
             COOKIE, token, max_age=_DAY, secure=settings.secure_cookies, httponly=True, samesite="strict"
@@ -143,7 +206,7 @@ def create_app(
         return JSONResponse({"state": conversion.state, "text": text, "ongoing": conversion.ongoing})
 
     @app.post("/conversions/{identifier}/cancel")
-    async def cancel(request: Request, identifier: str) -> RedirectResponse:
+    async def cancel(request: Request, identifier: str) -> Response:
         conversion_or_404(request, identifier)
         conversions.cancel(identifier)
         return RedirectResponse(f"/conversions/{identifier}", status_code=303)
@@ -160,10 +223,40 @@ def create_app(
         found = next((known for known in get_args(OutputFormat) if known == output and known in conversion.outputs), None)
         if found is None:
             raise HTTPException(404)
-        disposition = _attachment(conversion.file_name, SUFFIXES[found])
-        return Response(conversion.outputs[found], media_type=_MEDIA_TYPES[found], headers={"Content-Disposition": disposition})
+        headers = {"Content-Disposition": _attachment(conversion.file_name, SUFFIXES[found]), "Referrer-Policy": "no-referrer"}
+        return Response(conversion.outputs[found], media_type=_MEDIA_TYPES[found], headers=headers)
 
     return app
+
+
+def statistics_app(statistics: Statistics) -> FastAPI:
+    """The operator's counters, for a listener of their own on the loopback address alone, which
+    the public one never forwards to."""
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/")
+    async def counters() -> JSONResponse:
+        return JSONResponse(statistics.report())
+
+    return app
+
+
+class _SecondServer(uvicorn.Server):
+    """A second server in the process. The first one takes the signals, and this one stops after it."""
+
+    @contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+
+async def _serve(public: uvicorn.Server, statistics: _SecondServer) -> None:
+    """Serve the public app and the statistics side by side, until the public server is stopped."""
+    serving_statistics = asyncio.create_task(statistics.serve())
+    try:
+        await public.serve()
+    finally:
+        statistics.should_exit = True
+        await serving_statistics
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -183,16 +276,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="ที่อยู่ที่รับการเชื่อมต่อ (ค่าเริ่มต้น: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="พอร์ต (ค่าเริ่มต้น: 8000)")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # it would log each bot check sent to Cloudflare
     try:
         settings = _DEVELOPMENT if args.dev else from_environment(Settings)
         sandbox: Sandbox = LocalSandbox() if settings.sandbox == "local" else LauncherSandbox.at()
-        app = create_app(sandbox, settings)
+        statistics = Statistics(_now)
+        app = create_app(sandbox, settings, statistics=statistics)
     except (Misconfigured, NotImplementedError) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
     # The access log would record visitors' IP addresses and conversion links. The app reads the
     # client's address itself, from the trusted proxy alone: uvicorn would otherwise take
     # X-Forwarded-For from any local connection.
-    uvicorn.run(app, host=args.host, port=args.port, access_log=False, proxy_headers=False)
+    public = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, access_log=False, proxy_headers=False))
+    # On the loopback address of the machine, or container, the app runs on: nothing else reaches it.
+    counters = statistics_app(statistics)
+    statistics_server = _SecondServer(
+        uvicorn.Config(counters, host="127.0.0.1", port=STATISTICS_PORT, access_log=False, lifespan="off")
+    )
+    asyncio.run(_serve(public, statistics_server))
     return 0
 
 

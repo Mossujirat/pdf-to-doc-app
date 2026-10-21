@@ -14,10 +14,11 @@ import httpx
 
 from pdf_to_doc.web.settings import Misconfigured, Settings
 
-SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+CLOUDFLARE = "https://challenges.cloudflare.com"  # where the widget's script and frame come from
+SCRIPT = f"{CLOUDFLARE}/turnstile/v0/api.js"
 TOKEN_FIELD = "cf-turnstile-response"  # the form field the widget puts its token in
 ACTION = "upload"
-_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+_SITEVERIFY = f"{CLOUDFLARE}/turnstile/v0/siteverify"
 _TIMEOUT = 10  # seconds in all, as Cloudflare's own examples wait
 _LONGEST_TOKEN = 2048
 # Cloudflare's test keys: an invisible widget, and a secret, that always pass. Asked on 2026-10-21,

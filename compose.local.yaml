@@ -5,8 +5,15 @@
 #   docker compose -f compose.local.yaml up --build
 #
 # Then open http://127.0.0.1:8000. The bot check's test mode still asks Cloudflare, so the web
-# app needs the internet.
+# app needs the internet. The operator's counters are served inside the web app's container
+# alone: `docker compose -f compose.local.yaml exec web pdf-to-doc-statistics`.
 name: pdf-to-doc-local
+
+x-logging: &logging  # Docker keeps the logs in files it rotates, so that they cannot fill the disk
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   web:
@@ -23,6 +30,7 @@ services:
       - launcher:/run/pdf-to-doc:ro
     read_only: true
     tmpfs: [/tmp]
+    logging: *logging
     depends_on: [launcher]
 
   launcher:
@@ -40,6 +48,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     read_only: true
     tmpfs: [/tmp]
+    logging: *logging
 
 volumes:
   launcher:  # the launcher's socket, shared with the web app alone

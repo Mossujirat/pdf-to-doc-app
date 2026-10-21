@@ -15,9 +15,11 @@ from pdf_to_doc.web.app import COOKIE, create_app
 from pdf_to_doc.web.bot_check import TOKEN_FIELD
 from pdf_to_doc.web.sandboxes import Sandbox
 from pdf_to_doc.web.settings import Settings
+from pdf_to_doc.web.statistics import Statistics
 
 # The service as the tests run it: with its bot check's keys, for this test site.
 SETTINGS = Settings(turnstile_site_key="site-key", turnstile_secret_key="secret-key", hostname=HOSTNAME)
+SITE = f"https://{HOSTNAME}"  # the site's origin, as a browser names it
 
 
 def browser(
@@ -26,16 +28,18 @@ def browser(
     clock: FakeClock | None = None,
     cloudflare: httpx.AsyncBaseTransport | None = None,
     address: str = "203.0.113.10",
+    statistics: Statistics | None = None,
 ) -> TestClient:
-    """A browser on the service, over HTTPS as in production, connecting from `address`.
+    """A browser on the service, over HTTPS as in production, connecting from `address`. As a
+    browser does, it names the site's own origin on every request from one of its pages.
     Cloudflare passes every bot check, unless `cloudflare` stands in for it otherwise.
-    `clock` stands in for the time, monotonic and on the wall."""
+    `clock` stands in for the time, monotonic and on the wall. `statistics` count what it does."""
     cloudflare = cloudflare or passing()
     if clock is None:
-        app = create_app(sandbox, settings, cloudflare=cloudflare)
+        app = create_app(sandbox, settings, cloudflare=cloudflare, statistics=statistics)
     else:
-        app = create_app(sandbox, settings, clock, clock.wall, cloudflare=cloudflare)
-    return TestClient(app, base_url="https://testserver", client=(address, 50000))
+        app = create_app(sandbox, settings, clock, clock.wall, cloudflare=cloudflare, statistics=statistics)
+    return TestClient(app, base_url=SITE, client=(address, 50000), headers={"origin": SITE})
 
 
 def browser_token() -> str:
