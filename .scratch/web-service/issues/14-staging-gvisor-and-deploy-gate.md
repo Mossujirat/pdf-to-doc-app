@@ -166,3 +166,6 @@ Staging's record is `refs/staging/passed` = `a8eee89`.
   - Funnel's bandwidth with a file near 50 MB
 
 **Kept:** the remote steps in `deploy.sh` repeat a `/health` loop and a `dc()` helper, as Chatbot's do. Each heredoc runs on `gmt` on its own.
+
+**The smoke test after the review:** all 35 checks passed at `5578a38`, and staging's record is `refs/staging/passed` = `5578a38`.
+- **On the way:** the remote `docker image inspect` had split on the space in `{{json .Config.Env}}`. ssh hands the server's shell one line, so each argument is now quoted (`shlex.join`).
