@@ -11,7 +11,7 @@ from fake_cloudflare import HOSTNAME, TOKEN, FakeCloudflare, failing, passing, u
 from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
 from pdf_builder import pdf
-from web_browser import SETTINGS, browser, send
+from web_browser import PRODUCTION, SETTINGS, browser, send
 
 from pdf_to_doc.web.app import create_app
 from pdf_to_doc.web.settings import Misconfigured, Settings
@@ -134,6 +134,5 @@ def test_production_refuses_to_start_without_real_keys(settings: Settings) -> No
 
 
 def test_production_starts_with_real_keys() -> None:
-    production = replace(SETTINGS, production=True, trusted_proxy="100.64.0.7", client_ip_header="X-Forwarded-For")
-    with TestClient(create_app(FakeSandbox(), production)) as client:
+    with TestClient(create_app(FakeSandbox(), PRODUCTION)) as client:
         assert 'data-sitekey="site-key"' in client.get("/").text

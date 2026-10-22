@@ -1040,6 +1040,57 @@ form.inline {
   display: contents;
 }
 
+/* A page to read, such as the privacy policy: a card of headed sections. */
+.prose {
+  gap: 0.75rem;
+}
+
+.prose h2 {
+  margin-top: 1rem;
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.prose .points {
+  color: inherit;
+}
+
+.prose a {
+  overflow-wrap: anywhere;
+}
+
+/* The footer of every page: the privacy page, the source the server runs, and where to report
+   a problem. */
+.footer {
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0.75rem var(--gutter) 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+}
+
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

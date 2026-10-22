@@ -20,6 +20,11 @@ from pdf_to_doc.web.protocol import RefusalEvent
 
 _MB = 1024 * 1024
 _NAME = "ครบคำ"
+_REPOSITORY = "https://github.com/Mossujirat/pdf-to-doc-app"  # the source code, public under the AGPL (ADR 0002)
+_ISSUES = f"{_REPOSITORY}/issues"  # where problems are reported
+# Who runs the service, as the privacy page names them for the PDPA.
+_OPERATOR = "Sujirat Attawibulkul"
+_CONTACT = "sujirat.attawibulkul@gmail.com"
 
 # Icons, drawn in one stroke weight. They are decoration beside words that say the same.
 _SVG = (
@@ -288,6 +293,91 @@ def _sheet(caption: str, read: str, *, scan: bool = False, word: str = "") -> st
 def _ticked(items: list[str]) -> str:
     """List items, each led by a tick. The items are HTML already escaped."""
     return "\n".join(f"<li>{_TICK}<span>{item}</span></li>" for item in items)
+
+
+def code_at(commit: str | None) -> str:
+    """The repository's source code at the commit, or, for a build that names none, on a
+    developer's machine, the repository itself."""
+    return f"{_REPOSITORY}/tree/{commit}" if commit else _REPOSITORY
+
+
+def privacy(keep_for: float, pages_per_day: int, cookie: str, cookie_lasts: float) -> str:
+    """The privacy policy, for the PDPA: who runs the service and how to reach them, what it
+    receives, what becomes of it and when, what it never keeps, its one cookie, named `cookie`
+    and kept `cookie_lasts` seconds, what Cloudflare's bot check sees, and the visitor's rights.
+    Every fact is the service's as it is."""
+    kept = _minutes(keep_for)
+    issues = f'<a href="{_ISSUES}">GitHub Issues</a>'
+    return _page(
+        f"นโยบายความเป็นส่วนตัว {_NAME}",
+        f"""<article class="card prose" aria-labelledby="privacy-title">
+<h1 class="status" id="privacy-title">นโยบายความเป็นส่วนตัว</h1>
+<p class="message">หน้านี้บอกว่า{_NAME}ทำอะไรกับไฟล์และข้อมูลของคุณ ใครเป็นผู้ดูแล และติดต่อได้อย่างไร
+ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)</p>
+
+<h2>ผู้ให้บริการและการติดต่อ</h2>
+<p>{_NAME}ดำเนินการโดย {_OPERATOR} ในฐานะบุคคลธรรมดา ซึ่งเป็นผู้ควบคุมข้อมูลส่วนบุคคลของบริการนี้</p>
+<ul class="points">
+<li>เรื่องข้อมูลส่วนบุคคล ติดต่อ <a href="mailto:{_CONTACT}">{_CONTACT}</a></li>
+<li>ปัญหาการใช้งานหรือข้อผิดพลาด แจ้งได้ที่ {issues}</li>
+</ul>
+
+<h2>ข้อมูลที่ได้รับ</h2>
+<ul class="points">
+<li>ไฟล์ที่คุณส่ง และชื่อไฟล์ ซึ่งใช้แสดงบนหน้าของการแปลงและตั้งชื่อไฟล์ดาวน์โหลด</li>
+<li>ที่อยู่ IP ของคุณ ใช้นับจำนวนหน้าที่แปลงได้ต่อวัน วันละ {pages_per_day}&nbsp;หน้า</li>
+<li>คุกกี้หนึ่งตัว ซึ่งบอกว่าการแปลงใดเป็นของเบราว์เซอร์นี้</li>
+<li>ผลการตรวจว่าเป็นคนจริงจาก Cloudflare Turnstile</li>
+</ul>
+
+<h2>ไฟล์ของคุณไปที่ไหนและถูกลบเมื่อไร</h2>
+<ul class="points">
+<li>ไฟล์ถูกเข้ารหัสตั้งแต่เบราว์เซอร์จนถึงเซิร์ฟเวอร์ของเราเอง ระหว่างทางผ่านตัวส่งต่อของ Tailscale
+ซึ่งเห็นที่อยู่ IP ของคุณเพื่อส่งต่อการเชื่อมต่อ แต่อ่านเนื้อหาไม่ได้ ไม่มีบริการอื่นได้เห็นเนื้อหา</li>
+<li>ไฟล์ถูกแปลงในกล่องที่สร้างใหม่สำหรับไฟล์นี้ ซึ่งไม่มีอินเทอร์เน็ต และถูกทิ้งเมื่อแปลงเสร็จ
+ไม่มีการส่งไฟล์ให้บริการ AI หรือบริการอื่นใด</li>
+<li>ไฟล์ต้นฉบับถูกลบทันทีที่การแปลงจบ ไม่ว่าจะแปลงสำเร็จหรือไม่</li>
+<li>ผลลัพธ์และชื่อไฟล์อยู่ในหน่วยความจำ เปิดได้เฉพาะเบราว์เซอร์ที่ส่งไฟล์ และถูกลบภายใน {kept}&nbsp;นาทีหลังการแปลงจบ
+หรือทันทีที่คุณกด "ลบเดี๋ยวนี้"</li>
+<li>เมื่อระบบเริ่มทำงานใหม่ ทุกอย่างที่อยู่ในหน่วยความจำจะหายไปทั้งหมด</li>
+</ul>
+
+<h2>สิ่งที่ไม่เก็บ</h2>
+<ul class="points">
+<li>บันทึกการทำงานของระบบไม่มีเนื้อหา ชื่อไฟล์ ที่อยู่ IP หรือลิงก์ของการแปลง</li>
+<li>ที่อยู่ IP อยู่ในหน่วยความจำเท่านั้น เพื่อนับจำนวนหน้าของวันนั้น และถูกล้างภายในไม่กี่วินาทีหลังเที่ยงคืนตามเวลาประเทศไทย
+หรือเมื่อระบบเริ่มทำงานใหม่</li>
+<li>ตัวเลขรวมของบริการ เช่น จำนวนการแปลงและจำนวนหน้า ไม่มีข้อมูลที่บอกได้ว่าเป็นใคร</li>
+<li>ไม่มีระบบวิเคราะห์การใช้งาน ไม่มีโฆษณา และไม่มีตัวติดตาม</li>
+</ul>
+
+<h2>คุกกี้</h2>
+<p>เว็บนี้ตั้งคุกกี้ของตัวเองเพียงตัวเดียว ชื่อ {cookie} เพื่อจำว่าการแปลงใดเป็นของเบราว์เซอร์นี้
+ซึ่งจำเป็นต่อการทำงาน หมดอายุใน {_hours(cookie_lasts)}&nbsp;ชั่วโมง และไม่ได้ใช้ติดตามหรือโฆษณา</p>
+
+<h2>การตรวจว่าเป็นคนจริง</h2>
+<p>หน้าแรกโหลดสคริปต์ของ Cloudflare Turnstile เพื่อกันโปรแกรมอัตโนมัติ Cloudflare จึงได้รับข้อมูลของเบราว์เซอร์
+เช่น ที่อยู่ IP, User-Agent, ลักษณะการเชื่อมต่อ TLS และเว็บไซต์ที่ใช้ เพื่อตรวจและพัฒนาการตรวจโปรแกรมอัตโนมัติ</p>
+<p>ตามเอกสารของ Cloudflare, Turnstile ไม่เข้าถึง ไม่เก็บ และไม่ส่งต่อสิ่งที่กรอกในหน้าเว็บ และ{_NAME}ไม่ส่งไฟล์ของคุณให้ Cloudflare
+ฝั่งเซิร์ฟเวอร์ส่งไปถามเพียงผลการตรวจเท่านั้น
+อ่านเพิ่มได้ที่ <a href="https://www.cloudflare.com/turnstile-privacy-policy/">Turnstile Privacy Addendum</a></p>
+
+<h2>สิทธิของคุณ</h2>
+<p>ตาม PDPA คุณมีสิทธิขอเข้าถึงและขอสำเนาข้อมูลของคุณ ขอให้แก้ไข ขอให้ลบ ขอให้ระงับการใช้ คัดค้านการใช้
+และขอให้โอนย้ายข้อมูล ใช้สิทธิได้โดยส่งอีเมลถึง <a href="mailto:{_CONTACT}">{_CONTACT}</a></p>
+<p>เนื่องจากไฟล์และผลลัพธ์ถูกลบภายใน {kept}&nbsp;นาที และที่อยู่ IP อยู่ในหน่วยความจำเท่านั้น
+ส่วนใหญ่จึงไม่มีข้อมูลของคุณเหลืออยู่ให้ขอ คุณลบผลลัพธ์ได้เองทันทีด้วยปุ่ม "ลบเดี๋ยวนี้"</p>
+<p>หากเห็นว่าข้อมูลของคุณถูกใช้ไม่ถูกต้อง ร้องเรียนได้ที่
+<a href="https://www.pdpc.or.th/">สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล (สคส.)</a></p>
+
+<h2>ซอร์สโค้ด</h2>
+<p>ซอร์สโค้ดของ{_NAME}เปิดเผยภายใต้สัญญาอนุญาต AGPL-3.0 ใครก็ตรวจได้ว่าบริการทำตามที่หน้านี้บอก
+ลิงก์ <a href="/source-code">ซอร์สโค้ด</a> ท้ายทุกหน้าพาไปยังโค้ดรุ่นที่เซิร์ฟเวอร์ใช้อยู่</p>
+
+<p class="summary">ปรับปรุงล่าสุด 22 ตุลาคม 2569</p>
+<div class="actions"><a class="button button--primary" href="/">กลับไปแปลงไฟล์</a></div>
+</article>""",
+    )
 
 
 def status(conversion: Conversion, place: int | None) -> str:
@@ -565,8 +655,15 @@ def _minutes(seconds: float) -> int:
     return max(0, math.ceil(seconds / 60))
 
 
+def _hours(seconds: float) -> int:
+    """Whole hours, rounded up."""
+    return max(0, math.ceil(seconds / 3600))
+
+
 def _page(title: str, body: str) -> str:
-    """A page under the top bar, which carries the name and the one-line claim."""
+    """A page under the top bar, which carries the name and the one-line claim, and over the
+    footer, which links to the privacy page, to the source the server runs (AGPL), and to where
+    problems are reported."""
     return f"""<!doctype html>
 <html lang="th">
 <head>
@@ -589,6 +686,16 @@ def _page(title: str, body: str) -> str:
 <main>
 {body}
 </main>
+<footer class="footer">
+<div class="footer-inner">
+<p>{_NAME} · ซอร์สโค้ดเปิดเผยภายใต้ AGPL-3.0</p>
+<ul class="footer-links">
+<li><a href="/privacy">นโยบายความเป็นส่วนตัว</a></li>
+<li><a href="/source-code">ซอร์สโค้ด</a></li>
+<li><a href="{_ISSUES}">แจ้งปัญหา</a></li>
+</ul>
+</div>
+</footer>
 <script src="/static/app.js" defer></script>
 </body>
 </html>

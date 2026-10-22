@@ -3,20 +3,14 @@ the converter use, and it loads nothing from another site but the bot check's sc
 
 import re
 from dataclasses import replace
-from html import unescape
 from urllib.parse import urlparse
 
 from scripted_sandbox import ScriptedSandbox
-from web_browser import SETTINGS, browser
+from web_browser import SETTINGS, browser, shown_text
 
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES
 from pdf_to_doc.validation import MIN_DICTIONARY_SHARE, MIN_WORDS_TO_JUDGE
 from pdf_to_doc.web.bot_check import SCRIPT
-
-
-def shown_text(page: str) -> str:
-    """The page's text as a visitor reads it: no tags, entities read, every space a plain one."""
-    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", page)))
 
 
 def test_the_home_page_shows_the_limits_the_service_and_the_converter_use() -> None:

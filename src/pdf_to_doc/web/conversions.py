@@ -179,14 +179,16 @@ class Conversions:
             del self._held[identifier]
 
     def forget_expired(self) -> None:
-        """Forget every conversion that ended `keep_for` seconds ago or more."""
+        """Forget every conversion that ended `keep_for` seconds ago or more, and, after midnight,
+        the client addresses of the day before."""
         for identifier, conversion in list(self._held.items()):
             if conversion.ended_at is not None and self.time_left(conversion) <= 0:
                 del self._held[identifier]
+        self._allowance.forget_past_days()
 
     async def forget_expired_every(self, seconds: float) -> None:
         """Forget expired conversions for as long as the app runs, even when no one asks for
-        anything, so that their outputs leave memory on time."""
+        anything, so that their outputs, and the day before's addresses, leave memory on time."""
         while True:
             await asyncio.sleep(seconds)
             self.forget_expired()

@@ -190,7 +190,7 @@ One dark green on white, a pale green tint for "now", amber only for "check this
 ### Neutral
 - **Ink** (#14201c): all body text and headings. 16.76:1 on white, 15.55:1 on Soft Mist.
 - **Muted Slate** (muted, #4e5d58): subtitles, notes, step details, chips, table headers. 6.93:1 on white, 6.43:1 on Soft Mist.
-- **Hairline** (line, #dce4e1): card, table, steps and secondary button borders, the top bar's rule. Structural, not text (1.29:1).
+- **Hairline** (line, #dce4e1): card, table, steps and secondary button borders, the top bar's and the footer's rules. Structural, not text (1.29:1).
 - **Soft Mist** (soft, #f4f7f6): the picture panels on the home page, the facts panel, the sticky table header, plain chips.
 - **Paper** (page, #ffffff): the page and every card, and chips that sit on a Soft Mist panel. `color-scheme: light`; there is no dark theme.
 - **Scan Grey** (scan, #e3e8e6) with **Scan Ink** (scan-ink, #9aa7a2): only the scanned page in a picture, and its lines. Decorative, never text.
@@ -220,7 +220,7 @@ Fonts are self-hosted woff2 subsets in `static/fonts/` (Regular 400, Medium 500,
 - **Title** (600, 1.125rem, 1.5): how-it-works step titles, card section titles.
 - **Body large** (400, 1.125rem): a notice's or refusal's message.
 - **Body** (400, 1.0625rem / 17 px, line height 1.7): everything else. The tall line height leaves room for Thai marks above and below.
-- **Label** (400, 0.9375rem / 15 px): notes, the top bar line, step details, the privacy line, the pages table.
+- **Label** (400, 0.9375rem / 15 px): notes, the top bar line, step details, the privacy line, the pages table, the footer.
 - **Small label** (500, 0.875rem / 14 px, tabular numbers): chips. The small line over each example word is the same size at 400. This is the smallest size; nothing goes under 13 px.
 - **Button** (500, 1.0625rem, 1.3).
 
@@ -233,7 +233,8 @@ Fonts are self-hosted woff2 subsets in `static/fonts/` (Regular 400, Medium 500,
 
 - **Container:** the top bar and `main` share a 72rem maximum, with side padding of the gutter (clamp(1rem, 3vw, 2rem)). `main` has clamp(2rem, 6vw, 4.5rem) above and clamp(3rem, 7vw, 5rem) below. The body is a column so short pages still push to full height.
 - **Home:** the hero and the upload form are centred columns of 46rem. The drop area sits clamp(1.75rem, 4vw, 2.75rem) under the hero; the privacy line 1rem under it. Two parts follow, each clamp(4rem, 9vw, 6.5rem) below the last, under a centred Section headline: "แปลงอย่างไร", three steps side by side, and "ข้างในทำอะไรกับไฟล์ของคุณ", six rows each with its text on the left and its picture on the right (gap clamp(1.5rem, 5vw, 4rem)), the rows clamp(2rem, 5vw, 3.5rem) apart. On a phone the steps stack, and each row puts its text above its picture.
-- **Every other page:** one card, 44rem wide, centred, its contents a column with a 1.5rem gap.
+- **Every other page:** one card, 44rem wide, centred, its contents a column with a 1.5rem gap. A page to read, the privacy policy, is the same card with a 0.75rem gap and `h2` sections.
+- **Every page** ends with the footer, pushed to the bottom of a short page.
 - **Rhythm:** gaps step through 0.25, 0.5, 0.75, 1, 1.5 and 1.75rem; inner padding uses 0.625 to 1rem. Responsive spacing uses `clamp()` rather than breakpoints.
 - **Phone width (at or below 47.5rem):** the top bar's line hides, leaving the wordmark; "how it works" becomes one column; the privacy line aligns left; a step's detail drops under its label; the pages table loses its scroll box, so every page shows. Long file names wrap anywhere. A number stays on its unit's line (`&nbsp;` in "50&nbsp;MB", "150&nbsp;หน้า").
 
@@ -288,6 +289,16 @@ Soft, generous rounding that grows with the size of the surface: 0.5rem miniatur
 - Head: the file icon in Contract Green and the file name in Muted Slate on the left, chips on the right, wrapping on narrow screens.
 - Then the status as the page's `h1` (Headline), which is live (`aria-live="polite"`) and is also the tab's title. While the conversion waits or runs, the page asks for it every 2 seconds and writes it only when it changed, so a screen reader announces each change once.
 - A notice card is heading, message (Body large) and one primary button that says where to go.
+
+### A page to read
+- The privacy policy: a card (`.card.prose`) with the page title as its Headline `h1`, a Body large opening, then sections under `h2` in Title, 1rem above.
+- Lists use the Contract Green dots of the home page's points, in Ink, not muted.
+- It ends with the date it was last changed, in muted Body, and one primary way back.
+
+### Footer
+- On every page, under a 1px Hairline rule, in the 72rem container: the name and its licence on the left, in a muted Label.
+- On the right, three links: นโยบายความเป็นส่วนตัว, ซอร์สโค้ด (to `/source-code`, which opens the repository at the commit the server runs) and แจ้งปัญหา (GitHub Issues).
+- Each link is at least 44 px tall. On a phone the links wrap under the name.
 
 ### Chips
 - Pills of Small label text: Soft Mist on Muted Slate for counts ("6 หน้า"); Check Amber for pages to check. A waiting conversion's place in the queue is a step's detail, not a chip. Inside the pages table they tighten to 0 0.625rem padding.

@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 from fake_sandbox import FakeSandbox
-from web_browser import SETTINGS
+from web_browser import PRODUCTION
 
 from pdf_to_doc.web.app import create_app
 from pdf_to_doc.web.settings import LauncherSettings, Misconfigured, Settings, from_environment
@@ -91,9 +91,6 @@ def test_the_launcher_refuses_to_start_without_its_environment() -> None:
         from_environment(LauncherSettings, {})
 
     assert "PDF_TO_DOC_ENVIRONMENT" in str(refused.value)
-
-
-PRODUCTION = replace(SETTINGS, production=True, trusted_proxy="100.64.0.7", client_ip_header="X-Forwarded-For")
 
 
 @pytest.mark.parametrize(

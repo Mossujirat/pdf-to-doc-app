@@ -1,8 +1,11 @@
 """A browser on the web service, for its tests: uploads, links and states, as a browser sees them."""
 
+import re
 import secrets
 import time
 from collections.abc import Callable
+from dataclasses import replace
+from html import unescape
 from typing import Any
 
 import httpx
@@ -19,6 +22,11 @@ from pdf_to_doc.web.statistics import Statistics
 
 # The service as the tests run it: with its bot check's keys, for this test site.
 SETTINGS = Settings(turnstile_site_key="site-key", turnstile_secret_key="secret-key", hostname=HOSTNAME)
+COMMIT = "0123456789abcdef0123456789abcdef01234567"  # as `git rev-parse HEAD` gives it
+# The public service with everything it needs to start: a test of a refusal changes one setting.
+PRODUCTION = replace(
+    SETTINGS, production=True, trusted_proxy="100.64.0.7", client_ip_header="X-Forwarded-For", build_commit=COMMIT
+)
 SITE = f"https://{HOSTNAME}"  # the site's origin, as a browser names it
 
 
@@ -93,6 +101,11 @@ def cancel(client: TestClient, link: str) -> None:
 def title(client: TestClient, link: str) -> str:
     """The title of the conversion's page, as the browser's tab shows it."""
     return client.get(link).text.split("<title>")[1].split("</title>")[0]
+
+
+def shown_text(page: str) -> str:
+    """The page's text as a visitor reads it: no tags, entities read, every space a plain one."""
+    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", page)))
 
 
 def wait_until(done: Callable[[], bool], what: str) -> None:

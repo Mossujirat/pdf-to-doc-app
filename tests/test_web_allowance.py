@@ -14,6 +14,7 @@ from pdf_builder import Scan, pdf
 from scripted_sandbox import ScriptedSandbox
 from web_browser import SETTINGS, as_browser, browser, browser_token, cancel, converted, ended_state, upload, wait_until
 
+from pdf_to_doc.web.allowance import Allowance
 from pdf_to_doc.web.app import create_app
 from pdf_to_doc.web.sandboxes import Ended
 from pdf_to_doc.web.settings import Misconfigured
@@ -56,6 +57,18 @@ def test_the_allowance_starts_again_at_midnight_bangkok_time() -> None:
         clock.advance(1)
 
         assert from_new_browser(client, of_pages(5))[0] == "finished"
+
+
+def test_yesterdays_addresses_leave_memory_after_midnight_though_no_file_comes() -> None:
+    clock = FakeClock()  # noon in Bangkok
+    allowance = Allowance(5, clock.wall)
+    allowance.charge(VISITOR, 2)
+    assert allowance.forget_past_days() == 0  # still today
+
+    clock.advance(12 * 60 * 60)
+
+    assert allowance.forget_past_days() == 1  # the visitor's address, dropped
+    assert allowance.forget_past_days() == 0
 
 
 def test_a_failed_conversion_gives_its_pages_back() -> None:
