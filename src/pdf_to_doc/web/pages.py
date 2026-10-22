@@ -1,7 +1,8 @@
 """The web app's pages, in Thai, with no inline script or style.
 
 Each page has one plain, centred task, as people already know a converter to look. The home
-page is a title, one big drop area and the steps of a conversion. Every other page is one card
+page is a title, one big drop area, the three steps of converting a file, and what the converter
+does with it inside, each part beside a picture drawn in HTML. Every other page is one card
 in the middle: a conversion's card holds its status, what it is doing now or how it ended, and
 what the visitor can do next. A step that changes is tinted for a moment (`static/app.js`).
 """
@@ -12,6 +13,7 @@ from html import escape
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
 from pdf_to_doc.model import Placeholder
 from pdf_to_doc.refusals import refusal_message, too_large_unmeasured
+from pdf_to_doc.validation import MIN_DICTIONARY_SHARE, MIN_WORDS_TO_JUDGE
 from pdf_to_doc.web.bot_check import ACTION, SCRIPT
 from pdf_to_doc.web.conversions import Conversion
 from pdf_to_doc.web.protocol import RefusalEvent
@@ -52,9 +54,9 @@ _STEP_STATES = {"done": "เสร็จแล้ว", "skipped": "ข้าม"
 
 
 def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) -> str:
-    """The title, the drop area, which is the upload form, with the bot check's widget, whose
-    token goes with the file, and the steps of a conversion. Without a site key there is no
-    widget, and every upload is refused."""
+    """The title; the drop area, which is the upload form, with the bot check's widget, whose
+    token goes with the file; the three steps of converting a file; and what the converter does
+    with it inside. Without a site key there is no widget, and every upload is refused."""
     widget = script = ""
     if bot_check_site_key is not None:
         widget = f'\n<div class="cf-turnstile" data-sitekey="{escape(bot_check_site_key)}" data-action="{ACTION}"></div>'
@@ -84,7 +86,7 @@ def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) ->
 ไฟล์ต้นฉบับถูกลบทันทีที่แปลงเสร็จ ส่วนผลลัพธ์ถูกลบภายใน {kept} นาที</span></p>
 </form>
 <section class="how" aria-labelledby="how-title">
-<h2 class="how-title" id="how-title">แปลงอย่างไร</h2>
+<h2 class="part-title" id="how-title">แปลงอย่างไร</h2>
 <ol class="how-steps">
 <li class="how-step"><div><h3>วางหรือเลือกไฟล์</h3>
 <p>PDF หรือ DOCX ครั้งละหนึ่งไฟล์ {limits} แปลงได้วันละ {pages_per_day}&nbsp;หน้า</p></div></li>
@@ -95,18 +97,197 @@ def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) ->
 <p>คัดลอก Markdown ไปวางในแชต AI หรือดาวน์โหลด DOCX ไปแก้ใน Word
 ผลลัพธ์ถูกลบภายใน {kept} นาที หรือกดลบเองได้ทันที</p></div></li>
 </ol>
-<figure class="example">
+</section>
+{_inside(kept)}{script}""",
+    )
+
+
+def _inside(kept: int) -> str:
+    """What the converter does with a file, step by step, each beside a picture drawn in HTML.
+    Every fact here is the converter's as it is, and its numbers come from the code that applies
+    them: a change to a rule shown here changes this section in the same ticket. The examples
+    are made up, never taken from a real document."""
+    share = f"{MIN_DICTIONARY_SHARE:.0%}"
+    checks = _ticked(
+        [
+            "เป็น PDF หรือ DOCX จริง ดูจากเนื้อในไฟล์",
+            f"ไม่เกิน {MAX_BYTES // _MB}&nbsp;MB",
+            f"ไม่เกิน {MAX_PAGES}&nbsp;หน้า",
+            "ไม่ได้ล็อกด้วยรหัสผ่าน และไม่ได้ห้ามคัดลอกข้อความ",
+        ]
+    )
+    return f"""<section class="inside" aria-labelledby="inside-title">
+<div class="inside-head">
+<h2 class="part-title" id="inside-title">ข้างในทำอะไรกับไฟล์ของคุณ</h2>
+<p class="inside-intro">ทุกข้อด้านล่างคือสิ่งที่ตัวแปลงทำจริง ตัวอย่างทั้งหมดเป็นข้อความที่แต่งขึ้น ไม่ได้มาจากเอกสารของใคร</p>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>ตรวจไฟล์ก่อนแปลง</h3>
+<p>ชนิดของไฟล์ดูจากเนื้อในไฟล์ ไม่ได้ดูจากนามสกุล แล้วจึงตรวจขนาดและจำนวนหน้า
+ไฟล์ Word รุ่นเก่า (.doc) ไฟล์ที่ล็อกด้วยรหัสผ่าน และ PDF ที่ห้ามคัดลอกข้อความ จะไม่ถูกแปลง และหน้าเว็บจะบอกเหตุผล</p>
+</div>
+<figure class="picture">
+<div class="sheet-card">
+<p class="file">{_FILE}<span class="file-name">สัญญาจ้าง-ตัวอย่าง.pdf</span></p>
+<ul class="checks">
+{checks}
+</ul>
+</div>
+<figcaption class="visually-hidden">ตัวอย่างการตรวจไฟล์ PDF หนึ่งไฟล์ ผ่านทุกข้อ</figcaption>
+</figure>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>อ่านทีละหน้า ด้วยวิธีที่เหมาะกับหน้านั้น</h3>
+<p>หน้าที่มีข้อความเก็บอยู่ในไฟล์และเชื่อถือได้ อ่านจากข้อความนั้นโดยตรง จึงได้ตัวอักษรตรงตามที่พิมพ์ไว้</p>
+<p>หน้าที่ไม่มีข้อความให้อ่าน เช่น หน้าสแกน หรือตัวอักษรที่ถูกวาดเป็นเส้น และหน้าที่ข้อความในไฟล์ผิด
+อ่านด้วย OCR คือให้โปรแกรมอ่านตัวอักษรจากภาพของหน้า ซึ่งช้ากว่า</p>
+</div>
+<figure class="picture">
+<div class="sheets">
+{_sheet("มีข้อความในไฟล์", "อ่านตรง")}
+{_sheet("หน้าสแกน", "OCR", scan=True)}
+{_sheet("ข้อความในไฟล์ผิด", "OCR", word="กำร")}
+</div>
+<figcaption class="visually-hidden">สามหน้า: หน้าที่มีข้อความในไฟล์อ่านตรง หน้าสแกนและหน้าที่ข้อความในไฟล์ผิดอ่านด้วย OCR</figcaption>
+</figure>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>จับข้อความในไฟล์ที่ผิด</h3>
+<p>บางไฟล์เก็บข้อความไว้ผิด ทั้งที่หน้ากระดาษแสดงถูก เช่น ฟอนต์บางตัวทำให้คำว่า การ ถูกเก็บเป็น กำร
+ตัวแปลงจึงตรวจข้อความของทุกหน้าก่อนใช้ หน้าที่เข้าข่ายข้อใดข้อหนึ่งจะถูกอ่านใหม่ด้วย OCR</p>
+<ul class="points">
+<li>มีตัวอักษรที่อ่านไม่ได้ คือตัวที่ฟอนต์ไม่ได้บอกว่าเป็นตัวอะไร</li>
+<li>มีสระอำอยู่ผิดที่ เช่น ไม่ได้ตามหลังพยัญชนะหรือวรรณยุกต์</li>
+<li>หน้าที่มีคำไทยอย่างน้อย {MIN_WORDS_TO_JUDGE} คำ แต่เป็นคำที่มีในพจนานุกรมไม่ถึง {share}</li>
+</ul>
+</div>
+<figure class="picture">
 <figcaption class="example-label">ตัวอย่าง: ข้อความที่ซ่อนอยู่ในไฟล์ผิด</figcaption>
 <div class="example-row">
 <p class="example-word example-word--wrong"><span>ในไฟล์เขียนว่า</span><strong>กำร</strong></p>
 <span class="example-arrow">{_ARROW}<span class="visually-hidden">แก้เป็น</span></span>
 <p class="example-word example-word--right"><span>{_NAME}ได้</span><strong>การ</strong></p>
 </div>
-<p class="example-note">หน้ากระดาษแสดงคำว่า การ แต่ข้อความในไฟล์เขียนว่า กำร หน้านั้นจึงถูกอ่านใหม่ด้วย OCR
-ส่วนที่ยังไม่แน่ใจจะถูกทำเครื่องหมายไว้ให้ตรวจ</p>
+<p class="example-note">หน้ากระดาษแสดงคำว่า การ แต่ข้อความในไฟล์เขียนว่า กำร ทั้งหน้า คำที่มีในพจนานุกรมจึงไม่ถึง {share}
+หน้านั้นถูกอ่านใหม่ด้วย OCR และส่วนที่ยังไม่แน่ใจจะถูกทำเครื่องหมายไว้ให้ตรวจ</p>
 </figure>
-</section>{script}""",
-    )
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>ซ่อมข้อความไทย</h3>
+<p>แม้ข้อความในไฟล์จะเชื่อถือได้ ก็ยังมีจุดเล็กๆ ที่ทำให้คัดลอกหรือค้นหาคำไม่เจอ ตัวแปลงแก้ให้ทุกครั้ง
+โดยไม่ลบตัวอักษรที่มองเห็นได้สักตัว</p>
+<ul class="points">
+<li>เรียงสระและวรรณยุกต์ให้อยู่ในลำดับมาตรฐาน</li>
+<li>รวมสระอำที่ถูกเก็บแยกเป็นสองตัวให้เป็นตัวเดียว</li>
+<li>แปลงตัวอักษรพิเศษของฟอนต์ไทยรุ่นเก่ากลับเป็นอักษรไทยปกติ</li>
+<li>ลบตัวอักษรที่มองไม่เห็น และช่องว่างที่แทรกอยู่หน้าสระบน สระล่าง หรือวรรณยุกต์</li>
+<li>ต่อบรรทัดที่ถูกตัดตามความกว้างกระดาษกลับเป็นย่อหน้าเดียว โดยไม่เติมช่องว่างตรงรอยต่อระหว่างอักษรไทย</li>
+</ul>
+</div>
+<figure class="picture">
+<div class="before-after">
+<div class="before">
+<p class="example-label">ในไฟล์ สองบรรทัด</p>
+<p class="before-lines"><span>ตกลงจ้างที &#x0E48;ปรึกษา</span><span>เพื่อให้คำแนะนำ</span></p>
+</div>
+<span class="example-arrow">{_ARROW}<span class="visually-hidden">ซ่อมเป็น</span></span>
+<div class="after">
+<p class="example-label">ผลลัพธ์ ย่อหน้าเดียว</p>
+<p>ตกลงจ้างที่ปรึกษาเพื่อให้คำแนะนำ</p>
+</div>
+</div>
+<figcaption class="example-note">ช่องว่างหน้าไม้เอกถูกลบ และสองบรรทัดต่อกันโดยไม่มีช่องว่างกลางประโยค</figcaption>
+</figure>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>เก็บโครงสร้าง และไม่เดาสิ่งที่อ่านไม่ได้</h3>
+<p>หัวข้อและรายการ ยังเป็นหัวข้อและรายการ ตารางใน DOCX และตารางที่มีเส้นตารางใน PDF ยังเป็นตาราง
+ส่วนหน้าที่อ่านด้วย OCR ยังไม่แยกหัวข้อและตาราง ข้อความที่ซ้ำกันที่ขอบบนหรือขอบล่างของหลายหน้า
+เช่น หัวกระดาษและเลขหน้า ถูกตัดออก</p>
+<p>ในหน้าที่มีข้อความในไฟล์ รูปภาพ ลายเซ็น และตราประทับที่ฝังอยู่ ถูกแทนด้วยป้าย เช่น <span class="nowrap">[ลายเซ็น]</span>
+ไม่มีการเดาเป็นข้อความ ส่วนหน้าที่อ่านด้วย OCR ไม่มีป้ายเหล่านี้ และสิ่งที่ OCR อ่านได้ไม่ชัด เช่น ลายมือหรือรอยเปื้อน
+ถูกทำเครื่องหมายว่าไม่แน่ใจ</p>
+</div>
+<figure class="picture">
+<div class="sheet-card doc">
+<p class="doc-cut"><s>หน้าที่ 2/7</s> <span class="chip">ตัดออก</span></p>
+<p class="doc-heading">ข้อ 3 ค่าจ้างและการชำระเงิน</p>
+<ol class="doc-list">
+<li>ค่าจ้างเดือนละ 30,000 บาท</li>
+<li>ชำระภายในวันที่ 5 ของเดือนถัดไป</li>
+</ol>
+<p class="doc-placeholders"><span class="chip">[ลายเซ็น]</span><span class="chip">[ตราประทับ]</span></p>
+</div>
+<figcaption class="visually-hidden">ตัวอย่างหน้าเอกสาร: เลขหน้าถูกตัดออก หัวข้อและรายการยังอยู่ ลายเซ็นและตราประทับกลายเป็นป้าย</figcaption>
+</figure>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>เอกสารเดียว ได้สองไฟล์</h3>
+<p>ทุกหน้าถูกรวมเป็นเอกสารเดียวก่อน แล้วจึงเขียนออกเป็น Markdown สำหรับวางในแชต AI และ DOCX สำหรับแก้ใน Word
+ทั้งสองไฟล์จึงมีเนื้อหาเดียวกัน และบอกส่วนที่ไม่แน่ใจไว้ทั้งคู่ ไฟล์ DOCX ที่ส่งมาได้ Markdown อย่างเดียว</p>
+</div>
+<figure class="picture">
+<div class="outputs">
+<div class="output">
+<p class="example-label">Markdown</p>
+<p><code>ส่งงานภายใน &lt;mark&gt;เจ็ดวัน&lt;/mark&gt;</code></p>
+</div>
+<div class="output">
+<p class="example-label">DOCX</p>
+<p>ส่งงานภายใน <mark>เจ็ดวัน</mark></p>
+</div>
+</div>
+<figcaption class="example-note">คำที่ OCR อ่านได้ไม่แน่ใจ ถูกครอบด้วย &lt;mark&gt; ใน Markdown และไฮไลต์สีเหลืองใน DOCX</figcaption>
+</figure>
+</div>
+
+<div class="inside-row">
+<div class="inside-text">
+<h3>ไฟล์ของคุณไปที่ไหน</h3>
+<p>ไฟล์ถูกเข้ารหัสตลอดทางจนถึงเซิร์ฟเวอร์ของเราเอง และแปลงในกล่องที่สร้างใหม่สำหรับไฟล์นี้ ซึ่งไม่มีอินเทอร์เน็ต
+ผลลัพธ์เปิดได้เฉพาะเบราว์เซอร์ที่ส่งไฟล์</p>
+<p>บันทึกการทำงานของระบบไม่มีเนื้อหา ชื่อไฟล์ หรือลิงก์</p>
+</div>
+<figure class="picture">
+<ol class="route">
+<li><strong>เบราว์เซอร์ของคุณ</strong><span>ส่งไฟล์แบบเข้ารหัส</span></li>
+<li><strong>เซิร์ฟเวอร์ของเรา</strong><span>ไม่ส่งต่อให้บริการอื่น</span></li>
+<li><strong>กล่องแปลงไฟล์</strong><span>ไม่มีอินเทอร์เน็ต ถูกทิ้งเมื่อแปลงเสร็จ</span></li>
+<li><strong>ลบ</strong><span>ต้นฉบับทันทีที่แปลงเสร็จ ผลลัพธ์ภายใน {kept}&nbsp;นาที หรือเมื่อคุณกดลบ</span></li>
+</ol>
+<figcaption class="visually-hidden">เส้นทางของไฟล์ จากเบราว์เซอร์ ถึงเซิร์ฟเวอร์ เข้ากล่องแปลงไฟล์ แล้วถูกลบ</figcaption>
+</figure>
+</div>
+</section>"""
+
+
+def _sheet(caption: str, read: str, *, scan: bool = False, word: str = "") -> str:
+    """A page in miniature, grey bars for its lines, with how it is read. `word`, if any, takes
+    the second line's place, as the one word the picture is about."""
+    second = f'<span class="sheet-word">{word}</span>' if word else '<span class="sheet-line"></span>'
+    lines = f'<span class="sheet-line"></span>{second}<span class="sheet-line sheet-line--short"></span><span class="sheet-line"></span>'
+    return f"""<div class="sheet-item">
+<div class="sheet{" sheet--scan" if scan else ""}" aria-hidden="true">{lines}</div>
+<p>{caption}</p>
+<span class="chip">{read}</span>
+</div>"""
+
+
+def _ticked(items: list[str]) -> str:
+    """List items, each led by a tick. The items are HTML already escaped."""
+    return "\n".join(f"<li>{_TICK}<span>{item}</span></li>" for item in items)
 
 
 def status(conversion: Conversion, place: int | None) -> str:
@@ -260,10 +441,9 @@ def _what_became_of_it(conversion: Conversion) -> str:
         "ไม่มีผลลัพธ์ จึงไม่มีอะไรให้ลบ",
         "บันทึกการทำงานของระบบไม่มีเนื้อหา ชื่อไฟล์ หรือลิงก์",
     ]
-    items = "\n".join(f"<li>{_TICK}<span>{fact}</span></li>" for fact in facts)
     return f"""<h2 class="section-title">ไฟล์นี้เป็นอย่างไรแล้ว</h2>
 <ul class="facts">
-{items}
+{_ticked(facts)}
 </ul>
 <div class="actions"><a class="button button--primary" href="/">แปลงไฟล์อื่น</a></div>"""
 

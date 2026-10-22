@@ -72,9 +72,9 @@ The service makes two promises, with equal weight:
 
 **Language:** Thai only for now. English comes later.
 
-**Coming next on the same branch:**
-- **Ticket 12:** the "how it works" section in full. The home page already has its start: three numbered steps and the "กำร → การ" example.
-- **Ticket 13:** the privacy page with its footer.
+**How it works:** the home page explains what the converter does with a file, in six rows with pictures, under "ข้างในทำอะไรกับไฟล์ของคุณ" (ticket 12). Its facts are the converter's as it is.
+
+**Coming next on the same branch:** the privacy page with its footer (ticket 13).
 
 ## Brand Commitments
 

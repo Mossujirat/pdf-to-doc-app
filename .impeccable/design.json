@@ -15,15 +15,18 @@
       "page": { "role": "neutral", "displayName": "Paper", "canonical": "#ffffff", "tonalRamp": ["#040e0a", "#1b2723", "#36433f", "#53615c", "#76847f", "#9aa9a3", "#c0cec9", "#eaf0ee"] },
       "warn-bg": { "role": "secondary", "displayName": "Check Amber", "canonical": "#fef3c7", "tonalRamp": ["#250000", "#451000", "#652f00", "#874e15", "#ac713c", "#d49561", "#fabc8a", "#ffe9d4"] },
       "warn-ink": { "role": "secondary", "displayName": "Check Amber Ink", "canonical": "#7c4405", "tonalRamp": ["#250000", "#451000", "#652f00", "#874e15", "#ac713c", "#d49561", "#fabc8a", "#ffe9d4"] },
-      "danger": { "role": "secondary", "displayName": "Delete Red", "canonical": "#a8231a", "tonalRamp": ["#390000", "#5e0000", "#830000", "#a9241b", "#d24e40", "#fd7463", "#ff9e8c", "#ffded4"] }
+      "danger": { "role": "secondary", "displayName": "Delete Red", "canonical": "#a8231a", "tonalRamp": ["#390000", "#5e0000", "#830000", "#a9241b", "#d24e40", "#fd7463", "#ff9e8c", "#ffded4"] },
+      "scan": { "role": "neutral", "displayName": "Scan Grey", "canonical": "#e3e8e6" },
+      "scan-ink": { "role": "neutral", "displayName": "Scan Ink", "canonical": "#9aa7a2" }
     },
     "typographyMeta": {
       "display": { "displayName": "Display", "purpose": "The home page's title only." },
       "headline": { "displayName": "Headline", "purpose": "A card's status or notice heading; the page's h1, live while a conversion runs." },
-      "headline-section": { "displayName": "Section headline", "purpose": "The how-it-works heading on home." },
+      "headline-section": { "displayName": "Section headline", "purpose": "The home page's part headings: แปลงอย่างไร and ข้างในทำอะไรกับไฟล์ของคุณ." },
+      "subsection": { "displayName": "Subsection", "purpose": "Each row's heading under ข้างในทำอะไรกับไฟล์ของคุณ." },
       "wordmark": { "displayName": "Wordmark", "purpose": "ครบคำ in the top bar, in Contract Green." },
       "title-drop": { "displayName": "Drop title", "purpose": "The call inside the drop area." },
-      "title": { "displayName": "Title", "purpose": "How-it-works step titles and card section titles." },
+      "title": { "displayName": "Title", "purpose": "The titles of the three steps under แปลงอย่างไร, and card section titles." },
       "body-large": { "displayName": "Body large", "purpose": "A notice's or refusal's message." },
       "body": { "displayName": "Body", "purpose": "All reading text; line height 1.7 leaves room for Thai marks." },
       "label": { "displayName": "Label", "purpose": "Notes, the top bar line, step details, the privacy line, the pages table." },
@@ -122,8 +125,8 @@
       "Readable by rule: Thai text at least 13 px, inputs at least 16 px, WCAG AA, touch targets at least 44 px, works at phone width."
     ],
     "rules": [
-      { "name": "The One Green Rule", "body": "Contract Green fills only three things: the drop area, the single primary button on a page, and finished-step marks. Every other green is a line, an icon or text.", "section": "colors" },
-      { "name": "The Amber Means Check Rule", "body": "Amber appears only where a page of the result should be checked against the original. It never decorates, warns about limits or marks errors of the service.", "section": "colors" },
+      { "name": "The One Green Rule", "body": "Contract Green fills only the drop area, the single primary button on a page, the marks of a conversion's progress (finished steps, the current step's dot, the progress bar) and small markers (list bullets, the last stop of a file's route). Every other green is a line, an icon or text.", "section": "colors" },
+      { "name": "The Amber Means Check Rule", "body": "Amber appears only where text should be checked against the original: the chips for pages to check, and uncertain text as DOCX highlights it in the home page's picture. It never decorates, warns about limits or marks errors of the service.", "section": "colors" },
       { "name": "The Three Weights Rule", "body": "Only 400, 500 and 600 exist. 600 for headings and titles, 500 for buttons, chips, step labels and table row headers, 400 for reading. No italics, no letter-spacing, no uppercase.", "section": "typography" },
       { "name": "The Tabular Numbers Rule", "body": "Anything that counts (chips, step details, the pages table) uses tabular numbers so \"หน้า 23/85\" does not jitter as it updates.", "section": "typography" },
       { "name": "The Border Not Shadow Rule", "body": "Cards, tables, steps and buttons separate from the page with a 1px Hairline border. Do not add shadows to new surfaces.", "section": "elevation" }
@@ -140,7 +143,7 @@
       "Don't add inline `style` or `<script>`, icon fonts, or fonts, scripts, images or anything else from another site; the Content-Security-Policy blocks them and only Cloudflare Turnstile is allowed.",
       "Don't add ads, invented numbers, user counts, reviews, testimonials or upsell; there are none to show.",
       "Don't use a second filled green button on a page, or fill other surfaces with Contract Green.",
-      "Don't use amber for anything but a page to check, or red for anything but deleting and the example's wrong word.",
+      "Don't use amber for anything but text to check, or red for anything but deleting and the wrong word กำร in the pictures.",
       "Don't add shadows (beyond the drop area's \"+\" circle), gradients or a dark theme; the page is flat and light.",
       "Don't add a fourth font weight or a second typeface.",
       "Don't put the real contracts from `docs/example_pdf/` in any design, screenshot or example; use the synthetic corpus, labelled as an example.",

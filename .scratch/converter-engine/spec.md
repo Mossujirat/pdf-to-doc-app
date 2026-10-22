@@ -304,6 +304,15 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 - Progress display and a queue, one file per user at a time.
 - Thai UI first, English later.
 - The web page explains, with pictures, how a conversion works: each page read from its text layer or with OCR, how an untrustworthy text layer is caught, the Thai repair, placeholders, one document model for both outputs, and where the file goes and when it is deleted. Its examples are synthetic, never taken from real documents (added 2026-10-21).
+- That section, "ข้างในทำอะไรกับไฟล์ของคุณ" in `src/pdf_to_doc/web/pages.py`, states the converter's rules as they are. A change to any rule it shows changes the section in the same ticket. The rules it shows are:
+  - intake and its limits
+  - when a page is read with OCR
+  - the three checks of a text layer and their thresholds
+  - the Thai repair
+  - structure, page furniture and placeholders
+  - uncertain text in both outputs
+
+  Its numbers come from the code that applies them: `MAX_BYTES`, `MAX_PAGES`, `MIN_DICTIONARY_SHARE` and `MIN_WORDS_TO_JUDGE` (added 2026-10-22, ticket 12 of the web service).
 - The Docker container runs with no network and in-memory scratch space.
 - The GitHub repo becomes public before the web service launches (AGPL).
 

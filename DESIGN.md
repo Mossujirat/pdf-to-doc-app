@@ -14,6 +14,8 @@ colors:
   warn-bg: "#fef3c7"
   warn-ink: "#7c4405"
   danger: "#a8231a"
+  scan: "#e3e8e6"
+  scan-ink: "#9aa7a2"
 typography:
   display:
     fontFamily: "Prompt, system-ui, sans-serif"
@@ -30,6 +32,11 @@ typography:
     fontSize: "clamp(1.5rem, 3vw, 2.125rem)"
     fontWeight: 600
     lineHeight: 1.35
+  subsection:
+    fontFamily: "Prompt, system-ui, sans-serif"
+    fontSize: "clamp(1.25rem, 2.2vw, 1.5rem)"
+    fontWeight: 600
+    lineHeight: 1.4
   wordmark:
     fontFamily: "Prompt, system-ui, sans-serif"
     fontSize: "1.625rem"
@@ -174,24 +181,25 @@ One dark green on white, a pale green tint for "now", amber only for "check this
 - **Contract Green** (brand, #0f6b55): the drop area, the one primary button per page, the marks of steps done, the wordmark, links, focus rings, the icons beside the privacy line and facts. White on it is 6.45:1; it is 6.45:1 on white, 5.99:1 on Soft Mist and 5.62:1 on Pale Leaf.
 - **Deep Contract Green** (brand-hover, #0b5747): hover for the drop area, primary buttons and links. White on it is 8.51:1.
 - **Pale Leaf** (brand-tint, #e6f2ee): the current step's mark, a just-changed step's brief tint, the progress track, the how-it-works numbers, text selection. Ink on it is 14.6:1.
-- **Sage Line** (brand-line, #8fc4b4): the dashed frame around the drop area and the dotted line joining the how-it-works steps. Decorative only (1.96:1 on white); never text.
+- **Sage Line** (brand-line, #8fc4b4): the dashed frame around the drop area and the dotted line joining the stops of a file's route. Decorative only (1.96:1 on white); never text.
 
 ### Secondary
 - **Check Amber** (warn-bg #fef3c7 with warn-ink #7c4405): only the "ควรตรวจ" and "ตรวจ" chips for pages with uncertain text, as the converter's summary names them. A page whose own text was wrong, and so was read with OCR, says so in its note without the chip. 7.02:1.
-- **Delete Red** (danger, #a8231a): the delete button's text and hover border, and the crossed-out wrong word in the example. 7.19:1 on white, 6.67:1 on Soft Mist.
+- **Delete Red** (danger, #a8231a): the delete button's text and hover border, and the wrong word "กำร" in the pictures. 7.19:1 on white, 6.67:1 on Soft Mist.
 
 ### Neutral
 - **Ink** (#14201c): all body text and headings. 16.76:1 on white, 15.55:1 on Soft Mist.
 - **Muted Slate** (muted, #4e5d58): subtitles, notes, step details, chips, table headers. 6.93:1 on white, 6.43:1 on Soft Mist.
 - **Hairline** (line, #dce4e1): card, table, steps and secondary button borders, the top bar's rule. Structural, not text (1.29:1).
-- **Soft Mist** (soft, #f4f7f6): the example panel, the facts panel, the sticky table header, plain chips.
-- **Paper** (page, #ffffff): the page and every card. `color-scheme: light`; there is no dark theme.
+- **Soft Mist** (soft, #f4f7f6): the picture panels on the home page, the facts panel, the sticky table header, plain chips.
+- **Paper** (page, #ffffff): the page and every card, and chips that sit on a Soft Mist panel. `color-scheme: light`; there is no dark theme.
+- **Scan Grey** (scan, #e3e8e6) with **Scan Ink** (scan-ink, #9aa7a2): only the scanned page in a picture, and its lines. Decorative, never text.
 - Notes on the drop area use white at 88% opacity: 5.39:1 on Contract Green, 7.01:1 on hover.
 
 ### Named Rules
-**The One Green Rule.** Contract Green fills only the drop area, the single primary button on a page, and the marks of a conversion's progress: finished steps, the current step's dot and the progress bar. Every other green is a line, an icon or text.
+**The One Green Rule.** Contract Green fills only the drop area, the single primary button on a page, the marks of a conversion's progress (finished steps, the current step's dot and the progress bar), and small markers (list bullets, the last stop of a file's route). Every other green is a line, an icon or text.
 
-**The Amber Means Check Rule.** Amber appears only where a page of the result should be checked against the original. It never decorates, warns about limits or marks errors of the service.
+**The Amber Means Check Rule.** Amber appears only where text should be checked against the original: the chips for pages to check, and uncertain text as DOCX highlights it, in the home page's picture. It never decorates, warns about limits or marks errors of the service.
 
 ## Typography
 
@@ -205,7 +213,8 @@ Fonts are self-hosted woff2 subsets in `static/fonts/` (Regular 400, Medium 500,
 ### Hierarchy
 - **Display** (600, clamp(1.875rem, 4.4vw, 3rem), 1.3, balanced wrap): the home page's title only.
 - **Headline** (600, clamp(1.625rem, 3.6vw, 2.25rem), 1.35): a card's status or notice heading, the page's `h1`.
-- **Section headline** (600, clamp(1.5rem, 3vw, 2.125rem), 1.35): the "แปลงอย่างไร" heading on home.
+- **Section headline** (600, clamp(1.5rem, 3vw, 2.125rem), 1.35): the home page's part headings, "แปลงอย่างไร" and "ข้างในทำอะไรกับไฟล์ของคุณ" (`.part-title`).
+- **Subsection** (600, clamp(1.25rem, 2.2vw, 1.5rem), 1.4): each row's heading under "ข้างในทำอะไรกับไฟล์ของคุณ".
 - **Wordmark** (600, 1.625rem, 1.3, Contract Green): ครบคำ in the top bar.
 - **Drop title** (600, 1.375rem, 1.4): the call in the drop area.
 - **Title** (600, 1.125rem, 1.5): how-it-works step titles, card section titles.
@@ -223,7 +232,7 @@ Fonts are self-hosted woff2 subsets in `static/fonts/` (Regular 400, Medium 500,
 ## Layout
 
 - **Container:** the top bar and `main` share a 72rem maximum, with side padding of the gutter (clamp(1rem, 3vw, 2rem)). `main` has clamp(2rem, 6vw, 4.5rem) above and clamp(3rem, 7vw, 5rem) below. The body is a column so short pages still push to full height.
-- **Home:** the hero and the upload form are centred columns of 46rem. The drop area sits clamp(1.75rem, 4vw, 2.75rem) under the hero; the privacy line 1rem under it. "How it works" starts clamp(4rem, 9vw, 6.5rem) lower, as a two-column grid (steps left, example right, gap clamp(2rem, 5vw, 4rem)) under a centred heading.
+- **Home:** the hero and the upload form are centred columns of 46rem. The drop area sits clamp(1.75rem, 4vw, 2.75rem) under the hero; the privacy line 1rem under it. Two parts follow, each clamp(4rem, 9vw, 6.5rem) below the last, under a centred Section headline: "แปลงอย่างไร", three steps side by side, and "ข้างในทำอะไรกับไฟล์ของคุณ", six rows each with its text on the left and its picture on the right (gap clamp(1.5rem, 5vw, 4rem)), the rows clamp(2rem, 5vw, 3.5rem) apart. On a phone the steps stack, and each row puts its text above its picture.
 - **Every other page:** one card, 44rem wide, centred, its contents a column with a 1.5rem gap.
 - **Rhythm:** gaps step through 0.25, 0.5, 0.75, 1, 1.5 and 1.75rem; inner padding uses 0.625 to 1rem. Responsive spacing uses `clamp()` rather than breakpoints.
 - **Phone width (at or below 47.5rem):** the top bar's line hides, leaving the wordmark; "how it works" becomes one column; the privacy line aligns left; a step's detail drops under its label; the pages table loses its scroll box, so every page shows. Long file names wrap anywhere. A number stays on its unit's line (`&nbsp;` in "50&nbsp;MB", "150&nbsp;หน้า").
@@ -237,7 +246,7 @@ Flat. Depth comes from Hairline borders and Soft Mist fills, never from shadows.
 
 ## Shapes
 
-Soft, generous rounding that grows with the size of the surface: 0.75rem buttons, 0.875rem example word boxes, 1rem panels (steps list, pages table, facts), 1.25rem surfaces (card, drop area, example), 1.75rem for the dashed frame around the drop area (whose 0.75rem padding keeps the two curves concentric). Chips and the progress bar are full pills; the "+" circle, step marks and how-it-works numbers are circles. The focus ring takes a 4px radius. Lines are solid 1px Hairline, except the 2px dashed drop frame and the 2px dotted line joining the how-it-works steps, both in Sage Line.
+Soft, generous rounding that grows with the size of the surface: 0.5rem miniature pages in a picture, 0.75rem buttons, 0.875rem boxes inside a picture (example words, before and after, outputs), 1rem panels (steps list, pages table, facts, the white cards inside a picture), 1.25rem surfaces (card, drop area, picture panels), 1.75rem for the dashed frame around the drop area (whose 0.75rem padding keeps the two curves concentric). Chips and the progress bar are full pills; the "+" circle, step marks, how-it-works numbers and route stops are circles. The focus ring takes a 4px radius. Lines are solid 1px Hairline, except the 2px dashed drop frame and the 2px dotted line joining the stops of a file's route, both in Sage Line, and the dashed Hairline between printed lines in the repair picture.
 
 ## Components
 
@@ -258,9 +267,21 @@ Soft, generous rounding that grows with the size of the surface: 0.75rem buttons
 ### Assurance line
 - Directly under the drop area: a lock icon in Contract Green and one muted Label line saying where the file goes and when it is deleted. Centred on desktop, left-aligned on phones. Privacy is shown here, at reading size, not as small print.
 
-### How-it-works steps and example
-- Three numbered steps: a 2.5rem Pale Leaf circle with the number in Contract Green (CSS counter), a Title and a muted paragraph; a 2px dotted Sage Line joins each number to the next.
-- The example is a Soft Mist panel: a muted caption, then two word boxes with an arrow between them: the wrong word "กำร" in Delete Red, struck through, and the right word "การ" in Contract Green with a green border, then a muted note. Words are 600, clamp(1.75rem, 3.4vw, 2.25rem). Examples are labelled as examples and use synthetic text, never the real contracts.
+### How to convert
+- Three numbered steps side by side: a 2.5rem Pale Leaf circle with the number in Contract Green (CSS counter), a Title and a muted paragraph.
+
+### Inside: what the converter does
+- **The rule for its words:** every fact is the converter's as it is, and its numbers come from the code that applies them (`MAX_BYTES`, `MAX_PAGES`, `MIN_DICTIONARY_SHARE`, `MIN_WORDS_TO_JUDGE`, the setting for how long results are kept). A change to a rule shown here changes the section in the same ticket. Every example is made up.
+- **A row:** an `h3` (Subsection, 600, clamp(1.25rem, 2.2vw, 1.5rem)), muted paragraphs, and at times a list with small Contract Green dots. The picture beside it is a `figure` on a Soft Mist panel (1.25rem corners), drawn with the page's own type and shapes, never an image file.
+- **Text alternatives:** a picture made of real text needs none. A picture that needs one has a visually hidden `figcaption`, or a visible note as its caption.
+- **The pictures:**
+  - **The file checked:** a white card with the file name and a ticked list of checks.
+  - **Pages read two ways:** three miniature pages (3:4, Hairline border, grey bars for lines), the scan in Scan Grey, each captioned with a white chip.
+  - **Wrong text caught:** two word boxes with an arrow between them: "กำร" in Delete Red, struck through, and "การ" in Contract Green with a green border, then a muted note. The words are 600, clamp(1.75rem, 3.4vw, 2.25rem).
+  - **The Thai repair:** the printed lines above (split by a dashed Hairline), an arrow pointing down, then the result in a green-bordered box.
+  - **Structure kept:** a white card with a struck-out page number, a heading, a numbered list and placeholder chips.
+  - **One document, two files:** a Markdown box with `<mark>` in monospace above a DOCX box with the same text highlighted in Check Amber.
+  - **Where a file goes:** stops joined by a dotted Sage Line, each a ringed dot, the last one filled.
 
 ### Card
 - Paper, 1px Hairline border, 1.25rem corners, padding clamp(1.25rem, 4vw, 2.25rem), 44rem wide, centred. Holds every state of a conversion and every notice.
@@ -314,7 +335,7 @@ Soft, generous rounding that grows with the size of the surface: 0.75rem buttons
 - **Don't** add inline `style` or `<script>`, icon fonts, or fonts, scripts, images or anything else from another site; the Content-Security-Policy blocks them and only Cloudflare Turnstile is allowed.
 - **Don't** add ads, invented numbers, user counts, reviews, testimonials or upsell; there are none to show.
 - **Don't** use a second filled green button on a page, or fill other surfaces with Contract Green.
-- **Don't** use amber for anything but a page to check, or red for anything but deleting and the example's wrong word.
+- **Don't** use amber for anything but text to check, or red for anything but deleting and the wrong word "กำร" in the pictures.
 - **Don't** add shadows (beyond the drop area's "+" circle), gradients or a dark theme; the page is flat and light.
 - **Don't** add a fourth font weight or a second typeface.
 - **Don't** put the real contracts from `docs/example_pdf/` in any design, screenshot or example; use the synthetic corpus, labelled as an example.

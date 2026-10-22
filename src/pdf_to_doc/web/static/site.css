@@ -32,6 +32,8 @@
   --line: #dce4e1;
   --soft: #f4f7f6;
   --page: #ffffff;
+  --scan: #e3e8e6; /* a scanned page in a picture, and the lines on it */
+  --scan-ink: #9aa7a2;
   --warn-bg: #fef3c7;
   --warn-ink: #7c4405;
   --danger: #a8231a;
@@ -284,33 +286,33 @@ main {
   color: var(--brand);
 }
 
-/* How it goes: three steps on the left, a worked example on the right. */
+/* The home page's two parts under the drop area: how to convert, in three steps side by side,
+   then what the converter does inside, one step to a row beside its picture. */
 
-.how {
+.how,
+.inside {
   margin-top: clamp(4rem, 9vw, 6.5rem);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(2rem, 5vw, 4rem);
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2rem, 5vw, 3.5rem);
 }
 
-.how-title {
-  grid-column: 1 / -1;
+.part-title {
   text-align: center;
   font-weight: 600;
   font-size: clamp(1.5rem, 3vw, 2.125rem);
   line-height: 1.35;
+  text-wrap: balance;
 }
 
 .how-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 1.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1.25rem, 3vw, 2.5rem);
   counter-reset: step;
 }
 
 .how-step {
-  position: relative;
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr);
   gap: 1rem;
@@ -329,16 +331,6 @@ main {
   font-weight: 600;
 }
 
-/* The dotted line that joins one step to the next. */
-.how-step:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  left: 1.25rem;
-  top: 2.75rem;
-  bottom: -1.5rem;
-  border-left: 2px dotted var(--brand-line);
-}
-
 .how-step h3 {
   font-weight: 600;
   font-size: 1.125rem;
@@ -349,13 +341,293 @@ main {
   color: var(--muted);
 }
 
-.example {
+.inside-head {
+  max-width: 46rem;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inside-intro {
+  color: var(--muted);
+  text-wrap: balance;
+}
+
+.inside-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.inside-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inside-text h3 {
+  font-weight: 600;
+  font-size: clamp(1.25rem, 2.2vw, 1.5rem);
+  line-height: 1.4;
+}
+
+.inside-text p,
+.points {
+  color: var(--muted);
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.points li {
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.points li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.75em;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* A picture beside a step: drawn with the page's own type and shapes on a soft panel. */
+.picture {
+  margin: 0;
   background: var(--soft);
   border-radius: 1.25rem;
   padding: clamp(1.25rem, 3vw, 2rem);
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.sheet-card {
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.checks svg {
+  margin-top: 0.3rem;
+  color: var(--brand);
+}
+
+.sheets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.sheet-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  font-size: 0.9375rem;
+}
+
+/* A page in miniature: grey bars for its lines. */
+.sheet {
+  width: 100%;
+  max-width: 7rem;
+  aspect-ratio: 3 / 4;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 18% 14%;
+  display: flex;
+  flex-direction: column;
+  gap: 12%;
+}
+
+.sheet-line {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.sheet-line--short {
+  width: 60%;
+}
+
+/* A scan: lines printed on grey, not text the file holds. */
+.sheet--scan {
+  background: var(--scan);
+}
+
+.sheet--scan .sheet-line {
+  background: var(--scan-ink);
+  transform: rotate(-1.5deg);
+}
+
+/* On the soft panel a chip takes the page's white, or it would not show. */
+.sheet-item .chip {
+  background: var(--page);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.sheet-word {
+  color: var(--danger);
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+/* Before above after, the arrow pointing down between them, so that each printed line keeps
+   its own line. */
+.before-after {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.before-after .example-arrow svg {
+  transform: rotate(90deg);
+}
+
+.before-lines span {
+  display: block;
+  white-space: nowrap;
+}
+
+.before-lines span + span {
+  border-top: 1px dashed var(--line);
+}
+
+/* A box of text inside a picture: before and after a repair, or one of the two outputs. */
+.before,
+.after,
+.output {
+  width: 100%;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.after {
+  border-color: var(--brand);
+}
+
+.doc-cut {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.doc-heading {
+  font-weight: 600;
+}
+
+.doc-list {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+.doc-placeholders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.output code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+/* Uncertain text, as DOCX highlights it. */
+.output mark {
+  background: var(--warn-bg);
+  color: var(--ink);
+  padding: 0 0.125rem;
+}
+
+/* Where a file goes: stops joined by a dotted line. */
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.route li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 2rem;
+}
+
+.route li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.55rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  background: var(--page);
+}
+
+.route li:last-child::before {
+  background: var(--brand);
+}
+
+.route li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 0.625rem;
+  top: 1.6rem;
+  bottom: -0.9rem;
+  border-left: 2px dotted var(--brand-line);
+}
+
+.route span {
+  color: var(--muted);
+  font-size: 0.9375rem;
 }
 
 .example-label {
@@ -782,7 +1054,8 @@ form.inline {
     display: none;
   }
 
-  .how {
+  .how-steps,
+  .inside-row {
     grid-template-columns: minmax(0, 1fr);
   }
 

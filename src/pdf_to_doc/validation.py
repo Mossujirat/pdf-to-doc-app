@@ -9,10 +9,11 @@ from pdf_to_doc.words import in_word_list, thai_words_in
 # Thai words are checked against PyThaiNLP's word list. A text layer whose words
 # are dictionary words less often than this is wrong, as when a font's ToUnicode
 # map turns "การ" into "กำร". On the real contract, text pages scored 0.982 or
-# more, and the four pages with that broken map 0.781 to 0.910.
-_MIN_DICTIONARY_SHARE = 0.95
+# more, and the four pages with that broken map 0.781 to 0.910. The home page's
+# "ข้างในทำอะไรกับไฟล์ของคุณ" section shows this rule and the next one.
+MIN_DICTIONARY_SHARE = 0.95
 # Fewer Thai words than this are too few to judge, such as a page of names.
-_MIN_WORDS_TO_JUDGE = 20
+MIN_WORDS_TO_JUDGE = 20
 # A correct text layer never holds these: the replacement character and NUL,
 # which glyphs without a Unicode mapping become, and Private Use Area
 # characters that are neither legacy Thai glyphs (repair maps those back) nor
@@ -29,9 +30,9 @@ def trusted(page: PageRows) -> bool:
     if _UNREADABLE.search(text) or _SARA_AM_ANOMALY.search(text):
         return False
     words = thai_words_in(text)
-    if len(words) < _MIN_WORDS_TO_JUDGE:
+    if len(words) < MIN_WORDS_TO_JUDGE:
         return True
-    return sum(1 for word in words if in_word_list(word)) / len(words) >= _MIN_DICTIONARY_SHARE
+    return sum(1 for word in words if in_word_list(word)) / len(words) >= MIN_DICTIONARY_SHARE
 
 
 def _cell_lines(page: PageRows) -> list[str]:
