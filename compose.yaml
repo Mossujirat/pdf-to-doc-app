@@ -34,7 +34,7 @@ services:
       # Every request comes through the Tailscale container, which sets X-Forwarded-For to the
       # visitor's own address, replacing any the visitor sent (tailscale v1.102.5,
       # ipn/ipnlocal/serve.go). Read from that container alone.
-      PDF_TO_DOC_TRUSTED_PROXY: 172.30.20.2
+      PDF_TO_DOC_TRUSTED_PROXY: 172.30.20.254
       PDF_TO_DOC_CLIENT_IP_HEADER: X-Forwarded-For
       # From .env. Without them the public service refuses to start, and says why.
       PDF_TO_DOC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
@@ -78,7 +78,7 @@ services:
       TS_TAILSCALED_EXTRA_ARGS: --no-logs-no-support
     networks:
       edge:
-        ipv4_address: 172.30.20.2  # the trusted proxy above
+        ipv4_address: 172.30.20.254  # the trusted proxy above
     volumes:
       - tailscale:/var/lib/tailscale
       - ./deploy/tailscale/production:/config:ro  # a folder, so that Tailscale sees the file change
@@ -94,6 +94,9 @@ networks:
     ipam:
       config:
         - subnet: 172.30.20.0/24
+          # Docker hands out addresses from the lower half alone, so that none it gives the web
+          # app can take the Tailscale container's fixed one.
+          ip_range: 172.30.20.0/25
 
 volumes:
   launcher:  # the launcher's socket, shared with the web app alone

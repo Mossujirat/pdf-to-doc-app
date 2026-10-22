@@ -19,7 +19,7 @@ services:
       PDF_TO_DOC_PRODUCTION: !reset null  # the public service's checks need the real keys
       PDF_TO_DOC_BOT_CHECK_TEST_MODE: "true"
       PDF_TO_DOC_HOSTNAME: pdf-staging.tail46a117.ts.net
-      PDF_TO_DOC_TRUSTED_PROXY: 172.30.10.2
+      PDF_TO_DOC_TRUSTED_PROXY: 172.30.10.254
       # Small enough for the smoke test to run over it with one file, and so to see whose
       # allowance a request is charged to.
       PDF_TO_DOC_PAGES_PER_DAY: "60"
@@ -42,7 +42,7 @@ services:
       TS_EXTRA_ARGS: --advertise-tags=tag:pdf-staging
     networks:
       edge:
-        ipv4_address: 172.30.10.2
+        ipv4_address: 172.30.10.254
     volumes: !override
       - tailscale:/var/lib/tailscale
       - ./deploy/tailscale/staging:/config:ro
@@ -57,3 +57,4 @@ networks:
     ipam:
       config: !override
         - subnet: 172.30.10.0/24
+          ip_range: 172.30.10.0/25

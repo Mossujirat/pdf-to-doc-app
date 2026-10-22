@@ -124,8 +124,11 @@ if [ "$(wc -l <<<"$names")" -ne 3 ] || grep -qv '^staging-' <<<"$names" || grep 
   echo "refusing: staging's containers must all be named staging-* and publish no port" >&2; exit 1
 fi
 dc build >&2
-# Recreated each time, so that the web app's counts in memory, the daily allowance among them, start empty.
-dc up -d --force-recreate --remove-orphans >&2
+# Taken down and made afresh each time: the web app's counts in memory, the daily allowance among
+# them, start empty, and the network takes the files' settings. The volumes, the Tailscale node's
+# identity among them, are kept.
+dc down --remove-orphans >&2
+dc up -d >&2
 for i in $(seq 60); do
   dc exec -T web python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" \
     >/dev/null 2>&1 && break
