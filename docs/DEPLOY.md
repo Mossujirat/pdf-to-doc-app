@@ -112,6 +112,20 @@ Write it on `gmt`, with `chmod 600`, from `.env.example`:
 
 Follow section 3.
 
+### 7. Start the watchdog
+
+`scripts/watch-tailscale.sh` restarts production's Tailscale container when its node is offline at two checks in a row, five minutes apart. It touches no other container.
+
+It is a workaround: `gmt`'s network now and then stalls the node's connection to Tailscale's control server, and Funnel can stop with it.
+
+Add it to the crontab of `gmt`'s account, beside what is there:
+
+```bash
+ssh gmt '(crontab -l 2>/dev/null | grep -v watch-tailscale.sh; echo "*/5 * * * * bash /srv/pdf-to-doc/scripts/watch-tailscale.sh") | crontab -'
+```
+
+To stop it: `ssh gmt 'crontab -l | grep -v watch-tailscale.sh | crontab -'`.
+
 ## 3. Deploying
 
 Push first: `gmt` pulls from GitHub.
@@ -170,6 +184,7 @@ It prints the seconds an OCR page takes.
   - Production's Tailscale container keeps no log at all, and uploads none to Tailscale (`--no-logs-no-support`). Its error lines can hold a visitor's address.
 - **Counters:** `ssh gmt 'cd /srv/pdf-to-doc && docker compose -p pdf-to-doc exec web pdf-to-doc-statistics'`.
 - **Health:** `/health` answers `ok`.
+- **The watchdog's log:** `ssh gmt 'cat ~/.local/state/pdf-to-doc/watch-tailscale.log'`. It gets a line only when the node was offline, could not be asked, or was restarted. No log means none of that has happened.
 
 ## 6. Never
 
@@ -182,5 +197,8 @@ It prints the seconds an OCR page takes.
 ## 7. When something goes wrong
 
 - **A node joins, then shows offline minutes later, with "map response long-poll timed out" in its log:** `gmt`'s network cuts long-lived connections on port 80, where tailscaled starts. `TS_FORCE_NOISE_443` in `compose.yaml` keeps it on port 443, as `gmt`'s own tailscaled does. Check that the setting is still there.
+- **The public address stops answering, and the admin console shows the node `pdf` offline:** the node's connection to Tailscale's control server stalled, as it did on 2026-10-22, when a restart fixed it.
+  - The watchdog restarts the container within ten minutes, and its log says when (section 5).
+  - To restart it at once: `ssh gmt docker restart pdf-to-doc-tailscale-1`.
 - **"Address already in use" as the Tailscale container starts:** another container took its fixed address. Docker hands out only the lower half of each subnet (`ip_range`), so the fixed `.254` stays free. Check that both are still there.
 - **The smoke test cannot find staging (`getaddrinfo failed`):** this machine is not using Tailscale's DNS. See section 3.

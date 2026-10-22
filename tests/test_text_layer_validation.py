@@ -65,8 +65,8 @@ def test_a_text_layer_holding_what_correct_thai_never_holds_is_read_with_ocr(dam
 
 
 def test_a_few_words_are_too_few_to_judge_by_the_dictionary() -> None:
-    # Names are often not dictionary words: "ภรณ์" and "พัฒน์" are not.
-    names = "ลงชื่อ นางสาวกาญจนาภรณ์ ศรีสุวรรณวงศ์ และนายธนพัฒน์ วงศ์ทองเจริญกุล"
+    # Names are often not dictionary words: "ภรณ์" and "พัฒน์" are not. These are made up.
+    names = "ลงชื่อ นางสาวสมมติภรณ์ ตัวอย่างวงศ์ และนายทดสอบพัฒน์ สมมติสกุล"
     engine = FakeEngine()
 
     result = convert(pdf([names]), ocr=engine)

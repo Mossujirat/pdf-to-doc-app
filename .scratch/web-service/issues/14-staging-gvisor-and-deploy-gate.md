@@ -17,7 +17,7 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 
 **Blocked by:** 08, 09, 10
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Branch:** `chore/web-deploy`
 
@@ -42,7 +42,7 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 - [x] The sandbox containers were started with every restriction in ticket 09.
 - [x] Seconds per OCR page on `gmt` are recorded.
 - [x] Whether sandboxes on efficiency cores are much slower is recorded, with a decision on pinning them to performance cores.
-- [ ] On a real phone, through staging: picking a file, dropping one where the browser allows it, and the copy button all work. Carried over from ticket 11, whose local server a phone cannot reach.
+- Moved to ticket 15: on a real phone, picking a file, dropping one where the browser allows it, and the copy button. Through Funnel, a phone needs no Tailscale app.
 
 **Docs**
 - [x] A deploy guide in the repo, after Chatbot's, covers setup, deploys, staging, gVisor and Tailscale.
@@ -177,3 +177,5 @@ Staging's record is `refs/staging/passed` = `a8eee89`.
 - **The tests** cover both cases.
 
 **`.dockerignore`:** it now lets `scripts/` into the image, since mypy checks it and CI runs mypy in the image.
+
+**2026-10-22, merged:** #7, #8 and #9 are in `main` at `9a0087c`. Its server files are those staging passed with at `969d17f`.

@@ -2,7 +2,25 @@
 
 Converts PDF files into Markdown or DOCX, and DOCX files into Markdown, whose Thai and English text reads exactly as the original: no floating or missing vowels and tone marks, no spaces inside words, no sentences cut at every printed line. The Markdown is meant to be pasted into AI chats, the DOCX to be edited in Word.
 
-Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode is planned (see `.scratch/converter-engine/`), and the web service is being built (see `.scratch/web-service/`).
+Status: early development. PDF pages are read from their text layer, and scanned pages with OCR (PaddleOCR, on the CPU). Accurate mode is planned (see `.scratch/converter-engine/`).
+
+## The web service
+
+**https://pdf.tail46a117.ts.net** converts a file in the browser, with no account. The pages are in Thai.
+
+- **What it does:** a PDF becomes both Markdown and DOCX; a DOCX becomes Markdown. The page shows each step as it runs, and the Markdown can be copied in one click.
+- **Nothing is kept:**
+  - The file is held in memory only, and dropped once it is converted.
+  - Its outputs are in memory too. Only the browser that sent the file can open them, and they are gone 10 minutes after the conversion ends.
+  - The logs never hold a document's content, a file name, an address or a link.
+  - The privacy page (`/privacy`) says what is kept, and for how long.
+- **Each conversion is sandboxed:** it runs in a throwaway container of its own, in gVisor, with no network.
+- **Limits:**
+  - 50 MB and 150 pages a file
+  - 500 pages a day for each visitor's address
+  - 3 conversions at once, with 20 more waiting
+  - a bot check, Cloudflare Turnstile, which a visitor does not see
+- **Hosting:** it runs on one server, reached through Tailscale Funnel. How it is deployed is in `docs/DEPLOY.md`.
 
 ## Usage
 
@@ -61,7 +79,7 @@ uv run pdf-to-doc-web --dev              # the web service at http://127.0.0.1:8
 docker compose -f compose.local.yaml up --build  # the whole web service on Docker, at the same address
 ```
 
-The web service is in development (see `.scratch/web-service/`). There are two ways to run it on your machine:
+There are two ways to run the web service on your machine:
 
 - `pdf-to-doc-web --dev` runs each conversion in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP.
 - `compose.local.yaml` runs the web app and the launcher on Docker Desktop, as on the server. The launcher starts each conversion in a throwaway container of its own, with no network, and removes it when the conversion ends. The one difference from the server is the runtime: Docker's own, instead of gVisor.
