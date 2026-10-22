@@ -165,7 +165,7 @@ def create_app(
 
     @app.get("/")
     async def home() -> HTMLResponse:
-        return HTMLResponse(pages.home(bot_check.site_key))
+        return HTMLResponse(pages.home(bot_check.site_key, settings.keep_for, settings.pages_per_day))
 
     @app.post("/conversions")
     async def start(request: Request) -> Response:
@@ -202,8 +202,11 @@ def create_app(
     @app.get("/conversions/{identifier}/state")
     async def state(request: Request, identifier: str) -> JSONResponse:
         conversion = conversion_or_404(request, identifier)
-        text = pages.status(conversion, conversions.place(identifier))
-        return JSONResponse({"state": conversion.state, "text": text, "ongoing": conversion.ongoing})
+        place = conversions.place(identifier)
+        answer = {"state": conversion.state, "text": pages.status(conversion, place), "ongoing": conversion.ongoing}
+        if conversion.ongoing:
+            answer["steps"] = pages.steps(conversion, place)  # for the page to swap in
+        return JSONResponse(answer)
 
     @app.post("/conversions/{identifier}/cancel")
     async def cancel(request: Request, identifier: str) -> Response:

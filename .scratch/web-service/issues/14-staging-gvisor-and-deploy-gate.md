@@ -42,6 +42,7 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 - [ ] The sandbox containers were started with every restriction in ticket 09.
 - [ ] Seconds per OCR page on `gmt` are recorded.
 - [ ] Whether sandboxes on efficiency cores are much slower is recorded, with a decision on pinning them to performance cores.
+- [ ] On a real phone, through staging: picking a file, dropping one where the browser allows it, and the copy button all work. Carried over from ticket 11, whose local server a phone cannot reach.
 
 **Docs**
 - [ ] A deploy guide in the repo, after Chatbot's, covers setup, deploys, staging, gVisor and Tailscale.

@@ -62,7 +62,7 @@ class Conversion:
     """One conversion. Only the browser whose token started it may see it."""
 
     token: str
-    file_name: str  # only to name the downloads
+    file_name: str  # only to show on its page and name the downloads
     # The client's address as its allowance counts it; held in memory only, and dropped when the
     # conversion ends.
     client_ip: str | None
@@ -71,6 +71,7 @@ class Conversion:
     pages_left: int | None = None  # what the client had left today, when the file had more pages
     opened: OpenedEvent | None = None
     progress: ProgressEvent | None = None
+    read_with_ocr: bool = False  # whether any page has been, so that its steps never show OCR it skipped
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
@@ -251,6 +252,7 @@ class Conversions:
                 self._charge(conversion, event)
             case ProgressEvent():
                 conversion.progress = event
+                conversion.read_with_ocr |= event.stage == "ocr"
             case SummaryEvent():
                 conversion.summary = event.summary()
             case RefusalEvent():

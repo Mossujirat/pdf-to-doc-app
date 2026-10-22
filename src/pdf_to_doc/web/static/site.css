@@ -1,0 +1,815 @@
+/* ครบคำ: one plain, centred page per task, the way people already know a converter to look.
+   One stylesheet, no build step, no inline style anywhere (the Content-Security-Policy allows
+   this site's files alone). */
+
+@font-face {
+  font-family: "Prompt";
+  src: url("/static/fonts/Prompt-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Prompt";
+  src: url("/static/fonts/Prompt-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Prompt";
+  src: url("/static/fonts/Prompt-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+:root {
+  --brand: #0f6b55; /* white text on it is 6.4:1 */
+  --brand-hover: #0b5747;
+  --on-brand: #ffffff;
+  --brand-tint: #e6f2ee;
+  --brand-line: #8fc4b4;
+  --ink: #14201c;
+  --muted: #4e5d58; /* above 4.5:1 on white and on --soft */
+  --line: #dce4e1;
+  --soft: #f4f7f6;
+  --page: #ffffff;
+  --warn-bg: #fef3c7;
+  --warn-ink: #7c4405;
+  --danger: #a8231a;
+  --font: "Prompt", system-ui, sans-serif;
+  --gutter: clamp(1rem, 3vw, 2rem);
+  --ease: var(--ease); /* a quick ease-out, for every transition */
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  caret-color: var(--brand);
+}
+
+::selection {
+  background: var(--brand-tint);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+a {
+  color: var(--brand);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+}
+
+a:hover {
+  color: var(--brand-hover);
+  text-decoration-thickness: 2px;
+}
+
+h1,
+h2,
+h3,
+p,
+ol,
+ul,
+figure {
+  margin: 0;
+}
+
+ol,
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+svg {
+  flex: none;
+}
+
+/* The top bar: the name, and nothing to sign in to. */
+
+.topbar {
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem var(--gutter);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-weight: 600;
+  font-size: 1.625rem;
+  line-height: 1.3;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.wordmark:hover {
+  color: var(--brand-hover);
+  text-decoration: none;
+}
+
+.topbar-line {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 4.5rem) var(--gutter) clamp(3rem, 7vw, 5rem);
+}
+
+/* The home page: the claim, the drop area, one line on privacy, then how it goes. */
+
+.hero {
+  max-width: 46rem;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.title {
+  font-weight: 600;
+  font-size: clamp(1.875rem, 4.4vw, 3rem);
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: clamp(1.0625rem, 1.8vw, 1.25rem);
+  text-wrap: balance;
+}
+
+/* Not a flex column: the bot check's widget is invisible, and takes no gap. */
+.upload {
+  max-width: 46rem;
+  margin: clamp(1.75rem, 4vw, 2.75rem) auto 0;
+}
+
+.drop-frame {
+  border: 2px dashed var(--brand-line);
+  border-radius: 1.75rem;
+  padding: 0.75rem;
+}
+
+.drop {
+  position: relative;
+  min-height: clamp(15rem, 34vw, 19rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+  border-radius: 1.25rem;
+  background: var(--brand);
+  color: var(--on-brand);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 180ms var(--ease);
+}
+
+.drop:hover,
+.drop.is-over {
+  background: var(--brand-hover);
+}
+
+.drop:focus-within {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.drop-plus {
+  display: grid;
+  place-items: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 50%;
+  background: var(--on-brand);
+  color: var(--brand);
+  box-shadow: 0 8px 20px -10px rgba(8, 40, 32, 0.55);
+  transition: transform 220ms var(--ease);
+}
+
+.drop:hover .drop-plus,
+.drop.is-over .drop-plus {
+  transform: scale(1.06);
+}
+
+.drop-title {
+  font-weight: 600;
+  font-size: 1.375rem;
+  line-height: 1.4;
+}
+
+.drop-note,
+.drop-name {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.drop-name {
+  overflow-wrap: anywhere;
+}
+
+.drop-name:empty {
+  display: none;
+}
+
+.drop-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+/* With the script, choosing or dropping a file sends it; without, this button does. */
+.upload-submit {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.assurance {
+  margin-top: 1rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+.assurance svg {
+  margin-top: 0.2rem;
+  color: var(--brand);
+}
+
+/* How it goes: three steps on the left, a worked example on the right. */
+
+.how {
+  margin-top: clamp(4rem, 9vw, 6.5rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.how-title {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-weight: 600;
+  font-size: clamp(1.5rem, 3vw, 2.125rem);
+  line-height: 1.35;
+}
+
+.how-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  counter-reset: step;
+}
+
+.how-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 1rem;
+  counter-increment: step;
+}
+
+.how-step::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* The dotted line that joins one step to the next. */
+.how-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 1.25rem;
+  top: 2.75rem;
+  bottom: -1.5rem;
+  border-left: 2px dotted var(--brand-line);
+}
+
+.how-step h3 {
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.how-step p {
+  color: var(--muted);
+}
+
+.example {
+  background: var(--soft);
+  border-radius: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.example-label {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.example-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.example-word {
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+.example-word span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.example-word strong {
+  display: block;
+  font-weight: 600;
+  font-size: clamp(1.75rem, 3.4vw, 2.25rem);
+  line-height: 1.5;
+}
+
+.example-word--wrong strong {
+  color: var(--danger);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.example-word--right {
+  border-color: var(--brand);
+}
+
+.example-word--right strong {
+  color: var(--brand);
+}
+
+.example-arrow {
+  color: var(--muted);
+}
+
+.example-note {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+/* A conversion's page, and every notice: one card in the middle. */
+
+.card {
+  max-width: 44rem;
+  margin: 0 auto;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.file svg {
+  color: var(--brand);
+}
+
+.file-name {
+  overflow-wrap: anywhere;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip--warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.status {
+  font-weight: 600;
+  font-size: clamp(1.625rem, 3.6vw, 2.25rem);
+  line-height: 1.35;
+}
+
+.message {
+  font-size: 1.125rem;
+}
+
+.summary {
+  color: var(--muted);
+}
+
+/* The steps while a conversion waits or runs. A step that has just changed is tinted for a
+   moment, longer while the tab is away. */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+}
+
+.step + .step {
+  border-top: 1px solid var(--line);
+}
+
+.step-mark {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  color: var(--page);
+}
+
+.step--done .step-mark {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.step--now .step-mark {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.step--now .step-mark::after {
+  content: "";
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.step-label {
+  font-weight: 500;
+}
+
+.step--later .step-label,
+.step--skipped .step-label {
+  color: var(--muted);
+}
+
+.step-detail {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.step-meter {
+  grid-column: 2 / -1;
+  width: 100%;
+  height: 0.5rem;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand-tint);
+  overflow: hidden;
+}
+
+.step-meter::-webkit-progress-bar {
+  background: var(--brand-tint);
+  border-radius: 999px;
+}
+
+.step-meter::-webkit-progress-value {
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+.step-meter::-moz-progress-bar {
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+.step.is-lit {
+  background: var(--brand-tint);
+  animation: settle 1800ms var(--ease) 4s forwards;
+}
+
+html.is-away .step.is-lit {
+  animation-play-state: paused;
+}
+
+@keyframes settle {
+  to {
+    background: transparent;
+  }
+}
+
+/* A finished conversion's pages: how each was read, and what on it to check. */
+
+.pages {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pages-wrap {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  overflow: auto;
+  max-height: 28rem;
+}
+
+.pages th,
+.pages td {
+  text-align: left;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.pages thead th {
+  position: sticky;
+  top: 0;
+  background: var(--soft);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.pages tbody tr:last-child th,
+.pages tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pages tbody th {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pages .none {
+  color: var(--muted);
+}
+
+.pages .chip {
+  padding: 0 0.625rem;
+  margin-right: 0.25rem;
+}
+
+.section-title {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+/* What became of a file that gave no result. */
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem 1.25rem;
+  background: var(--soft);
+  border-radius: 1rem;
+}
+
+.facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.facts svg {
+  margin-top: 0.3rem;
+  color: var(--brand);
+}
+
+/* Buttons: one filled action, the rest outlined or plain. */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* A result's buttons: copying across the full width, the downloads side by side under it. */
+.actions--result {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.actions--result .button--primary {
+  grid-column: 1 / -1;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0.625rem 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  font-family: var(--font);
+  font-weight: 500;
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 160ms var(--ease), border-color 160ms var(--ease);
+}
+
+.button--primary {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.button--primary:hover {
+  background: var(--brand-hover);
+  color: var(--on-brand);
+}
+
+.button--secondary {
+  background: var(--page);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.button--secondary:hover {
+  border-color: var(--brand);
+  color: var(--ink);
+}
+
+.button--danger {
+  background: var(--page);
+  border-color: var(--line);
+  color: var(--danger);
+}
+
+.button--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.ended {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.kept {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+form.inline {
+  display: contents;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 47.5rem) {
+  .topbar-line {
+    display: none;
+  }
+
+  .how {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assurance {
+    justify-content: flex-start;
+  }
+
+  /* Rows wrap on a phone: a box of its own would hide the last pages, with no scrollbar to say so. */
+  .pages-wrap {
+    max-height: none;
+  }
+
+  .step {
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+  }
+
+  .step-detail {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

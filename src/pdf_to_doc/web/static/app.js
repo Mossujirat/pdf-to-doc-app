@@ -1,9 +1,16 @@
 // The pages' only script: no build step, and no inline script anywhere.
 
+// While the tab is away, a lit step stays lit: it fades only once someone can see it.
+const awayClass = () => document.documentElement.classList.toggle("is-away", document.hidden);
+document.addEventListener("visibilitychange", awayClass);
+awayClass();
+
 // A conversion waiting or in progress asks for its state every 2 seconds, shows it on the
-// page and in the tab's title, and shows the page again once it has ended.
+// page, in its steps and in the tab's title, and shows the page again once it has ended.
+// A step whose state changed is tinted for a moment.
 const status = document.getElementById("status");
-if (status) {
+const steps = document.getElementById("steps");
+if (status && status.dataset.state) {
   const ask = async () => {
     try {
       const response = await fetch(status.dataset.state, { cache: "no-store" });
@@ -17,8 +24,29 @@ if (status) {
           location.reload();
           return;
         }
-        status.textContent = state.text;
-        document.title = state.text;
+        // Only a change is written, or a screen reader may announce the same status every time.
+        if (status.textContent !== state.text) {
+          status.textContent = state.text;
+          document.title = state.text;
+        }
+        // Each step is updated in place, not replaced, so that one still lit keeps its fade.
+        if (steps && state.steps) {
+          const fresh = document.createElement("template");
+          fresh.innerHTML = state.steps;
+          for (const step of fresh.content.querySelectorAll("[data-step]")) {
+            const shown = steps.querySelector(`[data-step="${step.dataset.step}"]`);
+            if (!shown) {
+              continue;
+            }
+            if (shown.dataset.at !== step.dataset.at) {
+              shown.className = `${step.className} is-lit`;
+              shown.dataset.at = step.dataset.at;
+            }
+            if (shown.innerHTML !== step.innerHTML) {
+              shown.innerHTML = step.innerHTML;
+            }
+          }
+        }
       }
     } catch {
       // Offline for a moment, or the phone suspended the tab: ask again later.
@@ -38,12 +66,16 @@ if (copy) {
     text = value;
   });
   copy.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(text ?? (await markdown));
-    copy.textContent = "คัดลอกแล้ว";
+    try {
+      await navigator.clipboard.writeText(text ?? (await markdown));
+      copy.lastChild.textContent = " คัดลอกแล้ว";
+    } catch {
+      copy.lastChild.textContent = " คัดลอกไม่ได้ ใช้ปุ่มดาวน์โหลดแทน";
+    }
   });
 }
 
-// A file dropped anywhere on the form is sent, as one picked with the button is.
+// A file is sent as soon as it is picked, or dropped anywhere on the form.
 const form = document.getElementById("upload");
 
 // The bot check puts its token in the form a moment after the page loads. A file sent sooner
@@ -77,12 +109,53 @@ if (form && form.querySelector(".cf-turnstile")) {
 
 if (form) {
   const input = form.querySelector("input[type=file]");
-  form.addEventListener("dragover", (event) => event.preventDefault());
+  const drop = form.querySelector(".drop");
+  const title = form.querySelector("[data-drop-title]");
+  const name = form.querySelector("[data-file-name]");
+  const ready = title?.textContent;
+  const send = () => {
+    const file = input.files[0];
+    if (!file) {
+      return;
+    }
+    if (title) {
+      title.textContent = "กำลังส่งไฟล์";
+    }
+    if (name) {
+      name.textContent = file.name;
+    }
+    form.requestSubmit();
+  };
+  // A page the browser shows again from its history no longer sends anything.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      form.reset();
+      if (title) {
+        title.textContent = ready;
+      }
+      if (name) {
+        name.textContent = "";
+      }
+    }
+  });
+  input.addEventListener("change", send);
+  for (const type of ["dragenter", "dragover"]) {
+    form.addEventListener(type, (event) => {
+      event.preventDefault();
+      drop?.classList.add("is-over");
+    });
+  }
+  form.addEventListener("dragleave", (event) => {
+    if (!form.contains(event.relatedTarget)) {
+      drop?.classList.remove("is-over");
+    }
+  });
   form.addEventListener("drop", (event) => {
     event.preventDefault();
+    drop?.classList.remove("is-over");
     if (event.dataTransfer.files.length === 1) {
       input.files = event.dataTransfer.files;
-      form.requestSubmit();
+      send();
     }
   });
 }

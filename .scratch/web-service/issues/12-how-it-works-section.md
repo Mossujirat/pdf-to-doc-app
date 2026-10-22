@@ -39,3 +39,13 @@
 **Tests**
 - [ ] The limits shown on the page match the settings.
 - [ ] The page loads no image from another site.
+
+## Comments
+
+**2026-10-22, from ticket 11**
+
+The home page already has the start of this section, under "แปลงอย่างไร", in the layout the user approved:
+- three numbered steps: drop or pick a file, wait, then copy or download
+- the "กำร → การ" example, as one worked case of wrong text being caught
+
+Build the full section from these, in the same look (`DESIGN.md`), rather than adding a second one beside them.
