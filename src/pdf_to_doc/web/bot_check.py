@@ -20,6 +20,8 @@ TOKEN_FIELD = "cf-turnstile-response"  # the form field the widget puts its toke
 ACTION = "upload"
 _SITEVERIFY = f"{CLOUDFLARE}/turnstile/v0/siteverify"
 _TIMEOUT = 10  # seconds in all, as Cloudflare's own examples wait
+_CONNECTION_TRIES = 3  # within that time
+_BETWEEN_TRIES = 0.5  # seconds
 _LONGEST_TOKEN = 2048
 # Cloudflare's test keys: an invisible widget, and a secret, that always pass. Asked on 2026-10-21,
 # the secret passed any token, and answered with Cloudflare's own hostname and no action.
@@ -62,7 +64,7 @@ class BotCheck:
             return "no token"
         try:
             async with asyncio.timeout(_TIMEOUT), httpx.AsyncClient(transport=self.cloudflare) as client:
-                response = await client.post(_SITEVERIFY, data={"secret": self.secret_key, "response": token})
+                response = await _verify(client, self.secret_key, token)
             answer = response.json()
         except (httpx.HTTPError, TimeoutError, ValueError):
             return "unreachable"
@@ -71,6 +73,20 @@ class BotCheck:
         if not self.test_mode and (answer.get("hostname") != self.hostname or answer.get("action") != ACTION):
             return "another site"
         return "passed"
+
+
+async def _verify(client: httpx.AsyncClient, secret_key: str, token: str) -> httpx.Response:
+    """Ask Cloudflare to verify the token. A connection that never reached Cloudflare is tried
+    again, as gmt's network drops one now and then (staging, 2026-10-22). A request that may have
+    reached it is not, since each token is good for one verification."""
+    for attempt in range(1, _CONNECTION_TRIES + 1):
+        try:
+            return await client.post(_SITEVERIFY, data={"secret": secret_key, "response": token})
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            if attempt == _CONNECTION_TRIES:
+                raise
+            await asyncio.sleep(_BETWEEN_TRIES)
+    raise AssertionError("unreachable")  # the loop returns or raises
 
 
 def _real(key: str | None) -> bool:

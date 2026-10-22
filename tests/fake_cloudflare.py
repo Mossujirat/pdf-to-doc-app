@@ -11,11 +11,22 @@ TOKEN = "token-from-the-widget"  # what the widget put in the form
 
 
 class FakeCloudflare(httpx.MockTransport):
-    def __init__(self, answer: dict[str, Any] | None = None, *, fails: type[httpx.TransportError] | None = None) -> None:
-        """`answer` is the verification's JSON; `fails` is the error reaching it raises instead."""
-        self.asked: list[dict[str, str]] = []  # each verification's form fields
+    def __init__(
+        self,
+        answer: dict[str, Any] | None = None,
+        *,
+        fails: type[httpx.TransportError] | None = None,
+        unreachable_at_first: int = 0,
+    ) -> None:
+        """`answer` is the verification's JSON; `fails` is the error reaching it raises instead.
+        The first `unreachable_at_first` connections never reach it, as a network drops one."""
+        self.asked: list[dict[str, str]] = []  # each verification's form fields, as it reached Cloudflare
+        self.connections = 0
 
         def verify(request: httpx.Request) -> httpx.Response:
+            self.connections += 1
+            if self.connections <= unreachable_at_first:
+                raise httpx.ConnectError("the connection was dropped", request=request)
             self.asked.append(dict(parse_qsl(request.content.decode())))
             if fails is not None:
                 raise fails("Cloudflare cannot be reached", request=request)
@@ -24,9 +35,12 @@ class FakeCloudflare(httpx.MockTransport):
         super().__init__(verify)
 
 
-def passing(**different: Any) -> FakeCloudflare:
+def passing(*, unreachable_at_first: int = 0, **different: Any) -> FakeCloudflare:
     """Cloudflare passing the token for this site's upload, unless `different` says otherwise."""
-    return FakeCloudflare({"success": True, "hostname": HOSTNAME, "action": "upload", "error-codes": [], **different})
+    return FakeCloudflare(
+        {"success": True, "hostname": HOSTNAME, "action": "upload", "error-codes": [], **different},
+        unreachable_at_first=unreachable_at_first,
+    )
 
 
 def failing() -> FakeCloudflare:

@@ -9,4 +9,6 @@
 !src/
 !tests/
 !corpus/
+# The deploy's scripts, so that the image's checks type-check them as the repo's do.
+!scripts/
 **/__pycache__

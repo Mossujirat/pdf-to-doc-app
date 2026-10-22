@@ -77,6 +77,27 @@ def test_a_refusal_is_logged_by_why_and_never_with_the_token(
     assert TOKEN not in caplog.text
 
 
+def test_a_connection_that_never_reached_cloudflare_is_tried_again() -> None:
+    # As gmt's network dropped one on staging (2026-10-22). The token never reached Cloudflare, so
+    # it is still good.
+    cloudflare = passing(unreachable_at_first=1)
+
+    response = sent_with(cloudflare)
+
+    assert response.status_code == 303
+    assert len(cloudflare.asked) == 1
+
+
+def test_a_token_that_reached_cloudflare_is_never_sent_again() -> None:
+    # Each token is good for one verification: once Cloudflare may have it, asking again would fail.
+    cloudflare = unreachable(httpx.ReadTimeout)
+
+    response = sent_with(cloudflare)
+
+    assert response.status_code == 403
+    assert len(cloudflare.asked) == 1
+
+
 def test_an_upload_without_a_token_is_refused_without_asking_cloudflare() -> None:
     cloudflare = passing()
     with browser(FakeSandbox(), cloudflare=cloudflare) as client:
