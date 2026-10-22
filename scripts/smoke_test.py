@@ -17,6 +17,7 @@ import argparse
 import io
 import json
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -228,7 +229,8 @@ class StagingSmokeTest:
     def remote(self, command: list[str]) -> str:
         """A command's output on the server. If ssh fails, the test stops: a check that cannot be
         made must not pass."""
-        result = subprocess.run(["ssh", "-n", self.ssh, *command], capture_output=True, text=True, timeout=60)
+        # ssh hands the server's shell one line: each argument is quoted, or a space would split it.
+        result = subprocess.run(["ssh", "-n", self.ssh, shlex.join(command)], capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             raise SystemExit(f"FAIL {' '.join(command)} on {self.ssh}: {result.stderr.strip()}")
         return result.stdout
