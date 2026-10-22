@@ -6,7 +6,7 @@
 
 **Blocked by:** 12, 13, 14, converter ticket 11 (uncertain text, in `.scratch/converter-engine/`)
 
-**Status:** ready-for-human
+**Status:** done
 
 **Branch:** `chore/web-deploy`
 
@@ -23,7 +23,7 @@
 - [x] Converter ticket 11 (uncertain text) is merged, and the web shows the uncertain count.
 - [x] The git history is checked for anything confidential: excerpts of the sample contracts, names, ID numbers. The repo is then made public.
 - [x] Through Funnel, a forged client-IP header changes nothing.
-- [ ] The privacy page and the "how it works" section are reviewed by the user.
+- [x] The privacy page and the "how it works" section are reviewed by the user.
 - [x] The README describes the web service, and links to it.
 - [x] On a real phone, through Funnel: picking a file, dropping one where the browser allows it, and the copy button all work (from ticket 14).
 
@@ -62,3 +62,8 @@
   - **Tested on `gmt`:** with a stand-in `docker`, it did nothing while online, waited after one offline check, restarted once after two, and left a stopped container alone. Against the real node it found it online and wrote nothing.
   - **The cause:** it lies in `gmt`'s network, outside this project, so the watchdog stays a workaround.
   - **Setting it up and stopping it:** `docs/DEPLOY.md`, section 2, step 7.
+- **Watchdog deployed:** production runs `c145cab`, with the watchdog in `gmt`'s crontab.
+- **Reviewed:** the user reviewed the privacy page and the "how it works" section on the live site, and asked for no change.
+- **Left for later, outside this ticket:**
+  - **Sandbox memory:** one 110-page file, 91 of its pages read with OCR, peaked at 1.57 GiB against the sandbox's 2 GiB limit. Whether a 150-page scan fits is not yet measured.
+  - **Funnel:** a file near 50 MB through Funnel, and IPv6 addresses.
