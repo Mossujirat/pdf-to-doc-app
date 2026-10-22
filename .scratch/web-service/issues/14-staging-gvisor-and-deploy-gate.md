@@ -169,3 +169,11 @@ Staging's record is `refs/staging/passed` = `a8eee89`.
 
 **The smoke test after the review:** all 35 checks passed at `5578a38`, and staging's record is `refs/staging/passed` = `5578a38`.
 - **On the way:** the remote `docker image inspect` had split on the space in `{{json .Config.Env}}`. ssh hands the server's shell one line, so each argument is now quoted (`shlex.join`).
+
+**2026-10-22, a dropped connection to Cloudflare**
+- **What happened:** a staging run failed one upload with 403. The web app logged `upload refused by the bot check: unreachable`. Twelve calls to Cloudflare's siteverify straight after all answered in about 0.1 s.
+- **Not the first time:** `gmt`'s network had already dropped a DERP connection and an ssh connection that day.
+- **The bot check still fails closed.** It now tries again, up to three times within its 10 seconds, only when the connection never reached Cloudflare (`ConnectError`, `ConnectTimeout`). A request that may have reached it is never sent again, since each token is good for one verification.
+- **The tests** cover both cases.
+
+**`.dockerignore`:** it now lets `scripts/` into the image, since mypy checks it and CI runs mypy in the image.
