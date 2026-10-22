@@ -57,10 +57,16 @@ uv run pytest                            # fast tests (a fake OCR engine stands 
 uv run pytest -m ocr                     # real PaddleOCR on the corpus scans
 uv run mypy                              # type checking
 uv run pdf-to-doc-eval corpus/synthetic  # measure broken text on the test corpus
-uv run pdf-to-doc-web                    # the web service at http://127.0.0.1:8000
+uv run pdf-to-doc-web --dev              # the web service at http://127.0.0.1:8000, without Docker
+docker compose -f compose.local.yaml up --build  # the whole web service on Docker, at the same address
 ```
 
-The web service is in development (see `.scratch/web-service/`). `pdf-to-doc-web` serves it for development only: each conversion runs in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP. Its bot check, Cloudflare Turnstile, runs with Cloudflare's test keys, so it needs the internet.
+The web service is in development (see `.scratch/web-service/`). There are two ways to run it on your machine:
+
+- `pdf-to-doc-web --dev` runs each conversion in a process of its own on your machine, with no sandbox, and its cookie works over plain HTTP.
+- `compose.local.yaml` runs the web app and the launcher on Docker Desktop, as on the server. The launcher starts each conversion in a throwaway container of its own, with no network, and removes it when the conversion ends. The one difference from the server is the runtime: Docker's own, instead of gVisor.
+
+Either way, the bot check, Cloudflare Turnstile, runs with Cloudflare's test keys, so it needs the internet. `/health` answers `ok` while the service is up. The operator's counters are served only on the loopback address of the web app's machine or container, port 8001, and `pdf-to-doc-statistics` prints them there: `docker compose -f compose.local.yaml exec web pdf-to-doc-statistics`. Without `--dev`, `pdf-to-doc-web` takes its settings from the environment, as its container does: each setting in `src/pdf_to_doc/web/settings.py` as `PDF_TO_DOC_` and its name in capitals, such as `PDF_TO_DOC_MAX_RUNNING`.
 
 CI (`.github/workflows/ci.yml`) builds the Docker image for every pull request and every push to `main`. It runs these checks inside the image, with no network and a read-only file system, and fails on any broken text on the corpus's text pages.
 

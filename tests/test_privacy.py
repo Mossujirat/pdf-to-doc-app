@@ -9,6 +9,7 @@ and the Paddle predictors still alive, which keep the last page they read.
 import json
 from pathlib import Path
 
+import fragments
 import pytest
 from docx_reader import page_texts as docx_page_texts
 from fresh_process import ConversionStopped, Run, SandboxRun, convert_in_fresh_process, sandbox_in_fresh_process
@@ -33,9 +34,7 @@ def mixed() -> bytes:
 
 def leaked(log: str) -> list[str]:
     """Every run of 8 characters of the document's text, without a space, that the log holds."""
-    lines = [*TEXT_PAGE, *SCANS[0], *SCANS[1]]
-    fragments = {line[start : start + 8] for line in lines for start in range(len(line) - 7)}
-    return sorted(fragment for fragment in fragments if " " not in fragment and fragment in log)
+    return fragments.leaked([*TEXT_PAGE, *SCANS[0], *SCANS[1]], log)
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,7 @@
 """The messages for a file that cannot be converted: every refusal in the command line's words,
 the web's own for what only the web meets, and never the sandbox's own text."""
 
+import logging
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -87,6 +88,17 @@ def test_a_failed_conversion_says_to_try_again_and_shows_nothing_from_the_sandbo
     assert "การแปลงล้มเหลว" in page
     assert "กรุณาลองใหม่อีกครั้ง" in page
     assert "MemoryError" not in page
+
+
+def test_a_sandbox_that_reports_its_failure_again_and_again_cannot_fill_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sandbox = ScriptedSandbox([OPENED, *[b'{"event": "failure", "error": "MemoryError"}'] * 100], Ended(10, b""))
+    with caplog.at_level(logging.WARNING), browser(sandbox) as client:
+        state, _ = converted(client, pdf(["หน้าแรก"]))
+
+    assert state == "failed"
+    assert len([record for record in caplog.records if record.name.startswith("pdf_to_doc")]) <= 2
 
 
 def test_a_conversion_stopped_by_the_time_limit_says_so_and_to_try_again() -> None:

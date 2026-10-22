@@ -1,0 +1,54 @@
+# The web service on this machine, with Docker Desktop: the web app and the launcher as on the
+# server, but with Docker's own runtime instead of gVisor, the bot check in test mode, and no
+# Tailscale. The launcher starts each conversion's sandbox itself; sandboxes are not in this file.
+#
+#   docker compose -f compose.local.yaml up --build
+#
+# Then open http://127.0.0.1:8000. The bot check's test mode still asks Cloudflare, so the web
+# app needs the internet. The operator's counters are served inside the web app's container
+# alone: `docker compose -f compose.local.yaml exec web pdf-to-doc-statistics`.
+name: pdf-to-doc-local
+
+x-logging: &logging  # Docker keeps the logs in files it rotates, so that they cannot fill the disk
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  web:
+    build: .
+    image: pdf-to-doc
+    pull_policy: build  # never an image of the same name from a registry
+    command: ["pdf-to-doc-web", "--host", "0.0.0.0"]
+    environment:
+      PDF_TO_DOC_BOT_CHECK_TEST_MODE: "true"
+      PDF_TO_DOC_SECURE_COOKIES: "false"  # plain HTTP on this machine
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - launcher:/run/pdf-to-doc:ro
+    read_only: true
+    tmpfs: [/tmp]
+    logging: *logging
+    depends_on: [launcher]
+
+  launcher:
+    build: .
+    image: pdf-to-doc
+    pull_policy: build
+    command: ["pdf-to-doc-launcher"]
+    environment:
+      PDF_TO_DOC_ENVIRONMENT: local
+      PDF_TO_DOC_SANDBOX_RUNTIME: runc
+    network_mode: none  # it reaches Docker through Docker's socket, and nothing else
+    group_add: ["0"]  # Docker Desktop's socket belongs to root's group
+    volumes:
+      - launcher:/run/pdf-to-doc
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs: [/tmp]
+    logging: *logging
+
+volumes:
+  launcher:  # the launcher's socket, shared with the web app alone

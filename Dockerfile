@@ -41,8 +41,11 @@ RUN apt-get update \
  && apt-get install --yes --no-install-recommends libgl1 libglib2.0-0 libgomp1 \
  && rm -rf /var/lib/apt/lists/*
 # Source files are untrusted input, so conversion runs as an ordinary user who
-# cannot change the installed code.
-RUN useradd --uid 1000 --create-home converter
+# cannot change the installed code. The web service's launcher listens in
+# /run/pdf-to-doc, on a volume it shares with the web app; a new volume takes
+# the folder's owner.
+RUN useradd --uid 1000 --create-home converter \
+ && install -d -o converter -g converter /run/pdf-to-doc
 COPY --from=build /app /app
 COPY --from=build /opt/pdf-to-doc/models /opt/pdf-to-doc/models
 # PyThaiNLP would otherwise create a data folder in the home directory on

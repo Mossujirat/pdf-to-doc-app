@@ -338,7 +338,7 @@ A section of the home page that explains a conversion with pictures, in plain Th
 
 - **Content-Security-Policy:** this site only, plus Cloudflare's Turnstile origin for its script and frame. No inline script.
 - **Headers on conversion pages and downloads:**
-  - `Referrer-Policy: no-referrer`
+  - `Referrer-Policy`: `no-referrer` on downloads, and `same-origin` on every page. With `no-referrer`, a browser sends `Origin: null` with every form it posts, so the `Origin` check below would refuse each cancel and delete. The user decided this on 2026-10-21 (ticket 10).
   - `Cache-Control: no-store`
   - `X-Robots-Tag: noindex`
 - **Requests that change state** (upload, cancel, delete) check the `Origin` header.
@@ -363,7 +363,7 @@ A section of the home page that explains a conversion with pictures, in plain Th
   - sandbox timeouts and failures
   - the highest sandbox memory and CPU time
 
-  They are served on a second listener bound to the server's own loopback address. The operator reads them over SSH. Tailscale never forwards to this listener.
+  They are served on a second listener bound to the loopback address of the web app's own container. The operator reads them over SSH, with `docker compose exec web pdf-to-doc-statistics`. Neither Tailscale nor any other container reaches this listener (ticket 10).
 - **A health address** answers whether the service is up, with no details. It is for an uptime check later.
 
 ### Hosting and deploy

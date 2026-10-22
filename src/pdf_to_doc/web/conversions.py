@@ -8,6 +8,7 @@ only while its conversion waits or runs.
 import asyncio
 import logging
 import secrets
+from collections import Counter
 from collections.abc import Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
@@ -30,8 +31,10 @@ from pdf_to_doc.web.protocol import (
     read_parts,
 )
 from pdf_to_doc.web.sandboxes import Ended, Sandbox
+from pdf_to_doc.web.statistics import Statistics
 
 State = Literal["waiting", "running", "finished", "refused", "failed", "cancelled", "over_allowance"]
+Outcome = State | Literal["timed_out"]  # a failure, because the sandbox ran out of time
 # Seconds on a clock that never goes back, such as time.monotonic. It tells no date.
 Clock = Callable[[], float]
 
@@ -71,13 +74,22 @@ class Conversion:
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
+    failure: FailureEvent | None = None  # the sandbox's own word that it failed
     timed_out: bool = False  # failed because the sandbox was stopped by the time limit
-    ended_at: float | None = None  # on the app's clock
+    # On the app's clock: when it was queued, left the queue and ended.
+    queued_at: float = 0.0
+    started_at: float | None = None
+    ended_at: float | None = None
 
     @property
     def ongoing(self) -> bool:
         """Whether it still waits or runs. A cancelled one has ended, even while its sandbox stops."""
         return self.state in ("waiting", "running")
+
+    @property
+    def outcome(self) -> Outcome:
+        """Its state, with a failure told apart from a time-out."""
+        return "timed_out" if self.state == "failed" and self.timed_out else self.state
 
 
 class Conversions:
@@ -90,6 +102,7 @@ class Conversions:
         self,
         sandbox: Sandbox,
         allowance: Allowance,
+        statistics: Statistics,
         *,
         max_running: int,
         max_waiting: int,
@@ -98,6 +111,7 @@ class Conversions:
     ) -> None:
         self._sandbox = sandbox
         self._allowance = allowance
+        self._statistics = statistics
         self._max_running = max_running
         self._max_waiting = max_waiting
         self._keep_for = keep_for
@@ -123,7 +137,7 @@ class Conversions:
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
             raise QueueFull()
         identifier = secrets.token_urlsafe(16)
-        self._held[identifier] = Conversion(token, file_name, client_ip)
+        self._held[identifier] = Conversion(token, file_name, client_ip, queued_at=self._clock())
         self._waiting[identifier] = source
         self._start_next()
         return identifier
@@ -154,6 +168,7 @@ class Conversions:
         self._end(conversion, "cancelled")
         if identifier in self._waiting:
             del self._waiting[identifier]
+            self._count_queue()
         else:
             self._running[identifier].cancel()
 
@@ -191,9 +206,15 @@ class Conversions:
             source = self._waiting.pop(identifier)
             conversion = self._held[identifier]
             conversion.state = "running"
+            conversion.started_at = self._clock()
+            self._statistics.waited(conversion.started_at - conversion.queued_at)
             task = asyncio.get_running_loop().create_task(self._convert(conversion, source))
             self._running[identifier] = task
             task.add_done_callback(partial(self._ended, identifier))
+        self._count_queue()
+
+    def _count_queue(self) -> None:
+        self._statistics.queue(len(self._waiting), len(self._running))
 
     def _ended(self, identifier: str, task: asyncio.Task[None]) -> None:
         del self._running[identifier]
@@ -207,6 +228,8 @@ class Conversions:
                 async for item in sent:
                     if isinstance(item, Ended):
                         conversion.timed_out = item.timed_out
+                        if item.usage is not None:
+                            self._statistics.used(item.usage)
                         outcome, outputs = _outcome(conversion, item)
                     else:
                         self._apply(conversion, read_event(item))
@@ -221,7 +244,7 @@ class Conversions:
             self._end(conversion, outcome, outputs)
 
     def _apply(self, conversion: Conversion, event: Event) -> None:
-        if conversion.summary is not None or conversion.refusal is not None:
+        if conversion.summary is not None or conversion.refusal is not None or conversion.failure is not None:
             raise Malformed("an event after the conversion's last")
         match event:
             case OpenedEvent():
@@ -233,6 +256,7 @@ class Conversions:
             case RefusalEvent():
                 conversion.refusal = event
             case FailureEvent():
+                conversion.failure = event
                 _log.warning("conversion failed in the sandbox: %s", event.error)
 
     def _charge(self, conversion: Conversion, opened: OpenedEvent) -> None:
@@ -256,6 +280,19 @@ class Conversions:
             self._allowance.give_back(conversion.charge)
         conversion.charge = None
         conversion.client_ip = None
+        self._count(conversion)
+
+    def _count(self, conversion: Conversion) -> None:
+        """Count how the conversion ended, for the operator's statistics."""
+        self._statistics.ended(conversion.outcome)
+        if conversion.started_at is not None and conversion.ended_at is not None:
+            self._statistics.ran(conversion.ended_at - conversion.started_at)
+        if conversion.state == "finished" and conversion.summary is not None:
+            self._statistics.pages(Counter(page.kind for page in conversion.summary.pages))
+        if conversion.state == "refused" and conversion.refusal is not None:
+            self._statistics.refused(conversion.refusal.kind)
+        if conversion.state == "over_allowance":
+            self._statistics.refused("over the allowance")
 
 
 def _outcome(conversion: Conversion, ended: Ended) -> tuple[State, dict[OutputFormat, bytes]]:

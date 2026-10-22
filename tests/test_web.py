@@ -132,7 +132,12 @@ def test_an_upload_that_says_it_is_over_50_mb_is_refused_before_any_of_it_is_rea
     async def send(message: MutableMapping[str, Any]) -> None:
         sent.append(message)
 
-    headers = [(b"content-type", b"multipart/form-data; boundary=edge"), (b"content-length", str(51 * MB).encode())]
+    headers = [
+        (b"host", b"testserver"),
+        (b"origin", b"https://testserver"),  # from the site's own page, as a browser says
+        (b"content-type", b"multipart/form-data; boundary=edge"),
+        (b"content-length", str(51 * MB).encode()),
+    ]
     scope = {"type": "http", "method": "POST", "path": "/conversions", "headers": headers, "query_string": b""}
     asyncio.run(create_app(FakeSandbox())(scope, receive, send))
 

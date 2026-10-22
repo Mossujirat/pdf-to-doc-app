@@ -45,3 +45,17 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 
 **Docs**
 - [ ] A deploy guide in the repo, after Chatbot's, covers setup, deploys, staging, gVisor and Tailscale.
+
+## Comments
+
+**2026-10-21, from ticket 09**
+- The launcher speaks the Engine API version 1.44, so `gmt`'s Docker must be 25.0 or later.
+- On `gmt`, the launcher needs the group that owns `/var/run/docker.sock` (`group_add`). The local compose gives it root's, which owns Docker Desktop's.
+- `compose.local.yaml` is a starting point for staging's and production's compose files. Each sets `PDF_TO_DOC_ENVIRONMENT`, and leaves the launcher's runtime at its default, `runsc`.
+- See whether Docker's stats work under gVisor. Without them, the launcher logs "sandbox statistics unavailable", and the memory and CPU statistics stay empty.
+- Sandboxes inherit compose's labels from the image (ticket 09's comments). Confirm that a deploy leaves running sandboxes alone.
+
+**2026-10-21, from ticket 10**
+- Copy the log rotation from `compose.local.yaml` (`x-logging`) into staging's and production's compose files.
+- The counters are read with `docker compose exec web pdf-to-doc-statistics`. Do not publish port 8001: it listens on the container's own loopback address, which nothing else reaches. Keep it so: do not give the Tailscale container the web app's network namespace (`network_mode: service:web`), or it would share that loopback address.
+- `/health` answers `ok`, for an uptime check later.

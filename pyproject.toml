@@ -26,8 +26,10 @@ dependencies = [
 [project.scripts]
 pdf-to-doc = "pdf_to_doc.cli:main"
 pdf-to-doc-eval = "pdf_to_doc.evaluate_cli:main"
+pdf-to-doc-launcher = "pdf_to_doc.web.launcher:main"
 pdf-to-doc-models = "pdf_to_doc.ocr_models:main"
 pdf-to-doc-sandbox = "pdf_to_doc.sandbox:main"
+pdf-to-doc-statistics = "pdf_to_doc.web.statistics:main"
 pdf-to-doc-web = "pdf_to_doc.web.app:main"
 
 [build-system]

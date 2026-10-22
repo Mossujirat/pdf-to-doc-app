@@ -64,7 +64,7 @@ def conversion_page(identifier: str, conversion: Conversion, place: int | None, 
     text = status(conversion, place)
     heading = f"<h1>{escape(text)}</h1>"
     again = '<p><a href="/">แปลงไฟล์อื่น</a></p>'
-    match conversion.state:
+    match conversion.outcome:
         case _ if conversion.ongoing:
             # The script keeps the heading up to date.
             heading = f'<h1 id="status" data-state="{link}/state" aria-live="polite">{escape(text)}</h1>'
@@ -83,7 +83,7 @@ def conversion_page(identifier: str, conversion: Conversion, place: int | None, 
         case "refused":
             assert conversion.refusal is not None
             body = f"<p>{escape(_refusal(conversion.refusal))}</p>\n{again}"
-        case "failed" if conversion.timed_out:
+        case "timed_out":
             body = f"<p>การแปลงใช้เวลานานเกินกำหนดจึงถูกหยุด กรุณาลองใหม่อีกครั้ง</p>\n{again}"
         case "failed":
             body = f"<p>กรุณาลองใหม่อีกครั้ง</p>\n{again}"
@@ -142,6 +142,20 @@ def bot_check_failed() -> str:
         _NAME,
         "<h1>ส่งไฟล์ไม่สำเร็จ</h1>\n"
         "<p>ตรวจสอบไม่ได้ว่าไฟล์นี้ส่งมาจากผู้ใช้จริง กรุณากลับไปหน้าแรก รอสักครู่แล้วส่งไฟล์อีกครั้ง</p>\n"
+        '<p><a href="/">กลับไปหน้าแรก</a></p>',
+    )
+
+
+def unexpected_error() -> str:
+    return _page(_NAME, '<h1>เกิดข้อผิดพลาด</h1>\n<p>กรุณาลองใหม่อีกครั้ง</p>\n<p><a href="/">กลับไปหน้าแรก</a></p>')
+
+
+def from_another_site() -> str:
+    """For an upload, a cancel or a delete that did not come from one of this site's pages."""
+    return _page(
+        _NAME,
+        "<h1>ทำรายการไม่สำเร็จ</h1>\n"
+        "<p>คำขอนี้ไม่ได้ส่งมาจากหน้าเว็บของบริการนี้ กรุณากลับไปหน้าแรกแล้วลองใหม่อีกครั้ง</p>\n"
         '<p><a href="/">กลับไปหน้าแรก</a></p>',
     )
 
