@@ -1,0 +1,100 @@
+# The web service on gmt (docs/DEPLOY.md). This file is production: the public entry is its own
+# Tailscale node, `pdf`, through Funnel (ADR 0005). Staging adds compose.staging.yaml to it.
+# scripts/deploy.sh runs every command with the project named, so nothing else on gmt is touched:
+#
+#   docker compose -p pdf-to-doc ...                                              # production
+#   docker compose -p pdf-to-doc-staging -f compose.yaml -f compose.staging.yaml   # staging
+#
+# The secrets come from .env beside this file, which exists only on gmt (.env.example lists them).
+# BUILD_COMMIT comes from the deploy: every page links to the source code at it (AGPL).
+# Nothing here is shared with Chatbot: no network, no volume, no secret.
+name: pdf-to-doc
+
+x-logging: &logging  # Docker keeps the logs in files it rotates, so that they cannot fill the disk
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-image: &image
+  build:
+    context: .
+    args:
+      BUILD_COMMIT: ${BUILD_COMMIT:?the deploy passes the commit it builds}
+  image: pdf-to-doc:production
+  pull_policy: build  # never an image of the same name from a registry
+
+services:
+  web:
+    <<: *image
+    command: ["pdf-to-doc-web", "--host", "0.0.0.0"]
+    environment:
+      PDF_TO_DOC_PRODUCTION: "true"
+      PDF_TO_DOC_HOSTNAME: pdf.taila2e363.ts.net
+      # Every request comes through the Tailscale container, which sets X-Forwarded-For to the
+      # visitor's own address, replacing any the visitor sent (tailscale v1.102.5,
+      # ipn/ipnlocal/serve.go). Read from that container alone.
+      PDF_TO_DOC_TRUSTED_PROXY: 172.30.20.2
+      PDF_TO_DOC_CLIENT_IP_HEADER: X-Forwarded-For
+      # From .env. Without them the public service refuses to start, and says why.
+      PDF_TO_DOC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      PDF_TO_DOC_TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+    networks: [edge]  # no published port: Tailscale is the only way in
+    volumes:
+      - launcher:/run/pdf-to-doc:ro
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    logging: *logging
+    depends_on: [launcher]
+
+  launcher:
+    <<: *image
+    command: ["pdf-to-doc-launcher"]
+    environment:
+      PDF_TO_DOC_ENVIRONMENT: production  # its sandboxes' names, apart from staging's
+    network_mode: none  # it reaches Docker through Docker's socket, and nothing else
+    group_add: ["983"]  # the docker group on gmt, which owns the socket
+    volumes:
+      - launcher:/run/pdf-to-doc
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    logging: *logging
+
+  tailscale:
+    image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    hostname: pdf
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set in .env}
+      TS_AUTH_ONCE: "true"  # log in once; later starts use the state, so the key may expire
+      TS_HOSTNAME: pdf
+      # The tailnet policy lets this tag use Funnel, and lets it reach no other device.
+      TS_EXTRA_ARGS: --advertise-tags=tag:pdf-prod
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      # No log upload to Tailscale: its error lines can hold a visitor's address.
+      TS_TAILSCALED_EXTRA_ARGS: --no-logs-no-support
+    networks:
+      edge:
+        ipv4_address: 172.30.20.2  # the trusted proxy above
+    volumes:
+      - tailscale:/var/lib/tailscale
+      - ./deploy/tailscale/production:/config:ro  # a folder, so that Tailscale sees the file change
+    restart: unless-stopped
+    # Not even rotated files: an error line can hold a visitor's address, and the privacy page
+    # says no log holds one.
+    logging:
+      driver: none
+    depends_on: [web]
+
+networks:
+  edge:  # the Tailscale container and the web app, alone
+    ipam:
+      config:
+        - subnet: 172.30.20.0/24
+
+volumes:
+  launcher:  # the launcher's socket, shared with the web app alone
+  tailscale:  # the node's identity, so that it stays the same node

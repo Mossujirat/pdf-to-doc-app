@@ -1,6 +1,9 @@
 # Sample PDFs are real signed contracts (one is marked confidential). Keep them out of git.
 docs/example_pdf/
 
+# The server's secrets, on gmt only (.env.example lists them).
+.env
+
 # The impeccable skill's working files. Its surface briefs, in .impeccable/surfaces/, are kept.
 .impeccable/review/
 .impeccable/questions/

@@ -1,0 +1,59 @@
+# Staging, beside production on gmt (docs/DEPLOY.md): the same services, but reachable only inside
+# the tailnet, as `pdf-staging`, through Tailscale Serve and never Funnel. The bot check runs with
+# Cloudflare's test keys. scripts/deploy.sh runs it as
+#
+#   docker compose -p pdf-to-doc-staging -f compose.yaml -f compose.staging.yaml ...
+#
+# Its .env, in /srv/pdf-to-doc-staging, holds only TS_AUTHKEY. Every name differs from
+# production's, so the two never meet.
+name: pdf-to-doc-staging
+
+x-image: &image
+  image: pdf-to-doc:staging
+
+services:
+  web:
+    <<: *image
+    container_name: staging-pdf-to-doc-web
+    environment:
+      PDF_TO_DOC_PRODUCTION: !reset null  # the public service's checks need the real keys
+      PDF_TO_DOC_BOT_CHECK_TEST_MODE: "true"
+      PDF_TO_DOC_HOSTNAME: pdf-staging.taila2e363.ts.net
+      PDF_TO_DOC_TRUSTED_PROXY: 172.30.10.2
+      # Small enough for the smoke test to run over it with one file, and so to see whose
+      # allowance a request is charged to.
+      PDF_TO_DOC_PAGES_PER_DAY: "60"
+      PDF_TO_DOC_TURNSTILE_SITE_KEY: !reset null
+      PDF_TO_DOC_TURNSTILE_SECRET_KEY: !reset null
+
+  launcher:
+    <<: *image
+    container_name: staging-pdf-to-doc-launcher
+    environment:
+      PDF_TO_DOC_ENVIRONMENT: staging
+
+  tailscale:
+    container_name: staging-pdf-to-doc-tailscale
+    hostname: pdf-staging
+    environment:
+      TS_HOSTNAME: pdf-staging
+      # The tailnet policy lets admins reach this tag on port 443 alone, gives it no Funnel, and
+      # lets it reach no other device.
+      TS_EXTRA_ARGS: --advertise-tags=tag:pdf-staging
+    networks:
+      edge:
+        ipv4_address: 172.30.10.2
+    volumes: !override
+      - tailscale:/var/lib/tailscale
+      - ./deploy/tailscale/staging:/config:ro
+    logging: !override  # staging has no visitors, and its logs help to find what went wrong
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    ipam:
+      config: !override
+        - subnet: 172.30.10.0/24

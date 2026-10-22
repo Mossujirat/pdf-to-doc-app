@@ -52,7 +52,7 @@ markers = ["ocr: reads with real PaddleOCR, so it needs the models and takes lon
 
 [tool.mypy]
 strict = true
-files = ["src", "tests", "corpus"]
+files = ["src", "tests", "corpus", "scripts"]
 mypy_path = ["corpus", "tests"]
 # PyMuPDF ships only partial type hints.
 untyped_calls_exclude = ["pymupdf"]
