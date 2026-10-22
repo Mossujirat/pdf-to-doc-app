@@ -9,7 +9,7 @@ through the real path: Tailscale, the web app, the launcher and a gVisor sandbox
 
 It prints how many seconds an OCR page takes, and exits 1 if any check fails.
 
-    uv run python scripts/smoke_test.py https://pdf-staging.taila2e363.ts.net --commit <sha> --ssh gmt
+    uv run python scripts/smoke_test.py https://pdf-staging.tail46a117.ts.net --commit <sha> --ssh gmt
 """
 
 import argparse
@@ -64,7 +64,7 @@ class Smoke:
             self.failures.append(what)
 
     def run(self) -> int:
-        self.check(self.client.get("/health").text == "ok", "/health answers ok")
+        self.check(self.reachable(), "/health answers ok through Tailscale")
         home = self.client.get("/")
         self.check(home.status_code == 200 and "cf-turnstile" in home.text, "the home page shows the bot check")
         expected = f"{REPOSITORY}/tree/{self.commit}"
@@ -102,6 +102,17 @@ class Smoke:
             return 1
         print("\nevery check passed")
         return 0
+
+    def reachable(self) -> bool:
+        """Whether /health answers, waiting for a node just started: it joins the tailnet, and asks
+        for its HTTPS certificate on the first connection."""
+        deadline = time.monotonic() + WAIT
+        while time.monotonic() < deadline:
+            try:
+                return self.client.get("/health").text == "ok"
+            except httpx.HTTPError:
+                time.sleep(5)
+        return False
 
     def upload(self, source: Path, forged: str) -> str:
         response = self.client.post(
@@ -207,7 +218,7 @@ def _holds(actual: object, wanted: object) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="The smoke test of a deployed web service.")
-    parser.add_argument("site", help="the deployed site, such as https://pdf-staging.taila2e363.ts.net")
+    parser.add_argument("site", help="the deployed site, such as https://pdf-staging.tail46a117.ts.net")
     parser.add_argument("--commit", required=True, help="the commit deployed, which /source-code must open")
     parser.add_argument("--ssh", default="gmt", help="the server, to see its sandboxes")
     parser.add_argument("--environment", default="staging", choices=["staging", "production"])

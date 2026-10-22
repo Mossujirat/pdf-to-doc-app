@@ -30,7 +30,7 @@ services:
     command: ["pdf-to-doc-web", "--host", "0.0.0.0"]
     environment:
       PDF_TO_DOC_PRODUCTION: "true"
-      PDF_TO_DOC_HOSTNAME: pdf.taila2e363.ts.net
+      PDF_TO_DOC_HOSTNAME: pdf.tail46a117.ts.net
       # Every request comes through the Tailscale container, which sets X-Forwarded-For to the
       # visitor's own address, replacing any the visitor sent (tailscale v1.102.5,
       # ipn/ipnlocal/serve.go). Read from that container alone.

@@ -13,7 +13,7 @@ set -euo pipefail
 HOST="${HOST:-gmt}"
 PRODUCTION_DIR=/srv/pdf-to-doc
 STAGING_DIR=/srv/pdf-to-doc-staging
-STAGING_SITE=https://pdf-staging.taila2e363.ts.net
+STAGING_SITE=https://pdf-staging.tail46a117.ts.net
 cd "$(dirname "$0")/.."
 
 usage() { sed -n '2,7p' scripts/deploy.sh | sed 's/^# \{0,1\}//'; exit 2; }

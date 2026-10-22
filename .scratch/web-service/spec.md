@@ -12,7 +12,7 @@ The service has costs of its own. It runs on `gmt`, the server that also runs th
 
 ## Solution
 
-A free Thai web page, with no sign-up, at `https://pdf.taila2e363.ts.net`.
+A free Thai web page, with no sign-up, at `https://pdf.tail46a117.ts.net`.
 
 **Converting a file**
 - A visitor drops in a PDF or DOCX and passes an invisible bot check.
@@ -403,7 +403,7 @@ A section of the home page that explains a conversion with pictures, in plain Th
 - Staging's smoke test passes, including on `gmt`'s speed.
 - On production, before the link is shared:
   - the forged-header check passes through Funnel
-  - Turnstile's hostname list holds `pdf.taila2e363.ts.net`, and its widget mode is "Invisible"
+  - Turnstile's hostname list holds `pdf.tail46a117.ts.net`, and its widget mode is "Invisible"
   - the tailnet policy is in place
 - The privacy page and the "how it works" section are reviewed.
 

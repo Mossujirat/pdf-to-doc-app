@@ -9,8 +9,8 @@ How the web service runs on `gmt`, how a change reaches it, and what never to do
 | Server | `gmt`, reached as `ssh gmt` over Tailscale only. Chatbot runs on it too. |
 | Production | `/srv/pdf-to-doc`, a clone of `main`. Compose project `pdf-to-doc`, from `compose.yaml`. |
 | Staging | `/srv/pdf-to-doc-staging`, a second clone, at the commit last deployed to it. Compose project `pdf-to-doc-staging`, from `compose.yaml` and `compose.staging.yaml`. |
-| Public address | `https://pdf.taila2e363.ts.net`, the production node `pdf` through Tailscale Funnel |
-| Staging address | `https://pdf-staging.taila2e363.ts.net`, the node `pdf-staging` through Tailscale Serve: inside the tailnet only |
+| Public address | `https://pdf.tail46a117.ts.net`, the production node `pdf` through Tailscale Funnel |
+| Staging address | `https://pdf-staging.tail46a117.ts.net`, the node `pdf-staging` through Tailscale Serve: inside the tailnet only |
 | Secrets | `.env` in each folder, on `gmt` only (`.env.example` lists them) |
 | Sandboxes | one container per conversion, in gVisor (`runsc`), started by the launcher; named `pdf-to-doc-sandbox-<environment>-…` |
 
@@ -99,7 +99,7 @@ GitHub takes a deploy key for one repository only, so this is a key of its own, 
 
 Write it on `gmt`, with `chmod 600`, from `.env.example`:
 - **Staging:** `TS_AUTHKEY` alone.
-- **Production:** its own `TS_AUTHKEY`, and the Turnstile widget's keys for `pdf.taila2e363.ts.net`.
+- **Production:** its own `TS_AUTHKEY`, and the Turnstile widget's keys for `pdf.tail46a117.ts.net`.
 
 ### 6. Deploy staging, then production
 

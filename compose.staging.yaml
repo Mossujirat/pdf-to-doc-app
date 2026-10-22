@@ -18,7 +18,7 @@ services:
     environment:
       PDF_TO_DOC_PRODUCTION: !reset null  # the public service's checks need the real keys
       PDF_TO_DOC_BOT_CHECK_TEST_MODE: "true"
-      PDF_TO_DOC_HOSTNAME: pdf-staging.taila2e363.ts.net
+      PDF_TO_DOC_HOSTNAME: pdf-staging.tail46a117.ts.net
       PDF_TO_DOC_TRUSTED_PROXY: 172.30.10.2
       # Small enough for the smoke test to run over it with one file, and so to see whose
       # allowance a request is charged to.
