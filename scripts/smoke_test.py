@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import replace
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ import pymupdf
 
 from pdf_to_doc.docx_reading import read_docx
 from pdf_to_doc.markdown import render_markdown, split_pages
+from pdf_to_doc.model import Document, Paragraph
 from pdf_to_doc.quality import score_page
 from pdf_to_doc.summary import summarize
 from pdf_to_doc.web.bot_check import TOKEN_FIELD
@@ -145,7 +147,7 @@ class Smoke:
             if (match := re.fullmatch(r"page-(\d{3})\.reference\.md", path.name))
         }
         markdown = split_pages(self.client.get(f"{link}/markdown").content.decode("utf-8"))
-        document = read_docx(self.client.get(f"{link}/docx").content)
+        document = _without_summary(read_docx(self.client.get(f"{link}/docx").content))
         docx = split_pages(render_markdown(document, summarize(document)))
         for output, pages in (("Markdown", markdown), ("DOCX", docx)):
             for number, reference in sorted(references.items()):
@@ -206,6 +208,15 @@ class Smoke:
     def remote(self, command: list[str]) -> str:
         result = subprocess.run(["ssh", "-n", self.ssh, *command], capture_output=True, text=True, timeout=60)
         return result.stdout if result.returncode == 0 else ""
+
+
+def _without_summary(document: Document) -> Document:
+    """The DOCX output read back, without the summary that opens it: read back, it is the first
+    paragraph of page 1, while the Markdown keeps its own above the first page."""
+    first, *rest = document.pages
+    if first.blocks and isinstance(first.blocks[0], Paragraph) and first.blocks[0].text.startswith("สรุปการแปลง"):
+        first = replace(first, blocks=first.blocks[1:])
+    return replace(document, pages=(first, *rest))
 
 
 def _holds(actual: object, wanted: object) -> bool:
