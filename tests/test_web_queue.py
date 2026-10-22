@@ -59,7 +59,10 @@ def started(held: HeldSandbox, count: int) -> None:
 
 
 def state(client: TestClient, sent: Sent) -> dict[str, object]:
-    return dict(as_browser(client, sent.token).get(f"{sent.link}/state").json())
+    """The conversion's state as its page asks for it, without the steps it also gets."""
+    answer = dict(as_browser(client, sent.token).get(f"{sent.link}/state").json())
+    answer.pop("steps", None)
+    return answer
 
 
 # The queue

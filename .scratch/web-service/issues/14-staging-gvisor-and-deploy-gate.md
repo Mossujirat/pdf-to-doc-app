@@ -42,6 +42,7 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 - [ ] The sandbox containers were started with every restriction in ticket 09.
 - [ ] Seconds per OCR page on `gmt` are recorded.
 - [ ] Whether sandboxes on efficiency cores are much slower is recorded, with a decision on pinning them to performance cores.
+- [ ] On a real phone, through staging: picking a file, dropping one where the browser allows it, and the copy button all work. Carried over from ticket 11, whose local server a phone cannot reach.
 
 **Docs**
 - [ ] A deploy guide in the repo, after Chatbot's, covers setup, deploys, staging, gVisor and Tailscale.
@@ -59,3 +60,9 @@ This ticket also installs gVisor on `gmt`, and settles the spec's open questions
 - Copy the log rotation from `compose.local.yaml` (`x-logging`) into staging's and production's compose files.
 - The counters are read with `docker compose exec web pdf-to-doc-statistics`. Do not publish port 8001: it listens on the container's own loopback address, which nothing else reaches. Keep it so: do not give the Tailscale container the web app's network namespace (`network_mode: service:web`), or it would share that loopback address.
 - `/health` answers `ok`, for an uptime check later.
+
+**2026-10-22, from ticket 13**
+- **Build with the commit:** build the image with `--build-arg BUILD_COMMIT=$(git rev-parse HEAD)`. In compose, use `build.args`, giving the web app and the launcher the same value, since they share one image.
+- **Production refuses without it:** the public service will not start without that commit. Staging should pass it too, so that its footer's source code link is checked.
+- **Smoke test:** `/source-code` redirects to `github.com/Mossujirat/pdf-to-doc-app/tree/<commit>`. Check that the commit is the one deployed. The repository must be public by launch, or the link fails.
+- **Tailscale's logs:** the privacy page says no log holds a visitor's IP address. That is checked for the web app and the launcher, not for the Tailscale container. Check what `tailscaled` logs, and what it uploads to Tailscale by default, and turn off whatever holds client addresses. If anything cannot be turned off, change the privacy page in the same ticket.

@@ -8,6 +8,7 @@ all async, so that they read a conversion on the event loop that changes it.
 import argparse
 import asyncio
 import logging
+import re
 import secrets
 import string
 import sys
@@ -47,6 +48,7 @@ _TOKEN_CHARACTERS = frozenset(string.ascii_letters + string.digits + "-_")  # UR
 _STATIC = Path(__file__).parent / "static"
 # How often expired conversions are looked for when no request comes, in seconds.
 _FORGET_EVERY = 15
+_COMMIT = re.compile(r"[0-9a-f]{7,40}")  # a commit's hash, whole or abbreviated, as git writes it
 _MEDIA_TYPES: dict[OutputFormat, str] = {
     "markdown": "text/markdown; charset=utf-8",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -77,14 +79,19 @@ def create_app(
     tells the day for the allowance and the statistics, `cloudflare` stands in for Cloudflare in
     tests, and `statistics` counts how the service is used, for `statistics_app`. Raises
     `Misconfigured` for a public service whose bot check would not really check, that cannot tell
-    its clients apart, that would convert outside the launcher's sandboxes, or whose cookie would
-    not be Secure, so that it never starts."""
+    its clients apart, that would convert outside the launcher's sandboxes, whose cookie would
+    not be Secure, or that cannot link to the source code it runs, so that it never starts; and
+    for a build commit that is not a commit's hash."""
     bot_check = BotCheck.from_settings(settings, cloudflare)
     client_ip = ClientIp.from_settings(settings)
     if settings.production and settings.sandbox != "launcher":
         raise Misconfigured("the public service converts only in the launcher's sandboxes")
     if settings.production and not settings.secure_cookies:
         raise Misconfigured("the public service's cookie must be Secure")
+    if settings.build_commit is not None and not _COMMIT.fullmatch(settings.build_commit):
+        raise Misconfigured("the build commit is not a commit's hash")
+    if settings.production and settings.build_commit is None:
+        raise Misconfigured("the public service must link to the source code it runs (AGPL)")
     statistics = statistics or Statistics(wall_clock)
     conversions = Conversions(
         sandbox,
@@ -165,7 +172,17 @@ def create_app(
 
     @app.get("/")
     async def home() -> HTMLResponse:
-        return HTMLResponse(pages.home(bot_check.site_key))
+        return HTMLResponse(pages.home(bot_check.site_key, settings.keep_for, settings.pages_per_day))
+
+    @app.get("/privacy")
+    async def privacy() -> HTMLResponse:
+        return HTMLResponse(pages.privacy(settings.keep_for, settings.pages_per_day, COOKIE, _DAY))
+
+    @app.get("/source-code")
+    async def source_code() -> RedirectResponse:
+        """The source code the server runs, at the commit its image was built from, for every
+        page's footer (AGPL)."""
+        return RedirectResponse(pages.code_at(settings.build_commit))
 
     @app.post("/conversions")
     async def start(request: Request) -> Response:
@@ -202,8 +219,11 @@ def create_app(
     @app.get("/conversions/{identifier}/state")
     async def state(request: Request, identifier: str) -> JSONResponse:
         conversion = conversion_or_404(request, identifier)
-        text = pages.status(conversion, conversions.place(identifier))
-        return JSONResponse({"state": conversion.state, "text": text, "ongoing": conversion.ongoing})
+        place = conversions.place(identifier)
+        answer = {"state": conversion.state, "text": pages.status(conversion, place), "ongoing": conversion.ongoing}
+        if conversion.ongoing:
+            answer["steps"] = pages.steps(conversion, place)  # for the page to swap in
+        return JSONResponse(answer)
 
     @app.post("/conversions/{identifier}/cancel")
     async def cancel(request: Request, identifier: str) -> Response:

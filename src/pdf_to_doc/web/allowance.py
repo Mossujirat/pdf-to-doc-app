@@ -46,6 +46,15 @@ class Allowance:
         """How many pages the client may still convert today."""
         return self._pages_per_day - self._today().get(client_ip, 0)
 
+    def forget_past_days(self) -> int:
+        """Drop the counts of days gone by, though no file has come to start the new day, and
+        say how many addresses they held."""
+        if self._day_now() == self._day:
+            return 0
+        dropped = len(self._used)
+        self._today()
+        return dropped
+
     def _today(self) -> dict[str, int]:
         """Today's counts. A new day starts them afresh, and the old ones leave memory."""
         today = self._day_now()

@@ -46,6 +46,9 @@ class Settings:
     # Where conversions run: in the launcher's sandboxes (ADR 0004), or, for development on a
     # machine without Docker, in a process of the machine's own.
     sandbox: Literal["launcher", "local"] = "launcher"
+    # The commit the image was built from, which the Dockerfile records: every page links to the
+    # source code at that commit, as the AGPL asks of a public service (ADR 0002).
+    build_commit: str | None = None
 
 
 # Where the launcher runs. Its sandboxes are named for it: staging's and production's share the

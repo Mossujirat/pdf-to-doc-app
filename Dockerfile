@@ -62,4 +62,11 @@ ENV PATH=/app/.venv/bin:$PATH \
     MYPY_CACHE_DIR=/tmp/mypy-cache
 WORKDIR /app
 USER converter
+# The commit the image is built from. Every page of the web service links to
+# the source code at it (AGPL), and the public service refuses to start
+# without it. The deploy passes it, as
+# `--build-arg BUILD_COMMIT=$(git rev-parse HEAD)`. It comes last, so that a
+# new commit rebuilds no layer above.
+ARG BUILD_COMMIT=""
+ENV PDF_TO_DOC_BUILD_COMMIT=${BUILD_COMMIT}
 CMD ["pdf-to-doc", "--help"]
