@@ -6,6 +6,7 @@ The Chatbot project on the same server is reached through a Cloudflare Tunnel, a
 
 - The address is a `ts.net` name, not our own domain.
 - There is no Cloudflare WAF in front. Bots are held back by Turnstile, which works on hostnames outside Cloudflare, and by per-IP limits.
-- The client IP comes from a header Funnel sets. Staging must show that a client cannot forge it.
+- The client IP comes from the `X-Forwarded-For` header that Funnel and Serve set to the client's own address, replacing any the client sent (tailscale v1.102.5). Staging showed that a forged one changes nothing.
+- The nodes live in the operator's own tailnet, `tail46a117.ts.net`, into which `gmt` is shared from Chatbot's. The two services share no tailnet.
 - The node is tagged in the tailnet policy, allowed to use Funnel, and allowed to reach no other device.
 - Funnel has bandwidth limits that Tailscale does not publish.

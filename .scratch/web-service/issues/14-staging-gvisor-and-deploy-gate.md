@@ -128,3 +128,36 @@ Staging's record is `refs/staging/passed` = `a8eee89`.
 - **Staging's node:** it keeps rotated logs. It has no visitors.
 
 **Left:** the phone check through staging, which needs the user's phone in the tailnet.
+
+**2026-10-22, after code review**
+
+**The smoke test could pass without checking. Fixed:**
+- **DOCX as written:** the DOCX output was checked only as read back, which repairs Thai text first. Its paragraphs are now also checked for broken text as written.
+- **Missing references:** a corpus folder without reference text checked nothing. It now fails.
+- **ssh:** a failed ssh read as "no sandbox left behind". Any failed ssh now stops the test with FAIL.
+- **Old sandboxes:** a stopped sandbox from an earlier run could be the one inspected. Only running sandboxes are inspected now, and only while the conversion runs.
+- **Waiting for staging:** `/health` is retried after any answer that is not `ok`.
+- **More of ticket 09's restrictions:** the sandbox is also checked for stdin opened once, no mount, and no environment variable whose name says it holds a secret.
+
+**The deploy script. Fixed:**
+- **A staging deploy:**
+  - It refuses unless this machine has the deployed commit checked out, unchanged. The smoke test runs from this checkout, and its checks must be the commit's.
+  - `gmt` checks out exactly that commit.
+- **A production deploy:** it refuses a target behind what production runs. That would otherwise build newer code labelled with an older commit. A rollback is a revert on `main`.
+- **Commands without the commit:** `BUILD_COMMIT` may be left out of compose commands, so the guide's log and counter commands work. A build without it makes an image the public service refuses.
+- **File modes:** both scripts are executable in git.
+
+**Corrected:**
+- **`compose.staging.yaml`'s comment:** it now describes the policy that was applied.
+- **The guide:**
+  - the Markdown exemption is the top level's
+  - it records `gmt`'s Docker (29.8.2) and kernel (7.0), and where the docker group's ID 983 comes from (`getent group docker`)
+  - it says what a deploy does to running sandboxes: the new launcher removes them, and `docker compose ps` does not list them
+- **The spec:** its open questions about the server are now answered.
+- **ADR 0005:** it names `X-Forwarded-For` (replaced, not appended), and the operator's own tailnet.
+- **Ticket 15:** it now holds the checks only production can make:
+  - two clients through Funnel, since staging's test cannot tell a missing header from a replaced one
+  - IPv6
+  - Funnel's bandwidth with a file near 50 MB
+
+**Kept:** the remote steps in `deploy.sh` repeat a `/health` loop and a `dc()` helper, as Chatbot's do. Each heredoc runs on `gmt` on its own.

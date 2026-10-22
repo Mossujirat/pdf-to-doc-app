@@ -20,7 +20,9 @@ x-image: &image
   build:
     context: .
     args:
-      BUILD_COMMIT: ${BUILD_COMMIT:?the deploy passes the commit it builds}
+      # The deploy passes it. A build without it makes an image the public service will not
+      # start with; other commands, such as logs, need none.
+      BUILD_COMMIT: ${BUILD_COMMIT:-}
   image: pdf-to-doc:production
   pull_policy: build  # never an image of the same name from a registry
 

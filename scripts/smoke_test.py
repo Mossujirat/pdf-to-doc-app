@@ -1,23 +1,24 @@
-"""The smoke test of a deployed web service, run from a developer's machine over the tailnet by
-scripts/deploy.sh after each staging deploy (docs/DEPLOY.md). It sends synthetic corpus files
-through the real path: Tailscale, the web app, the launcher and a gVisor sandbox. It checks:
+"""The smoke test of staging, run from a developer's machine over the tailnet by scripts/deploy.sh
+after each staging deploy (docs/DEPLOY.md). It sends synthetic corpus files through the real
+path: Tailscale, the web app, the launcher and a gVisor sandbox. It checks:
 
 - the outputs, both Markdown and DOCX, against the corpus's reference text
 - that a sandbox runs under every restriction the launcher asks for, in gVisor
 - that a client-IP header the visitor forges does not change whose allowance is charged
 - that /source-code opens the commit deployed, and that no sandbox is left behind
 
-It prints how many seconds an OCR page takes, and exits 1 if any check fails.
+It prints how many seconds an OCR page takes, and exits 1 if any check fails. A check that
+cannot be made, as when ssh to the server fails, fails rather than passes.
 
     uv run python scripts/smoke_test.py https://pdf-staging.tail46a117.ts.net --commit <sha> --ssh gmt
 """
 
 import argparse
+import io
 import json
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from dataclasses import replace
@@ -25,6 +26,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 
+import docx
 import httpx
 import pymupdf
 
@@ -39,6 +41,7 @@ from pdf_to_doc.web.settings import Environment
 
 REPOSITORY = "https://github.com/Mossujirat/pdf-to-doc-app"
 CORPUS = Path(__file__).resolve().parent.parent / "corpus" / "synthetic"
+ENVIRONMENT: Environment = "staging"  # whose sandboxes, by their label
 # A text page and a scanned one, then two scans with stamps: both ways a page is read. With the
 # real OCR engine every one of these pages scored a CER of 0 in the quality harness (2026-10-22).
 FILES = ["mixed-text-and-scan", "stamped-scans"]
@@ -47,14 +50,16 @@ MAX_CER = 0.01
 # each file would be charged to a different address, and the last would find a full allowance.
 FORGED = ["203.0.113.11", "203.0.113.12", "203.0.113.13"]
 WAIT = 600  # seconds a conversion may take, OCR in gVisor included
+SUMMARY = "สรุปการแปลง"  # how the summary at the top of each output starts
+# An environment variable of the sandbox with one of these in its name could be a secret.
+SECRET_NAMES = re.compile(r"KEY|SECRET|TOKEN|AUTH|PASSWORD", re.IGNORECASE)
 
 
-class Smoke:
-    def __init__(self, site: str, commit: str, ssh: str, environment: Environment, pages_per_day: int) -> None:
+class StagingSmokeTest:
+    def __init__(self, site: str, commit: str, ssh: str, pages_per_day: int) -> None:
         self.site = site.rstrip("/")
         self.commit = commit
         self.ssh = ssh
-        self.environment: Environment = environment
         self.pages_per_day = pages_per_day
         self.failures: list[str] = []
         # One browser: its cookie names it, and it names the site's own origin on every request.
@@ -77,15 +82,17 @@ class Smoke:
         for index, name in enumerate(FILES):
             source = CORPUS / f"{name}.pdf"
             inspected: dict[str, Any] = {}
+            ended = threading.Event()
             watcher = None
             if index == 0:  # one sandbox is enough to see its restrictions
-                watcher = threading.Thread(target=self.inspect_sandbox, args=(inspected,), daemon=True)
+                watcher = threading.Thread(target=self.inspect_sandbox, args=(inspected, ended), daemon=True)
                 watcher.start()
-            link = self.upload(source, FORGED[index])
-            state, ocr_started, ended = self.wait(link)
+            link = self.upload(source.name, source.read_bytes(), FORGED[index])
+            state, ocr_started, ended_at = self.wait(link)
+            ended.set()
             self.check(state == "finished", f"{name}: the conversion finished (it ended {state})")
             if watcher is not None:
-                watcher.join(timeout=WAIT)
+                watcher.join()
                 self.check_restrictions(inspected)
             if state != "finished":
                 continue
@@ -93,12 +100,12 @@ class Smoke:
             self.check_outputs(name, link)
             if ocr_started is not None:
                 ocr_pages = self.ocr_pages(link)
-                seconds = (ended - ocr_started) / max(ocr_pages, 1)
+                seconds = (ended_at - ocr_started) / max(ocr_pages, 1)
                 print(f"     {name}: {seconds:.1f} s per OCR page ({ocr_pages} OCR pages)")
             self.client.post(f"{link}/delete")
 
         self.check_allowance(charged)
-        self.check(not self.sandboxes(), "no sandbox is left behind")
+        self.check(not self.sandboxes(running_only=False), "no sandbox is left behind")
         if self.failures:
             print(f"\n{len(self.failures)} check(s) failed")
             return 1
@@ -106,25 +113,27 @@ class Smoke:
         return 0
 
     def reachable(self) -> bool:
-        """Whether /health answers, waiting for a node just started: it joins the tailnet, and asks
-        for its HTTPS certificate on the first connection."""
+        """Whether /health answers ok, waiting for a node just started: it joins the tailnet, and
+        asks for its HTTPS certificate on the first connection."""
         deadline = time.monotonic() + WAIT
         while time.monotonic() < deadline:
             try:
-                return self.client.get("/health").text == "ok"
+                if self.client.get("/health").text == "ok":
+                    return True
             except httpx.HTTPError:
-                time.sleep(5)
+                pass
+            time.sleep(5)
         return False
 
-    def upload(self, source: Path, forged: str) -> str:
+    def upload(self, name: str, data: bytes, forged: str) -> str:
         response = self.client.post(
             "/conversions",
             data={TOKEN_FIELD: "smoke-test"},  # the test keys' secret passes any token
-            files={"file": (source.name, source.read_bytes(), "application/pdf")},
+            files={"file": (name, data, "application/pdf")},
             headers={"X-Forwarded-For": forged},
         )
         if response.status_code != 303:
-            raise SystemExit(f"FAIL the upload of {source.name} was answered {response.status_code}")
+            raise SystemExit(f"FAIL the upload of {name} was answered {response.status_code}")
         return response.headers["location"]
 
     def wait(self, link: str) -> tuple[str, float | None, float]:
@@ -141,21 +150,30 @@ class Smoke:
         raise SystemExit(f"FAIL {link} did not end within {WAIT} seconds")
 
     def check_outputs(self, name: str, link: str) -> None:
+        """Each output page against its reference text. The DOCX output is also checked for broken
+        text as it was written: reading it back repairs Thai text, and would hide some."""
         references = {
             int(match.group(1)): path.read_text(encoding="utf-8-sig")
             for path in (CORPUS / name).glob("page-*.reference.md")
             if (match := re.fullmatch(r"page-(\d{3})\.reference\.md", path.name))
         }
+        if not references:
+            self.check(False, f"{name}: reference text found in {CORPUS / name}")
+            return
         markdown = split_pages(self.client.get(f"{link}/markdown").content.decode("utf-8"))
-        document = _without_summary(read_docx(self.client.get(f"{link}/docx").content))
-        docx = split_pages(render_markdown(document, summarize(document)))
-        for output, pages in (("Markdown", markdown), ("DOCX", docx)):
+        docx_bytes = self.client.get(f"{link}/docx").content
+        document = _without_summary(read_docx(docx_bytes))
+        read_back = split_pages(render_markdown(document, summarize(document)))
+        for output, pages in (("Markdown", markdown), ("DOCX", read_back)):
             for number, reference in sorted(references.items()):
                 score = score_page(pages.get(number, ""), reference)
                 self.check(
                     score.broken.total == 0 and score.cer <= MAX_CER,
                     f"{name} page {number}, {output}: CER {score.cer:.3f}, broken text {score.broken.total}",
                 )
+        written = "\n".join(p.text for p in docx.Document(io.BytesIO(docx_bytes)).paragraphs if not p.text.startswith(SUMMARY))
+        broken = score_page(written, "\n".join(references[number] for number in sorted(references))).broken
+        self.check(broken.total == 0, f"{name}, DOCX as written: broken text {broken.total}")
 
     def ocr_pages(self, link: str) -> int:
         """How many pages were read with OCR, as the result's pages table says."""
@@ -167,11 +185,8 @@ class Smoke:
         pdf = pymupdf.open()
         for _ in range(self.pages_per_day + 1):
             pdf.new_page()
-        big = Path(tempfile.gettempdir()) / "over-the-allowance.pdf"
-        big.write_bytes(pdf.tobytes())
-        link = self.upload(big, FORGED[-1])
+        link = self.upload("over-the-allowance.pdf", pdf.tobytes(), FORGED[-1])
         state, _, _ = self.wait(link)
-        big.unlink()
         text = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", self.client.get(link).text)))
         left = self.pages_per_day - charged
         self.check(
@@ -179,42 +194,51 @@ class Smoke:
             f"a forged X-Forwarded-For does not change whose allowance is charged ({left} pages left)",
         )
 
-    def inspect_sandbox(self, found: dict[str, Any]) -> None:
-        """Find this environment's sandbox while it runs, and read how Docker started it."""
-        deadline = time.monotonic() + WAIT
-        while time.monotonic() < deadline:
-            for identifier in self.sandboxes():
+    def inspect_sandbox(self, found: dict[str, Any], ended: threading.Event) -> None:
+        """Find a sandbox of staging's while it runs, until the conversion has ended, and read how
+        Docker started it."""
+        while not ended.is_set():
+            for identifier in self.sandboxes(running_only=True):
                 inspected = self.remote(["docker", "inspect", identifier])
-                if inspected:
-                    found.update(json.loads(inspected)[0])
-                    return
+                found.update(json.loads(inspected)[0])
+                return
             time.sleep(0.2)
 
     def check_restrictions(self, inspected: dict[str, Any]) -> None:
         if not inspected:
             self.check(False, "a sandbox was seen while it ran")
             return
-        wanted = sandbox_config(image="", environment=self.environment, runtime="runsc")
+        wanted = sandbox_config(image="", environment=ENVIRONMENT, runtime="runsc")
         for key, value in wanted["HostConfig"].items():
             actual = inspected["HostConfig"].get(key)
             self.check(_holds(actual, value), f"the sandbox runs with {key} {json.dumps(value)} (Docker: {json.dumps(actual)})")
         config = inspected["Config"]
-        self.check(config.get("User") == "converter", "the sandbox runs as the converter user")
-        self.check(config.get("NetworkDisabled") is True, "the sandbox has its network disabled")
+        for key in ("User", "NetworkDisabled", "OpenStdin", "StdinOnce"):
+            self.check(config.get(key) == wanted[key], f"the sandbox runs with {key} {json.dumps(wanted[key])}")
+        self.check(not inspected.get("Mounts"), "the sandbox has no volume or folder of the server's")
+        names = [variable.split("=", 1)[0] for variable in config.get("Env") or []]
+        self.check(not [name for name in names if SECRET_NAMES.search(name)], f"the sandbox's environment holds no secret ({', '.join(names)})")
 
-    def sandboxes(self) -> list[str]:
-        return self.remote(["docker", "ps", "-aq", "--filter", f"label=pdf-to-doc.sandbox={self.environment}"]).split()
+    def sandboxes(self, *, running_only: bool) -> list[str]:
+        command = ["docker", "ps", "-q", "--filter", f"label=pdf-to-doc.sandbox={ENVIRONMENT}"]
+        if not running_only:
+            command.insert(2, "-a")
+        return self.remote(command).split()
 
     def remote(self, command: list[str]) -> str:
+        """A command's output on the server. If ssh fails, the test stops: a check that cannot be
+        made must not pass."""
         result = subprocess.run(["ssh", "-n", self.ssh, *command], capture_output=True, text=True, timeout=60)
-        return result.stdout if result.returncode == 0 else ""
+        if result.returncode != 0:
+            raise SystemExit(f"FAIL {' '.join(command)} on {self.ssh}: {result.stderr.strip()}")
+        return result.stdout
 
 
 def _without_summary(document: Document) -> Document:
     """The DOCX output read back, without the summary that opens it: read back, it is the first
     paragraph of page 1, while the Markdown keeps its own above the first page."""
     first, *rest = document.pages
-    if first.blocks and isinstance(first.blocks[0], Paragraph) and first.blocks[0].text.startswith("สรุปการแปลง"):
+    if first.blocks and isinstance(first.blocks[0], Paragraph) and first.blocks[0].text.startswith(SUMMARY):
         first = replace(first, blocks=first.blocks[1:])
     return replace(document, pages=(first, *rest))
 
@@ -228,14 +252,14 @@ def _holds(actual: object, wanted: object) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="The smoke test of a deployed web service.")
-    parser.add_argument("site", help="the deployed site, such as https://pdf-staging.tail46a117.ts.net")
+    parser = argparse.ArgumentParser(description="The smoke test of staging.")
+    parser.add_argument("site", help="staging's address, such as https://pdf-staging.tail46a117.ts.net")
     parser.add_argument("--commit", required=True, help="the commit deployed, which /source-code must open")
     parser.add_argument("--ssh", default="gmt", help="the server, to see its sandboxes")
-    parser.add_argument("--environment", default="staging", choices=["staging", "production"])
-    parser.add_argument("--pages-per-day", type=int, default=60, help="the deployed daily allowance")
+    # As compose.staging.yaml sets it.
+    parser.add_argument("--pages-per-day", type=int, default=60, help="staging's daily allowance")
     args = parser.parse_args()
-    sys.exit(Smoke(args.site, args.commit, args.ssh, args.environment, args.pages_per_day).run())
+    sys.exit(StagingSmokeTest(args.site, args.commit, args.ssh, args.pages_per_day).run())
 
 
 if __name__ == "__main__":

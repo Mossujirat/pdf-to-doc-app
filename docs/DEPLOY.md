@@ -26,6 +26,11 @@ How the web service runs on `gmt`, how a change reaches it, and what never to do
 
 The steps that need `sudo` run on `gmt` as its owner, who types the password. Each step leaves Chatbot running.
 
+**What `gmt` must have, as checked on 2026-10-22:**
+- **Docker 25.0 or later:** the launcher speaks Engine API 1.44. `gmt` runs 29.8.2.
+- **Linux 5.6 or later:** for gVisor. `gmt` runs 7.0.
+- **The docker group's ID in `compose.yaml`:** `group_add: ["983"]`, so that the launcher may use Docker's socket. `getent group docker` gives it; check it on a new server.
+
 ### 1. Install gVisor
 
 This downloads a pinned release, checks it against the checksum in the script, and registers `runsc` beside `runc` and `nvidia`. Docker is reloaded, not restarted.
@@ -121,17 +126,21 @@ scripts/deploy.sh staging --stop      # stop staging
 ```
 
 **A staging deploy:**
-1. Checks out the branch, builds the image with the commit, and recreates the containers. The web app's counts in memory start empty.
-2. Runs `scripts/smoke_test.py` from this machine, over the tailnet.
-3. Records the commit on `gmt` as `refs/staging/passed`, only if every check passed. It clears that record first, so a deploy that fails leaves none.
+1. Refuses unless this machine has the same commit checked out, with no changes. The smoke test runs from here, so it must be that commit's.
+2. Checks out the commit on `gmt`, builds the image with it, and takes staging down and up again. The web app's counts in memory start empty.
+3. Runs `scripts/smoke_test.py` from this machine, over the tailnet.
+4. Records the commit on `gmt` as `refs/staging/passed`, only if every check passed. It clears that record first, so a deploy that fails leaves none.
 
 **A production deploy:**
 - It refuses unless the files the server uses are those staging last passed with. The files that do not count are:
   - `docs/`, `.scratch/`, `.claude/`, `.impeccable/`, `.github/`, `tests/`, `corpus/`, `scripts/`
-  - Markdown files
-- `DEPLOY_WITHOUT_STAGING=1 scripts/deploy.sh` skips that check, for hotfixes and rollbacks only.
+  - Markdown files at the top level
+- `DEPLOY_WITHOUT_STAGING=1 scripts/deploy.sh` skips that check, for hotfixes only.
+- It refuses a commit behind what production runs. A rollback is a revert on `main`, deployed like any change.
 
-A deploy recreates the launcher, which cancels the conversions running. Their pages say that they ended, and nothing of them is left.
+**Running conversions:** a deploy recreates the launcher, which cancels the conversions running. Their pages say that they ended, and nothing of them is left.
+- **Sandboxes left behind:** the new launcher removes any sandbox of its environment as it starts.
+- **Compose:** sandboxes carry the image's compose labels, but `docker compose ps` does not list them as its own (ticket 09). Whether or not compose touches them, the launcher removes them.
 
 ## 4. The smoke test
 

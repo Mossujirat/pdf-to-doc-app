@@ -25,3 +25,18 @@
 - [ ] Through Funnel, a forged client-IP header changes nothing.
 - [ ] The privacy page and the "how it works" section are reviewed by the user.
 - [ ] The README describes the web service, and links to it.
+
+## Comments
+
+**2026-10-22, from ticket 14**
+- **Already in place:**
+  - `compose.yaml` is production: the web app, the launcher (gVisor), and the node `pdf` with Funnel on 443
+  - the tailnet policy gives `tag:pdf-prod` the `funnel` attribute, and reaches no device
+  - `/srv/pdf-to-doc` exists, empty, and `scripts/deploy.sh` with its gate is ready
+
+  What is left: clone into `/srv/pdf-to-doc`; make the production auth key (`tag:pdf-prod`); write `.env` with it and Turnstile's production keys; merge to `main`; deploy. The steps are in `docs/DEPLOY.md`.
+- **The client-IP header with two clients:** staging's smoke test showed that a forged `X-Forwarded-For` changes nothing. It cannot show that Tailscale sends the header at all: without it, every visitor would be charged to the proxy's address and share one allowance.
+  - Through Funnel, convert a file from the PC, then from a phone on mobile data, with Wi-Fi off.
+  - Each must see its own allowance. A file over what is left shows the count, so each count must start from the full allowance.
+- **IPv6:** ticket 08 left whether Funnel passes IPv6 addresses on. Staging uses Serve, so it cannot tell. Look at it with the two clients above.
+- **Bandwidth:** Funnel's bandwidth limits are not published. Send a file near 50 MB through Funnel once.

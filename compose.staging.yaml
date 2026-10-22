@@ -37,8 +37,8 @@ services:
     hostname: pdf-staging
     environment:
       TS_HOSTNAME: pdf-staging
-      # The tailnet policy lets admins reach this tag on port 443 alone, gives it no Funnel, and
-      # lets it reach no other device.
+      # The tailnet policy gives this tag no Funnel, and lets it reach no device; people's own
+      # devices reach it.
       TS_EXTRA_ARGS: --advertise-tags=tag:pdf-staging
     networks:
       edge:

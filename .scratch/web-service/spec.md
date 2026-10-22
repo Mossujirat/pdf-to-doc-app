@@ -498,19 +498,25 @@ Tickets 01–08 need nothing on `gmt`. Ticket 15 also waits for converter ticket
 - Loading PaddleOCR takes 5–6 seconds per conversion.
 - Memory grew across conversions in one process, from 1.0 to 1.27 GB over six. This is one reason each conversion gets a fresh container.
 - The image is 2.58 GB.
-- `gmt` has an Intel Core Ultra 9 285K (24 cores, performance and efficiency cores) and 60 GB of memory. Its speed must be measured again on staging.
+- `gmt` has an Intel Core Ultra 9 285K (24 cores, performance and efficiency cores) and 60 GB of memory.
+
+**Measured on staging on `gmt` (2026-10-22, ticket 14)**
+- OCR: 1.5–3.1 seconds per page in gVisor, through the whole path.
+- A whole two-page scanned file: 3.4 seconds in gVisor, PaddleOCR's loading included, on performance and efficiency cores alike.
+- A sandbox's peak memory: about 550 MB.
 
 **Chatbot mistakes not to copy**
 - Turnstile there lets everything through when no key is set, and does not handle a network error.
 - Its rate limit trusts `CF-Connecting-IP` even on the Funnel path, where a visitor can set it.
 - It logs part of what users send.
 
-**Open questions to settle during implementation**
-- Does PaddleOCR run under gVisor, and how much slower? If not, use the fallback (ADR 0004).
-- Do sandboxes on `gmt`'s efficiency cores run much slower, and should they be pinned to performance cores?
-- Which header does Funnel use for the client IP, and does it replace or append to a client's own? Settle this on staging, then confirm on production.
-- Are Funnel's unpublished bandwidth limits enough for 50 MB uploads?
-- The service's name, which is chosen during design.
+**Open questions, and how they were settled**
+- **PaddleOCR under gVisor:** it runs, at the speeds above, so the fallback in ADR 0004 is not taken (ticket 14).
+- **Efficiency cores:** they are as fast as performance cores here, so sandboxes are not pinned (ticket 14).
+- **The client-IP header:** Serve and Funnel set `X-Forwarded-For` to the client's own address, replacing any the client sent (tailscale v1.102.5, `ipn/ipnlocal/serve.go`). On staging a forged header did not change whose allowance was charged. That test cannot tell a missing header from a replaced one, so production confirms with two clients (ticket 15).
+- **Funnel's bandwidth limits:** still open, for 50 MB uploads. Checked at launch (ticket 15).
+- **The service's name:** ครบคำ (ticket 11).
+- **The tailnet:** `gmt` is shared into the operator's own tailnet, `tail46a117.ts.net`, from Chatbot's. The service's nodes join the operator's (ticket 14).
 
 **References**
 - Chatbot's deploy pattern: `D:\Moss_Disk\Code\Chatbot\docs\DEPLOY.md`, `docker-compose.yml`, `docker-compose.staging.yml` and `scripts/deploy.sh`. Never open Chatbot's `.env` files.

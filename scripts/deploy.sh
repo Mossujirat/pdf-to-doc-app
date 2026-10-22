@@ -87,6 +87,9 @@ cd "$1"; BRANCH="$2"; TARGET="$3"
 dc() { BUILD_COMMIT="$TARGET" docker compose -p pdf-to-doc -f compose.yaml "$@" </dev/null; }
 git fetch -q origin "$BRANCH"
 git merge -q --ff-only "$TARGET"
+# A target behind what production runs would leave it unchanged, and label newer code with an
+# older commit. A rollback is a revert on main, deployed like any change.
+[ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "refusing: production is at $(git rev-parse --short HEAD), ahead of $TARGET"; exit 1; }
 git log --oneline -1
 dc build
 # Running conversions are cancelled as the launcher stops; their visitors see that they ended.
@@ -103,19 +106,26 @@ REMOTE
 }
 
 staging_deploy() {
-  local branch="$1" commit
+  local branch="$1" target commit
   local_checks "$branch"
-  commit=$(ssh "$HOST" bash -s -- "$STAGING_DIR" "$branch" <<'REMOTE'
+  target=$(git rev-parse -q --verify "origin/$branch^{commit}") || { echo "origin/$branch not found"; exit 2; }
+  # The smoke test runs from this checkout, its corpus and its idea of the sandbox's restrictions
+  # among it. They must be the commit's that staging runs.
+  [ "$(git rev-parse HEAD)" = "$target" ] || {
+    echo "refusing: check out origin/$branch here first ($(git rev-parse --short "$target")), so that the smoke test is the commit's"; exit 2; }
+  [ -z "$(git status --porcelain --untracked-files=no)" ] || {
+    echo "refusing: this checkout has changes; the smoke test must be the commit's"; exit 2; }
+  commit=$(ssh "$HOST" bash -s -- "$STAGING_DIR" "$branch" "$target" <<'REMOTE'
 set -euo pipefail
-cd "$1"; BRANCH="$2"
+cd "$1"; BRANCH="$2"; COMMIT="$3"
 # Every compose command names the staging project and its files, so a mistake can never reach production.
 # The record of a passed smoke test (git ref refs/staging/passed) is cleared first, so that a deploy
 # that fails anywhere leaves none.
 git update-ref -d refs/staging/passed
 git fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-# -f discards any change to tracked files; ignored files such as .env stay. Nobody edits this checkout.
-git checkout -q -f --detach "origin/$BRANCH"
-COMMIT=$(git rev-parse HEAD)
+# Exactly the commit checked here. -f discards any change to tracked files; ignored files such as
+# .env stay. Nobody edits this checkout.
+git checkout -q -f --detach "$COMMIT"
 dc() { BUILD_COMMIT="$COMMIT" docker compose -p pdf-to-doc-staging -f compose.yaml -f compose.staging.yaml "$@" </dev/null; }
 # Refuse anything that could meet production: every container named for staging, and no port published.
 cfg=$(dc config 2>/dev/null) || { echo "docker compose config failed in $1" >&2; exit 1; }
@@ -139,8 +149,9 @@ dc ps >&2
 echo "$COMMIT"
 REMOTE
 )
+  [ "$commit" = "$target" ] || { echo "refusing: unexpected reply from $HOST: $commit"; exit 1; }
   echo "staging runs $branch at ${commit:0:7}; running the smoke test through $STAGING_SITE..."
-  uv run python scripts/smoke_test.py "$STAGING_SITE" --commit "$commit" --ssh "$HOST" --environment staging
+  uv run python scripts/smoke_test.py "$STAGING_SITE" --commit "$commit" --ssh "$HOST"
   # Recorded only now, and only for the commit the smoke test passed with.
   ssh -n "$HOST" "git -C $STAGING_DIR update-ref refs/staging/passed $commit"
   echo "staging passed its smoke test at ${commit:0:7}; production may deploy the same server files"
@@ -150,7 +161,7 @@ staging_stop() {
   ssh "$HOST" bash -s -- "$STAGING_DIR" <<'REMOTE'
 set -euo pipefail
 cd "$1"
-dc() { BUILD_COMMIT=unused docker compose -p pdf-to-doc-staging -f compose.yaml -f compose.staging.yaml "$@" </dev/null; }
+dc() { docker compose -p pdf-to-doc-staging -f compose.yaml -f compose.staging.yaml "$@" </dev/null; }
 dc stop
 dc ps -a
 REMOTE
