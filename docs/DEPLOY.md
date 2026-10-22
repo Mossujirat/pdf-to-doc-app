@@ -6,7 +6,8 @@ How the web service runs on `gmt`, how a change reaches it, and what never to do
 
 | What | Where |
 |---|---|
-| Server | `gmt`, reached as `ssh gmt` over Tailscale only. Chatbot runs on it too. |
+| Server | `gmt`, reached as `ssh gmt` (100.99.33.19) over Tailscale only. Chatbot runs on it too. |
+| Tailnet | `tail46a117.ts.net`, the operator's own, on Tailscale's free plan. `gmt` belongs to Chatbot's tailnet (`gmt.taila2e363.ts.net`) and is shared into this one; this service's nodes are containers on `gmt` that join this one. |
 | Production | `/srv/pdf-to-doc`, a clone of `main`. Compose project `pdf-to-doc`, from `compose.yaml`. |
 | Staging | `/srv/pdf-to-doc-staging`, a second clone, at the commit last deployed to it. Compose project `pdf-to-doc-staging`, from `compose.yaml` and `compose.staging.yaml`. |
 | Public address | `https://pdf.tail46a117.ts.net`, the production node `pdf` through Tailscale Funnel |
@@ -70,8 +71,8 @@ GitHub takes a deploy key for one repository only, so this is a key of its own, 
 
 ### 4. In Tailscale's admin console
 
-1. **DNS:** MagicDNS and HTTPS certificates must be on. They already are, for Chatbot's Funnel.
-2. **Access controls:** add the tags, Funnel for production alone, and staging's port for admins:
+1. **DNS:** MagicDNS and HTTPS certificates must be on. MagicDNS was on already; HTTPS was turned on for this service on 2026-10-22.
+2. **Access controls:** add the tags, Funnel for production alone, and tests that keep the tagged nodes away from the operator's PC:
 
    ```json
    "tagOwners": {
@@ -81,14 +82,15 @@ GitHub takes a deploy key for one repository only, so this is a key of its own, 
    "nodeAttrs": [
      {"target": ["tag:pdf-prod"], "attr": ["funnel"]}
    ],
-   "grants": [
-     {"src": ["autogroup:admin"], "dst": ["tag:pdf-staging"], "ip": ["tcp:443"]}
+   "tests": [
+     {"src": "tag:pdf-staging", "deny": ["100.114.200.81:22", "100.114.200.81:445"]},
+     {"src": "tag:pdf-prod",    "deny": ["100.114.200.81:22", "100.114.200.81:445"]}
    ]
    ```
 
    **No rule may let a `tag:pdf-*` node reach anything:**
-   - A rule from `"*"` to `"*"`, as in the default policy, lets every tagged node reach every device. Narrow its source to `autogroup:member`.
-   - Grant staging port 443 alone. In a container, a node passes every port it is sent to itself, and nothing else on it is meant for the tailnet.
+   - A rule from `"*"` to `"*"`, as in the default policy, lets every tagged node reach every device. Narrow its source to `autogroup:member`, as was done: people's devices still reach everything, staging among it.
+   - The tests make the console refuse to save a policy that lets either tag reach the operator's PC, `switchoff`.
 3. **Auth keys:** make one auth key for each node:
    - one-off, pre-approved, not ephemeral
    - tagged `tag:pdf-staging` or `tag:pdf-prod`
@@ -108,6 +110,8 @@ Follow section 3.
 ## 3. Deploying
 
 Push first: `gmt` pulls from GitHub.
+
+**The machine that deploys** must be in the tailnet, with Tailscale's "Use Tailscale DNS settings" on (`tailscale set --accept-dns=true`). The smoke test reaches staging by its name, which only Tailscale's DNS knows.
 
 ```bash
 scripts/deploy.sh staging <branch>    # build and start staging at origin/<branch>, then run the smoke test
@@ -146,6 +150,11 @@ Tailscale → web app → launcher → gVisor sandbox
 
 It prints the seconds an OCR page takes.
 
+**What staging measured on gmt (2026-10-22):**
+- **OCR speed:** 1.5 to 3.1 seconds a page in gVisor, through the whole path.
+- **Converting a whole file:** two scanned pages took 3.4 seconds, the models' loading included. That was the same whether the sandbox ran on performance cores (0–3) or efficiency cores (8–11), so sandboxes are not pinned to either.
+- **Sandbox use:** at most about 550 MB of memory. Docker's statistics work under gVisor.
+
 ## 5. Running it
 
 - **Logs:** `ssh gmt 'cd /srv/pdf-to-doc && docker compose -p pdf-to-doc logs --tail 100 web launcher'`. They never hold a document's content, a file name, an address or a link.
@@ -160,3 +169,9 @@ It prints the seconds an OCR page takes.
 - Never edit the code on `gmt`. `git status` there stays clean.
 - Never make `runsc` Docker's default runtime. Chatbot's containers keep theirs.
 - Never give a `tag:pdf-*` node a way to reach other devices, or staging a Funnel.
+
+## 7. When something goes wrong
+
+- **A node joins, then shows offline minutes later, with "map response long-poll timed out" in its log:** `gmt`'s network cuts long-lived connections on port 80, where tailscaled starts. `TS_FORCE_NOISE_443` in `compose.yaml` keeps it on port 443, as `gmt`'s own tailscaled does. Check that the setting is still there.
+- **"Address already in use" as the Tailscale container starts:** another container took its fixed address. Docker hands out only the lower half of each subnet (`ip_range`), so the fixed `.254` stays free. Check that both are still there.
+- **The smoke test cannot find staging (`getaddrinfo failed`):** this machine is not using Tailscale's DNS. See section 3.
