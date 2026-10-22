@@ -51,8 +51,6 @@ MAX_CER = 0.01
 FORGED = ["203.0.113.11", "203.0.113.12", "203.0.113.13"]
 WAIT = 600  # seconds a conversion may take, OCR in gVisor included
 SUMMARY = "สรุปการแปลง"  # how the summary at the top of each output starts
-# An environment variable of the sandbox with one of these in its name could be a secret.
-SECRET_NAMES = re.compile(r"KEY|SECRET|TOKEN|AUTH|PASSWORD", re.IGNORECASE)
 
 
 class StagingSmokeTest:
@@ -216,8 +214,10 @@ class StagingSmokeTest:
         for key in ("User", "NetworkDisabled", "OpenStdin", "StdinOnce"):
             self.check(config.get(key) == wanted[key], f"the sandbox runs with {key} {json.dumps(wanted[key])}")
         self.check(not inspected.get("Mounts"), "the sandbox has no volume or folder of the server's")
-        names = [variable.split("=", 1)[0] for variable in config.get("Env") or []]
-        self.check(not [name for name in names if SECRET_NAMES.search(name)], f"the sandbox's environment holds no secret ({', '.join(names)})")
+        # The image's own environment holds no secret (Dockerfile); anything else came from elsewhere.
+        image_env = json.loads(self.remote(["docker", "image", "inspect", inspected["Image"], "--format", "{{json .Config.Env}}"]))
+        extra = set(config.get("Env") or []) - set(image_env) - set(wanted["Env"])
+        self.check(not extra, f"the sandbox's environment is the image's own, and the launcher's {', '.join(wanted['Env'])}")
 
     def sandboxes(self, *, running_only: bool) -> list[str]:
         command = ["docker", "ps", "-q", "--filter", f"label=pdf-to-doc.sandbox={ENVIRONMENT}"]

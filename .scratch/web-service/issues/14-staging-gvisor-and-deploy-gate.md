@@ -137,7 +137,12 @@ Staging's record is `refs/staging/passed` = `a8eee89`.
 - **ssh:** a failed ssh read as "no sandbox left behind". Any failed ssh now stops the test with FAIL.
 - **Old sandboxes:** a stopped sandbox from an earlier run could be the one inspected. Only running sandboxes are inspected now, and only while the conversion runs.
 - **Waiting for staging:** `/health` is retried after any answer that is not `ok`.
-- **More of ticket 09's restrictions:** the sandbox is also checked for stdin opened once, no mount, and no environment variable whose name says it holds a secret.
+- **More of ticket 09's restrictions:** the sandbox is also checked for:
+  - stdin opened once
+  - no mount
+  - an environment that is the image's own, plus the launcher's `PDF_TO_DOC_OCR_THREADS`
+
+  An earlier check by variable names caught the Python image's own `GPG_KEY`, the public fingerprint of Python's release key, and was replaced.
 
 **The deploy script. Fixed:**
 - **A staging deploy:**
