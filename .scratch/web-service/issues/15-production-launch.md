@@ -25,6 +25,7 @@
 - [ ] Through Funnel, a forged client-IP header changes nothing.
 - [ ] The privacy page and the "how it works" section are reviewed by the user.
 - [ ] The README describes the web service, and links to it.
+- [ ] On a real phone, through Funnel: picking a file, dropping one where the browser allows it, and the copy button all work (from ticket 14).
 
 ## Comments
 
