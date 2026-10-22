@@ -76,6 +76,10 @@ services:
       TS_SERVE_CONFIG: /config/serve.json
       # No log upload to Tailscale: its error lines can hold a visitor's address.
       TS_TAILSCALED_EXTRA_ARGS: --no-logs-no-support
+      # Talk to Tailscale's coordination server over HTTPS alone. gmt's network cuts long-lived
+      # connections on port 80, where tailscaled starts: the staging node went offline five
+      # minutes after it joined (2026-10-22). gmt's own tailscaled had already fallen back to 443.
+      TS_FORCE_NOISE_443: "true"
     networks:
       edge:
         ipv4_address: 172.30.20.254  # the trusted proxy above
