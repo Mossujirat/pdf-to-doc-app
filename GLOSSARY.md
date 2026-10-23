@@ -23,6 +23,10 @@ _Avoid_: job, task
 A slower conversion setting that reads OCR pages with a more accurate engine. The default is the faster setting.
 _Avoid_: high-quality mode, slow mode
 
+**Kept images**:
+A conversion setting, chosen once for the whole source file, under which the DOCX output shows each scan as an image of the whole page as it looks, highlights and notes included, and each picture as the picture itself, instead of OCR text or a placeholder. The Markdown output gets a placeholder in their place, followed by any text the source file already holds on a scan, such as a typed note or the hidden text of a searchable scan. The default is to read scans with OCR.
+_Avoid_: image mode, picture mode
+
 ## Quality
 
 **Broken text**:
@@ -58,5 +62,13 @@ Headers, footers and page numbers that repeat across pages and are not part of t
 _Avoid_: running header (when meaning all of these)
 
 **OCR page**:
-A page whose text must be read from its image, because its body has no text layer (a scan) or its text layer cannot be trusted.
+A page whose text must be read from its image, because its body has no text layer (a scan, unless images are kept) or its text layer cannot be trusted. A page whose text layer cannot be trusted is read with OCR even when images are kept.
 _Avoid_: scanned page (a page with an untrustworthy text layer is not a scan but is still an OCR page)
+
+**Scan**:
+A page whose body is a picture of a printed or written page, such as a page from a scanner or a phone photo of one. Notes, stamps or highlights may be laid over it, and a searchable scan has the text of the picture hidden behind it. A page whose text is drawn as shapes is not a scan.
+_Avoid_: image page
+
+**Picture**:
+An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.
+_Avoid_: figure
