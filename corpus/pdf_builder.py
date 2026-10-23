@@ -13,6 +13,9 @@ A page is a list of lines, drawn top to bottom:
 A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
 drawn over the image as text: a stamped header, or the text layer of a scan made searchable.
 
+A `Rotated` page is stored on its side and turned upright by the page's rotation,
+as some scanners save pages. It shows the same as the page it holds.
+
 The same inputs always give the same bytes, so generated files can be committed.
 
 For intake tests, `protected` encrypts a built PDF, which gives different bytes on
@@ -108,13 +111,32 @@ class Scan:
     seed: int = 0
 
 
-def pdf(*pages: Sequence[Line] | Scan, font_file: Path = SARABUN) -> bytes:
+@dataclass(frozen=True)
+class Rotated:
+    """A page stored landscape, its scan image too, and turned upright by a page rotation.
+
+    Its text is drawn turned the other way, so that it reads upright as shown, as a
+    PDF editor writes a note typed on such a page.
+    """
+
+    page: Sequence[Line] | Scan
+    rotation: Literal[90, 270]
+
+
+def pdf(*pages: Sequence[Line] | Scan | Rotated, font_file: Path = SARABUN) -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({})
     for content in pages:
-        page = doc.new_page()
+        if isinstance(content, Rotated):
+            page = doc.new_page(width=842, height=595)  # A4 on its side
+            page.set_rotation(content.rotation)
+            content = content.page
+        else:
+            page = doc.new_page()
         if isinstance(content, Scan):
-            page.insert_image(page.rect, stream=_scanned_image(content, font_file))
+            # On a rotated page the image is stored on its side, filling the stored page.
+            stored = page.rect * page.derotation_matrix
+            page.insert_image(stored, stream=_scanned_image(content, font_file, page.rotation))
             _draw_lines(page, content.overlay, font_file)
         else:
             _draw_lines(page, content, font_file)
@@ -135,7 +157,8 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
             continue
         if isinstance(line, Picture):
             top = line.y if line.y is not None else y - FONT_SIZE
-            page.insert_image(pymupdf.Rect(line.x, top, line.x + line.width, top + line.height), stream=_picture(line))
+            box = pymupdf.Rect(line.x, top, line.x + line.width, top + line.height)
+            page.insert_image(box * page.derotation_matrix, stream=_picture(line), rotate=page.rotation)
             y = top + line.height + LINE_HEIGHT - line.overlap
             continue
         if isinstance(line, Spaced):
@@ -149,12 +172,14 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
         y += LINE_HEIGHT
 
 
-def _scanned_image(scan: Scan, font_file: Path) -> bytes:
-    """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy."""
+def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
+    """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy,
+    and turned back by the page's rotation."""
     with pymupdf.open() as paper:
         _draw_lines(paper.new_page(), scan.lines, font_file)
         zoom = scan.dpi / 72
-        pix = paper[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom).prerotate(scan.angle), colorspace=pymupdf.csGRAY)
+        turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - rotation)
+        pix = paper[0].get_pixmap(matrix=turn, colorspace=pymupdf.csGRAY)
     pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
     grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0
     grainy = np.clip(pixels + grain, 0, 255).astype(np.uint8)
@@ -349,7 +374,7 @@ def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path) -> flo
             columns[column], edges[row_index], columns[column + cell.colspan], edges[row_index + cell.rowspan]
         )
         if cell.boxed:
-            page.draw_rect(rect, color=(0, 0, 0), width=0.5)
+            page.draw_rect(rect * page.derotation_matrix, color=(0, 0, 0), width=0.5)
         for line_index, text in enumerate(cell.text.splitlines()):
             x = rect.x0 + 4
             for piece in text.split("\t"):
@@ -377,4 +402,6 @@ def _width(text: str, font_file: Path, size: float) -> float:
 
 
 def _draw(page: pymupdf.Page, x: float, y: float, text: str, font_file: Path, size: float) -> None:
-    page.insert_text((x, y), text, fontfile=str(font_file), fontname=font_file.stem, fontsize=size)
+    """Draw text whose baseline starts at (x, y) on the page as shown, reading upright."""
+    point = pymupdf.Point(x, y) * page.derotation_matrix
+    page.insert_text(point, text, fontfile=str(font_file), fontname=font_file.stem, fontsize=size, rotate=page.rotation)

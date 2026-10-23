@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import word_builder as word
-from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Scan, Spaced, Styled, pdf, remapped
+from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Rotated, Scan, Spaced, Styled, pdf, remapped
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -24,7 +24,7 @@ DEGRADED = Path(__file__).parent / "degraded"
 
 @dataclass(frozen=True)
 class SyntheticPage:
-    lines: Sequence[Line] | Scan
+    lines: Sequence[Line] | Scan | Rotated
     reference: str
 
 
@@ -242,7 +242,7 @@ DOCUMENTS = (
 STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
 
 
-def scanned(lines: list[Line], overlay: list[Line] | None = None, seed: int = 0) -> Scan:
+def scanned(lines: Sequence[Line], overlay: list[Line] | None = None, seed: int = 0) -> Scan:
     return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed)
 
 
@@ -375,7 +375,74 @@ PLACEHOLDER_DOCUMENTS = (
     ),
 )
 
-ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS
+SIGNING_PAGE: list[Line] = [
+    STAMP,
+    Styled("สัญญาให้ทุนโครงการ", size=22, y=100),
+    *CLAUSES,
+    "",
+    "1. เงื่อนไขของสัญญา",
+    "2. ขอบเขตของการดำเนินงาน",
+    Grid(rows=(("งวดที่", "จำนวนเงิน"), ("๑", "50,000")), widths=(150, 150)),
+    SIGNATURE,
+    SIGNATURE_LINE,
+    Picture("stamp", 70, 70, x=330),
+    Styled("หน้าที่ 1/2", size=14, y=800),
+]
+CLOSING_LINE = "ทั้งนี้ให้เป็นไปตามระเบียบของผู้ให้ทุน"
+PAYMENT_PAGE: list[Line] = [
+    STAMP,
+    Styled("การจ่ายเงิน", size=18, y=100),
+    *CLAUSES,
+    # Below 595 pt, where a page stored landscape ends before its rotation turns it upright.
+    Styled(CLOSING_LINE, y=700),
+    Styled("หน้าที่ 2/2", size=14, y=800),
+]
+# Notes typed over a scan, each placed so that its position on the page as stored,
+# taken as a position on the page as shown, lies over lines of the scan.
+NOTE_BELOW = "หมายเหตุ ผู้ให้ทุนอนุมัติให้ขยายเวลาแล้ว"
+NOTE_ABOVE = "แก้ไขตามบันทึกข้อตกลงฉบับที่สอง"
+
+# Pages stored landscape and turned upright by a page rotation, as some scanners save them.
+ROTATED_DOCUMENTS = (
+    SyntheticDocument(
+        name="rotated-text-pages",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=Rotated(SIGNING_PAGE, 90),
+                reference=(
+                    "# สัญญาให้ทุนโครงการ\n\n"
+                    + "".join(CLAUSES)
+                    + "\n\n- 1. เงื่อนไขของสัญญา\n- 2. ขอบเขตของการดำเนินงาน\n\n"
+                    "| งวดที่ | จำนวนเงิน |\n| --- | --- |\n| ๑ | 50,000 |\n\n"
+                    f"[ลายเซ็น]\n\n{SIGNATURE_LINE}\n\n[ตราประทับ]"
+                ),
+            ),
+            SyntheticPage(
+                lines=Rotated(PAYMENT_PAGE, 270),
+                reference="## การจ่ายเงิน\n\n" + "".join(CLAUSES) + f"\n\n{CLOSING_LINE}",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="rotated-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=Rotated(scanned(CLAUSES, overlay=[Styled(NOTE_BELOW, y=540)], seed=5), 270),
+                reference="".join(CLAUSES) + f"\n\n{NOTE_BELOW}",
+            ),
+            SyntheticPage(
+                lines=Rotated(
+                    scanned([Styled(CLAUSES[0], y=300), *CLAUSES[1:]], overlay=[Styled(NOTE_ABOVE, y=200)], seed=6), 90
+                ),
+                reference=f"{NOTE_ABOVE}\n\n" + "".join(CLAUSES),
+            ),
+        ),
+    ),
+)
+
+ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS + ROTATED_DOCUMENTS
 
 
 @dataclass(frozen=True)

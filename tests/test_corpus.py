@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 from docx_reader import page_texts
 from fake_ocr import BlankEngine
-from generate import DEGRADED, SYNTHETIC, generate, generate_degraded
+from generate import DEGRADED, NOTE_ABOVE, NOTE_BELOW, SYNTHETIC, generate, generate_degraded
+from markdown_reader import page_texts as markdown_page_texts
 
 from pdf_to_doc import convert
 from pdf_to_doc.quality import evaluate, reference_file_name, score_page
@@ -79,3 +80,15 @@ def test_a_page_whose_text_layer_reads_kar_as_kam_comes_out_right() -> None:
 
     assert "การ" in markdown
     assert "กำร" not in markdown
+
+
+@pytest.mark.ocr
+def test_a_note_typed_over_a_rotated_scan_comes_out_once_and_no_line_is_lost() -> None:
+    # Page 1 is turned upright by 270 degrees and page 2 by 90, each with a note in its text layer.
+    markdown = convert((SYNTHETIC / "rotated-scans.pdf").read_bytes()).output.decode("utf-8")
+
+    pages = markdown_page_texts(markdown)
+    for number, (page, note) in enumerate(zip(pages, [NOTE_BELOW, NOTE_ABOVE], strict=True), start=1):
+        reference = (SYNTHETIC / "rotated-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
+        assert page.count(note) == 1, f"page {number}"
+        assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"

@@ -1,11 +1,12 @@
 """OCR pages: scanned pages are read by the OCR engine, page by page, through the conversion function."""
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from fake_ocr import FakeEngine
 from markdown_reader import page_texts
-from pdf_builder import Scan, Styled, pdf
+from pdf_builder import LINE_HEIGHT, TOP, Rotated, Scan, Styled, pdf
 
 from pdf_to_doc import ConversionResult, convert
 from pdf_to_doc.cli import main
@@ -179,3 +180,27 @@ def test_scan_text_on_the_same_printed_line_as_a_stamp_is_kept() -> None:
     [page] = markdown_pages(result)
     assert "บริษัท ตัวอย่าง จำกัด" in page
     assert page.count("เอกสารปกปิด") == 1
+
+
+# Clauses long enough to reach across the page, with room after the fourteenth for a note.
+CLAUSES = [f"ข้อ {number} ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้" for number in range(1, 22)]
+NOTE_Y = TOP + 15 * LINE_HEIGHT
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_a_note_typed_over_a_rotated_scan_is_read_once_and_the_scan_around_it_is_kept(
+    rotation: Literal[90, 270],
+) -> None:
+    note = Styled("หมายเหตุ แก้ไขวันส่งรายงาน", y=NOTE_Y)
+    misread_note = Styled("หมายเหตุ แก้ไขวันสงรายงาน", y=NOTE_Y)
+    scan = Scan([*CLAUSES[:14], "", "", "", *CLAUSES[14:]], overlay=[note], dpi=50)
+    engine = FakeEngine([*CLAUSES[:14], "", misread_note, "", *CLAUSES[14:]])
+
+    result = convert(pdf(Rotated(scan, rotation)), ocr=engine)
+
+    [page] = markdown_pages(result)
+    assert [summary.kind for summary in result.summary.pages] == ["ocr"]
+    assert page.count(note.text) == 1
+    assert misread_note.text not in page
+    assert [clause for clause in CLAUSES if clause not in page] == []
+    assert page.index(CLAUSES[13]) < page.index(note.text) < page.index(CLAUSES[14])
