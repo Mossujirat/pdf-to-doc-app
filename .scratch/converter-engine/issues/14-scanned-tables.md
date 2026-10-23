@@ -41,3 +41,16 @@
 
 - Only paragraphs and list items carry uncertain text so far: the document model's `uncertain` stretches, which renderers and the summary read through one accessor.
 - Table cells read with OCR will need them too, so that a misread in a scanned table is marked like any other. So when an OCR page carries a ruled grid in the PDF, the cells could come from that grid and the text from OCR, with each box placed in the cell that holds its centre. Ticket 04 notes that this grid is coarse on these pages.
+
+**2026-10-23, from checking more samples while grilling kept images**
+
+- **A third kind of page with tables.** A five-page agreement among the local samples was printed to PDF with its text drawn as shapes, so every page is an OCR page, although none is a scan. Its tables are ruled with drawn lines.
+  - In a payment schedule, the amount cell's text landed in the middle of the description cell's sentence, because OCR joins boxes into lines across the whole row.
+  - Two-row tables of dates came out as one line each.
+  - The ruled grid is there to use, as the comment above suggests.
+- **Scanned tables on a 34-page scanned supplement.** Seven pages had their tables flattened, with cells mixed or rows shifted. Two of those tables are also printed sideways (ticket 21).
+- **The 110-page contract,** checked page by page against its images:
+  - About 25 scanned pages had their tables flattened or their cells interleaved: proposal forms, researcher profiles, and tables that share out intellectual property.
+  - The shaded bars of a schedule chart were lost, so the schedule says nothing.
+  - On pages 69–72, OCR reads better than the broken text layer did. Its numbers match apart from a few slips, but the tables come out one row per line or run on.
+  - Ticks in table cells are lost (ticket 26).

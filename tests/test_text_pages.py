@@ -1,8 +1,11 @@
 """Text pages: PDF pages whose text layer is converted, through the conversion function only."""
 
+from typing import Literal
+
 import pytest
+from generate import PAYMENT_PAGE, SIGNING_PAGE
 from markdown_reader import page_texts
-from pdf_builder import Spaced, pdf
+from pdf_builder import Rotated, Spaced, pdf
 
 from pdf_to_doc import convert
 
@@ -172,3 +175,16 @@ def test_a_space_before_a_following_vowel_is_kept() -> None:
     source = pdf([f"สระ {SARA_AA} ออกเสียงยาว"])
 
     assert markdown_pages(source) == [f"สระ {SARA_AA} ออกเสียงยาว"]
+
+
+# Pages stored on their side and turned upright by a page rotation
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_pages_turned_upright_by_a_page_rotation_read_as_they_do_upright(rotation: Literal[90, 270]) -> None:
+    # Headings, paragraphs, a list, a table, a signature, a stamp, and furniture at both edges.
+    upright = markdown_pages(pdf(SIGNING_PAGE, PAYMENT_PAGE))
+
+    turned = markdown_pages(pdf(Rotated(SIGNING_PAGE, rotation), Rotated(PAYMENT_PAGE, rotation)))
+
+    assert turned == upright

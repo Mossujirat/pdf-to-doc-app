@@ -69,9 +69,13 @@ def _inside(x: float, y: float, box: Box) -> bool:
 
 
 def text_rows(page: pymupdf.Page) -> PageRows:
-    """The page's text layer, and the images drawn on it. Every character ends up exactly
-    once: in a table cell, or in a row."""
-    layout: dict[str, Any] = page.get_text("rawdict", flags=_FLAGS)
+    """The page's text layer, and the images drawn on it, placed on the page as it is shown.
+    Every character ends up exactly once: in a table cell, or in a row."""
+    # PyMuPDF reads the text layer on the page as stored, before its rotation turns
+    # it upright. Rendering and the table finder see the page as shown, so the text
+    # layer is read turned the same way, and clipped to the page as shown.
+    shown = page.get_textpage(clip=page.rect, flags=_FLAGS, matrix=page.rotation_matrix)
+    layout: dict[str, Any] = page.get_text("rawdict", textpage=shown)
     images = placed_images(layout["blocks"])
     lines = [line for block in layout["blocks"] if block["type"] == 0 for line in block["lines"]]
     words = [word for index, line in enumerate(lines) for word in _words(index, line)]
