@@ -54,3 +54,9 @@
   - The shaded bars of a schedule chart were lost, so the schedule says nothing.
   - On pages 69–72, OCR reads better than the broken text layer did. Its numbers match apart from a few slips, but the tables come out one row per line or run on.
   - Ticks in table cells are lost (ticket 26).
+
+**2026-10-24, from grilling ticket 21 (sideways pages)**
+
+- **More tables to come.** Once ticket 21 turns sideways pages upright, their tables reach OCR the right way up. Most of the twelve sideways pages in the local samples hold tables: a price schedule, a project timeline, a work plan, a budget and a table of delegated powers. As the user decided, their structure is left to this ticket.
+- **Why rows run together:** on a synthetic price schedule turned upright and read again, every row came out in order, but they joined into one paragraph. On a text page, a row set out in columns stays a line of its own (`in_columns`). OCR rows never get that flag.
+- **Sideways column headers** inside upright tables are ticket 29. Placing their text in the header row needs this ticket.

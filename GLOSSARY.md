@@ -69,6 +69,10 @@ _Avoid_: scanned page (a page with an untrustworthy text layer is not a scan but
 A page whose body is a picture of a printed or written page, such as a page from a scanner or a phone photo of one. Notes, stamps or highlights may be laid over it, and a searchable scan has the text of the picture hidden behind it. A page whose text is drawn as shapes is not a scan.
 _Avoid_: image page
 
+**Sideways page**:
+A page whose content is printed a quarter turn from the page, so a reader turns the page to read it, such as a wide table printed across a tall page. A page that the PDF itself turns upright when it is shown is not a sideways page.
+_Avoid_: rotated page, landscape page
+
 **Picture**:
 An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.
 _Avoid_: figure

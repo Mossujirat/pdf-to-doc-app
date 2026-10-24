@@ -11,7 +11,7 @@ import pymupdf
 
 from pdf_to_doc.layout import EDGE_BAND, PageRows, body_text_share, page_blocks
 from pdf_to_doc.model import Document, Page
-from pdf_to_doc.ocr import LANGUAGES, OcrEngine, ocr_page, render
+from pdf_to_doc.ocr import OcrEngine, read_page, render
 from pdf_to_doc.pdf_text import text_rows
 from pdf_to_doc.progress import Progress
 from pdf_to_doc.validation import trusted
@@ -47,7 +47,7 @@ def read_pdf(pdf: pymupdf.Document, ocr: Callable[[], OcrEngine], progress: Call
         image = render(pages[index])
         # An untrusted text layer passes on nothing, not even its stamps.
         text_layer = replace(rows[index], rows=(), tables=()) if index in untrusted else rows[index]
-        rows[index] = ocr_page(engine.read(image, LANGUAGES), image, text_layer)
+        rows[index] = read_page(engine, image, text_layer)
         engines[index] = engine.name
     return Document(
         pages=tuple(

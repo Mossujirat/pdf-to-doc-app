@@ -10,6 +10,7 @@ import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import word_builder as word
 from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Rotated, Scan, Spaced, Styled, pdf, remapped
@@ -242,8 +243,10 @@ DOCUMENTS = (
 STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
 
 
-def scanned(lines: Sequence[Line], overlay: list[Line] | None = None, seed: int = 0) -> Scan:
-    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed)
+def scanned(
+    lines: Sequence[Line], overlay: list[Line] | None = None, seed: int = 0, sideways: Literal[0, 90, 270] = 0
+) -> Scan:
+    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways)
 
 
 SCANNED_DOCUMENTS = (
@@ -442,7 +445,43 @@ ROTATED_DOCUMENTS = (
     ),
 )
 
-ALL_DOCUMENTS = DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS + ROTATED_DOCUMENTS
+PRICES = (
+    ("ลำดับ", "รายการ", "จำนวน", "ราคาต่อหน่วย", "จำนวนเงิน"),
+    ("1", "ค่าตอบแทนผู้วิจัย", "12 เดือน", "8,000.00", "96,000.00"),
+    ("2", "ค่าวัสดุและอุปกรณ์", "1 ชุด", "30,000.00", "30,000.00"),
+    ("3", "ค่าเดินทางไปประชุม", "5 ครั้ง", "2,500.00", "12,500.00"),
+)
+# A price schedule as wide as a landscape sheet, and what a reader sees on it.
+PRICE_SCHEDULE: list[Line] = [
+    "ตารางราคา (Price Schedule)",
+    Grid(rows=PRICES, widths=(60, 230, 100, 130, 130)),
+    "รวมทั้งสิ้น 138,500.00 บาท",
+]
+PRICE_SCHEDULE_REFERENCE = (
+    "ตารางราคา (Price Schedule)\n\n"
+    "| ลำดับ | รายการ | จำนวน | ราคาต่อหน่วย | จำนวนเงิน |\n"
+    "| --- | --- | --- | --- | --- |\n"
+    "| 1 | ค่าตอบแทนผู้วิจัย | 12 เดือน | 8,000.00 | 96,000.00 |\n"
+    "| 2 | ค่าวัสดุและอุปกรณ์ | 1 ชุด | 30,000.00 | 30,000.00 |\n"
+    "| 3 | ค่าเดินทางไปประชุม | 5 ครั้ง | 2,500.00 | 12,500.00 |\n\n"
+    "รวมทั้งสิ้น 138,500.00 บาท"
+)
+
+# Sideways pages: the price schedule printed across a tall page, turned each way.
+SIDEWAYS_DOCUMENTS = (
+    SyntheticDocument(
+        name="sideways-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=7, sideways=90), reference=PRICE_SCHEDULE_REFERENCE),
+            SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=8, sideways=270), reference=PRICE_SCHEDULE_REFERENCE),
+        ),
+    ),
+)
+
+ALL_DOCUMENTS = (
+    DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS + ROTATED_DOCUMENTS + SIDEWAYS_DOCUMENTS
+)
 
 
 @dataclass(frozen=True)
