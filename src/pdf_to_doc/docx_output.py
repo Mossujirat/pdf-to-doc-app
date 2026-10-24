@@ -15,7 +15,7 @@ from docx.oxml.ns import nsdecls, qn
 from docx.oxml.section import CT_SectPr
 from docx.oxml.text.paragraph import CT_P
 from docx.oxml.xmlchemy import BaseOxmlElement
-from docx.shared import Cm, Inches, Mm, Pt
+from docx.shared import Cm, Emu, Inches, Length, Mm, Pt
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph as WordParagraph
 
@@ -26,6 +26,7 @@ from pdf_to_doc.model import (
     Heading,
     KeptImage,
     ListItem,
+    Placeholder,
     Span,
     Table,
     TableCell,
@@ -44,6 +45,10 @@ _HEADING_SIZES = {1: 20, 2: 18}
 _SPACE_AFTER_TABLE = Pt(10)
 # Word takes no page larger than this either way.
 _LARGEST_PAGE = Inches(22)
+# A4 with Word's usual margins, in place of the template's US Letter, and the text area between them.
+_A4_WIDTH, _A4_HEIGHT = Mm(210), Mm(297)
+_MARGIN = Cm(2.54)
+_TEXT_WIDTH, _TEXT_HEIGHT = Emu(_A4_WIDTH - 2 * _MARGIN), Emu(_A4_HEIGHT - 2 * _MARGIN)
 
 # A run of English: from a letter or digit to a letter or digit, holding ASCII spaces
 # and punctuation, typographic apostrophes and the en dash in between.
@@ -55,9 +60,8 @@ _THAI = re.compile(THAI_LETTER)
 def render_docx(document: Document, summary: Summary) -> bytes:
     word = docx.Document()
     [section] = word.sections
-    # A4 with Word's usual margins, in place of the template's US Letter.
-    section.page_width, section.page_height = Mm(210), Mm(297)
-    section.left_margin = section.right_margin = section.top_margin = section.bottom_margin = Cm(2.54)
+    section.page_width, section.page_height = _A4_WIDTH, _A4_HEIGHT
+    section.left_margin = section.right_margin = section.top_margin = section.bottom_margin = _MARGIN
     _set_default_font(word.styles.element)
     for level in range(1, DEEPEST_HEADING + 1):
         _set_heading_font(word.styles[f"Heading {level}"].element, _HEADING_SIZES.get(level, _BODY_SIZE))
@@ -119,8 +123,7 @@ def _kept_page_section(a4: CT_SectPr, image: KeptImage) -> CT_SectPr:
     """The section properties of a kept page, from those of the other pages: its own size and
     orientation, with no margins. A page larger than Word takes is scaled down to fit, keeping its shape."""
     properties = deepcopy(a4)
-    scale = min(1.0, _LARGEST_PAGE / max(Pt(image.width), Pt(image.height)))
-    properties.page_width, properties.page_height = Pt(image.width * scale), Pt(image.height * scale)
+    properties.page_width, properties.page_height = _shrunk(image, _LARGEST_PAGE, _LARGEST_PAGE)
     properties.orientation = WD_ORIENT.LANDSCAPE if image.width > image.height else WD_ORIENT.PORTRAIT
     for margin in ("top_margin", "right_margin", "bottom_margin", "left_margin", "header", "footer", "gutter"):
         setattr(properties, margin, 0)
@@ -142,6 +145,8 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
     if isinstance(block, Table):
         first_paragraph: WordParagraph = _add_table(word, block).cell(0, 0).paragraphs[0]
         return first_paragraph
+    if isinstance(block, Placeholder) and block.image is not None:
+        return _add_picture(word, block.image)
     if isinstance(block, Heading):
         paragraph = word.add_paragraph(style=f"Heading {block.level}")
     elif isinstance(block, ListItem) and block.bulleted:
@@ -155,6 +160,23 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
         paragraph = word.add_paragraph()
     _add_text(paragraph, block.text, uncertain=uncertain_text(block))
     return paragraph
+
+
+def _add_picture(word: WordDocument, image: KeptImage) -> WordParagraph:
+    """A picture kept as itself, in a paragraph of its own, at the size it is shown on the page;
+    shrunk to the text area, keeping its shape, when it is larger. Single spacing keeps the line
+    no taller than the picture."""
+    width, height = _shrunk(image, _TEXT_WIDTH, _TEXT_HEIGHT)
+    paragraph = word.add_paragraph()
+    paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.add_run().add_picture(io.BytesIO(image.data), width=width, height=height)
+    return paragraph
+
+
+def _shrunk(image: KeptImage, most_width: Length, most_height: Length) -> tuple[Length, Length]:
+    """The size the image is shown at, shrunk, keeping its shape, when it is wider or taller than the most."""
+    scale = min(1.0, most_width / Pt(image.width), most_height / Pt(image.height))
+    return Pt(image.width * scale), Pt(image.height * scale)
 
 
 def _add_table(word: WordDocument, table: Table) -> WordTable:

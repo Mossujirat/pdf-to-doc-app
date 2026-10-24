@@ -56,7 +56,7 @@ PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incompl
 class KeptImage:
     """An image an output shows as it is, when images are kept: compressed, never raw pixels."""
 
-    data: bytes  # a JPEG
+    data: bytes  # a JPEG, or a PNG where the image lets what lies under it show through
     width: float  # the size it is shown at, in points
     height: float
 
@@ -64,7 +64,8 @@ class KeptImage:
 @dataclass(frozen=True)
 class Placeholder:
     """Content the converter deliberately does not transcribe, shown as a short Thai label.
-    With images kept, it carries the image that DOCX shows in its place: a scan's whole page."""
+    With images kept, it carries the image that DOCX shows in its place: a scan's whole page,
+    or a picture."""
 
     kind: PlaceholderKind
     image: KeptImage | None = None

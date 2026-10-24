@@ -5,7 +5,7 @@ from typing import Any
 
 import pymupdf
 
-from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedTable, RawCell, Row
+from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedImage, PlacedTable, RawCell, Row
 from pdf_to_doc.pdf_images import placed_images
 from pdf_to_doc.thai import is_thai
 
@@ -71,11 +71,7 @@ def _inside(x: float, y: float, box: Box) -> bool:
 def text_rows(page: pymupdf.Page) -> PageRows:
     """The page's text layer, and the images drawn on it, placed on the page as it is shown.
     Every character ends up exactly once: in a table cell, or in a row."""
-    # PyMuPDF reads the text layer on the page as stored, before its rotation turns
-    # it upright. Rendering and the table finder see the page as shown, so the text
-    # layer is read turned the same way, and clipped to the page as shown.
-    shown = page.get_textpage(clip=page.rect, flags=_FLAGS, matrix=page.rotation_matrix)
-    layout: dict[str, Any] = page.get_text("rawdict", textpage=shown)
+    layout = _as_shown(page)
     images = placed_images(layout["blocks"])
     lines = [line for block in layout["blocks"] if block["type"] == 0 for line in block["lines"]]
     words = [word for index, line in enumerate(lines) for word in _words(index, line)]
@@ -90,6 +86,24 @@ def text_rows(page: pymupdf.Page) -> PageRows:
         _row(chars) for _, chars in sorted(left_by_line.items()) if any(not char.text.isspace() for char in chars)
     )
     return PageRows(rows=rows, width=page.rect.width, height=page.rect.height, tables=tables, images=images)
+
+
+def kept_pictures(page: pymupdf.Page) -> tuple[PlacedImage, ...]:
+    """The images `text_rows` places on the page, each carrying the picture itself, as kept images
+    show it. Read again for the pages that need them alone, as making the pictures takes time."""
+    return placed_images(_as_shown(page)["blocks"], keep=True)
+
+
+def _as_shown(page: pymupdf.Page) -> dict[str, Any]:
+    """PyMuPDF's reading of the page's text layer and images, on the page as it is shown.
+
+    PyMuPDF reads the text layer on the page as stored, before its rotation turns it
+    upright. Rendering and the table finder see the page as shown, so the text layer is
+    read turned the same way, and clipped to the page as shown.
+    """
+    shown = page.get_textpage(clip=page.rect, flags=_FLAGS, matrix=page.rotation_matrix)
+    layout: dict[str, Any] = page.get_text("rawdict", textpage=shown)
+    return layout
 
 
 def _words(index: int, line: dict[str, Any]) -> list[_Word]:

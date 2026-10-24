@@ -1,5 +1,8 @@
-"""Reads the images drawn on a PDF page: where each sits, and whether it looks like a stamp."""
+"""Reads the images drawn on a PDF page: where each sits, and whether it looks like a stamp. With
+images kept, it also makes the images outputs show: a kept page as it is shown, and each picture
+as itself."""
 
+import math
 from typing import Any
 
 import numpy as np
@@ -7,6 +10,11 @@ import numpy.typing as npt
 import pymupdf
 
 from pdf_to_doc.layout import PlacedImage
+from pdf_to_doc.model import KeptImage
+
+# A kept image is no sharper than this, at the size it is shown, and a JPEG of this quality.
+_KEPT_DPI = 150
+_KEPT_QUALITY = 75
 
 # An image whose shorter side is under this (points) is a rule, a bullet or an ornament.
 _SMALLEST_PICTURE = 8.0
@@ -25,8 +33,9 @@ _STAMP_BORDER = 0.8  # share of the radius where the outer band starts
 _STAMP_BORDER_INK = 1.5  # how many times denser the band's ink is than the ink inside it
 
 
-def placed_images(blocks: list[dict[str, Any]]) -> tuple[PlacedImage, ...]:
-    """The pictures among a page's text-layer blocks, leaving out images too small to be one."""
+def placed_images(blocks: list[dict[str, Any]], keep: bool = False) -> tuple[PlacedImage, ...]:
+    """The pictures among a page's text-layer blocks, leaving out images too small to be one. With
+    `keep`, each carries the picture itself, as kept images show it."""
     images = []
     for block in blocks:
         if block["type"] != 1:
@@ -34,8 +43,76 @@ def placed_images(blocks: list[dict[str, Any]]) -> tuple[PlacedImage, ...]:
         x0, top, x1, bottom = block["bbox"]
         width, height = x1 - x0, bottom - top
         if min(width, height) >= _SMALLEST_PICTURE:
-            images.append(PlacedImage(x0, top, x1, bottom, stamp_like=_stamp_like(block, width / height)))
+            kept_image = _kept_picture(block) if keep else None
+            images.append(PlacedImage(x0, top, x1, bottom, _stamp_like(block, width / height), kept_image))
     return tuple(images)
+
+
+def kept_page(page: pymupdf.Page) -> KeptImage:
+    """The page as it is shown, annotations and all, compressed at once: its pixels are not kept."""
+    pix = page.get_pixmap(dpi=_KEPT_DPI, colorspace=pymupdf.csRGB, alpha=False)
+    return KeptImage(_compressed(pix), page.rect.width, page.rect.height)
+
+
+def _kept_picture(block: dict[str, Any]) -> KeptImage:
+    """The image itself, as the page shows it at its place: in RGB, what its mask lets through left
+    transparent, no sharper than `_KEPT_DPI`, and turned and flipped as it is drawn on the page as shown.
+
+    Its transform maps the image's top left corner, its right and its down onto the page as shown.
+    Drawn upright, its right runs along the page and its down down it. The picture is turned the
+    nearest quarter turn to how it is drawn: one set a few degrees off level, as a signature pasted
+    by hand often is, is shown level, keeping its shape.
+
+    An image stored as a stencil, drawn in the colour of the moment wherever it is set, comes out
+    as it is stored, black and opaque: PyMuPDF does not say what colour drew it.
+    """
+    pix = pymupdf.Pixmap(block["image"])
+    if pix.colorspace is None or pix.colorspace.n != 3:  # grey, CMYK, or another space of colour
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+    if block.get("mask"):
+        mask = pymupdf.Pixmap(block["mask"])
+        if mask.n != 1:
+            mask = pymupdf.Pixmap(pymupdf.csGRAY, mask)
+        if (mask.width, mask.height) != (pix.width, pix.height):  # a mask can have a resolution of its own
+            mask = pymupdf.Pixmap(mask, pix.width, pix.height, None)
+        pix = pymupdf.Pixmap(pix, mask)
+    right_x, right_y, down_x, down_y, _, _ = block["transform"]
+    width, height = math.hypot(right_x, right_y), math.hypot(down_x, down_y)  # its own sides on the page, in points
+    if (scale := min(width * _KEPT_DPI / 72 / pix.width, height * _KEPT_DPI / 72 / pix.height)) < 1:
+        pix = pymupdf.Pixmap(pix, max(1, round(pix.width * scale)), max(1, round(pix.height * scale)), None)
+    quarter_turns = round(math.degrees(math.atan2(right_y, right_x)) / 90) % 4  # of its right, clockwise
+    # Turning its right towards its down goes the other way round from the page's: drawn mirrored.
+    mirrored = right_x * down_y - right_y * down_x < 0
+    shown = (height, width) if quarter_turns % 2 else (width, height)
+    return KeptImage(_compressed(_as_drawn(pix, quarter_turns, mirrored)), *shown)
+
+
+def _as_drawn(pix: pymupdf.Pixmap, quarter_turns: int, mirrored: bool) -> pymupdf.Pixmap:
+    """The pixmap turned `quarter_turns` quarter turns clockwise, flipped top to bottom first if `mirrored`."""
+    if not quarter_turns and not mirrored:
+        return pix
+    pixels = _samples(pix)
+    if mirrored:
+        pixels = pixels[::-1]
+    pixels = np.ascontiguousarray(np.rot90(pixels, k=-quarter_turns))
+    return pymupdf.Pixmap(pix.colorspace, pixels.shape[1], pixels.shape[0], pixels.tobytes(), pix.alpha)
+
+
+def _compressed(pix: pymupdf.Pixmap) -> bytes:
+    """A PNG when the pixmap lets something through, keeping its transparency; otherwise a JPEG."""
+    if pix.alpha:
+        if _samples(pix)[..., -1].min() < 255:
+            png: bytes = pix.tobytes("png")
+            return png
+        pix = pymupdf.Pixmap(pix, 0)  # every pixel opaque: no transparency to keep
+    jpeg: bytes = pix.tobytes("jpg", jpg_quality=_KEPT_QUALITY)
+    return jpeg
+
+
+def _samples(pix: pymupdf.Pixmap) -> npt.NDArray[np.uint8]:
+    """The pixmap's values, row by row and pixel by pixel: height by width by values per pixel."""
+    rows = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)[:, : pix.width * pix.n]
+    return rows.reshape(pix.height, pix.width, pix.n)
 
 
 def _stamp_like(block: dict[str, Any], aspect: float) -> bool:

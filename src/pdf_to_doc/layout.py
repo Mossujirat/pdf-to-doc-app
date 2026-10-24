@@ -8,6 +8,7 @@ from pdf_to_doc.model import (
     DEEPEST_HEADING,
     Block,
     Heading,
+    KeptImage,
     ListItem,
     PageKind,
     Paragraph,
@@ -124,6 +125,7 @@ class PlacedImage:
     x1: float
     bottom: float
     stamp_like: bool = False  # a ring in colour, as a stamp leaves
+    kept_image: KeptImage | None = None  # the picture itself, with images kept
 
 
 @dataclass(frozen=True)
@@ -178,7 +180,8 @@ def _behind_text(image: PlacedImage, rows: tuple[Row, ...]) -> bool:
 
 
 def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
-    """What stands in for the image, or None when it is the page behind the text.
+    """What stands in for the image, or None when it is the page behind the text. With images
+    kept, it carries the picture.
 
     A stamp when the image is a ring in colour, wherever it is pressed, even over
     a whole signature block. A signature when it is small and sits on a row to sign on,
@@ -186,7 +189,7 @@ def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
     image: the converter does not guess.
     """
     if image.stamp_like:
-        return Placeholder("stamp")
+        return Placeholder("stamp", image.kept_image)
     if _behind_text(image, page.rows):
         return None
     small = (
@@ -194,8 +197,8 @@ def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
         and image.bottom - image.top <= _SIGNATURE_MAX_HEIGHT * page.height
     )
     if small and any(_SIGNATURE_LINE.search(row.text) and _next_to(image, row) for row in page.rows):
-        return Placeholder("signature")
-    return Placeholder("image")
+        return Placeholder("signature", image.kept_image)
+    return Placeholder("image", image.kept_image)
 
 
 def _next_to(image: PlacedImage, row: Row) -> bool:

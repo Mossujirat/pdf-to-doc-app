@@ -104,6 +104,9 @@ class Picture:
     overlap: float = 0.0
     # An absolute top; the following lines continue below the image.
     y: float | None = None
+    turn: Literal[0, 90, 180, 270] = 0  # drawn turned this far counter-clockwise, its box as it lies on the page
+    dpi: int = 144  # how many of its pixels fit an inch of the page
+    cmyk: bool = False  # a photo stored as a CMYK JPEG, as printers' files hold them
 
 
 Line = str | Spaced | Styled | Grid | Picture
@@ -200,7 +203,7 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invi
         if isinstance(line, Picture):
             top = line.y if line.y is not None else y - FONT_SIZE
             box = pymupdf.Rect(line.x, top, line.x + line.width, top + line.height)
-            page.insert_image(box * page.derotation_matrix, stream=_picture(line), rotate=page.rotation)
+            page.insert_image(box * page.derotation_matrix, stream=_picture(line), rotate=(page.rotation + line.turn) % 360)
             y = top + line.height + LINE_HEIGHT - line.overlap
             continue
         if isinstance(line, Spaced):
@@ -253,13 +256,12 @@ def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
     return jpeg
 
 
-_PICTURE_DPI = 144
-
-
 def _picture(picture: Picture) -> bytes:
-    """The picture as a PNG. A photo is opaque; the others lie on a transparent ground."""
-    zoom = _PICTURE_DPI / 72
-    width, height = round(picture.width * zoom), round(picture.height * zoom)
+    """The picture as a PNG, or a CMYK photo as a JPEG. A photo is opaque; the others lie on a
+    transparent ground. A picture turned a quarter turn is as tall as its box is wide."""
+    zoom = picture.dpi / 72
+    sides = (picture.height, picture.width) if picture.turn % 180 else (picture.width, picture.height)
+    width, height = round(sides[0] * zoom), round(sides[1] * zoom)
     y, x = np.mgrid[0:height, 0:width] / np.array([height, width]).reshape(2, 1, 1)
     radius = np.hypot(x - 0.5, y - 0.5) * 2  # 1 at the edge of the round that fits the box
     rgba = np.zeros((height, width, 4), dtype=np.uint8)
@@ -288,6 +290,9 @@ def _picture(picture: Picture) -> bytes:
             assert_never(picture.kind)
     if picture.kind == "photo":
         image = pymupdf.Pixmap(pymupdf.csRGB, width, height, rgba[..., :3].tobytes(), False)
+        if picture.cmyk:
+            jpeg: bytes = pymupdf.Pixmap(pymupdf.csCMYK, image).tobytes("jpg")
+            return jpeg
     else:
         image = pymupdf.Pixmap(pymupdf.csRGB, width, height, rgba.tobytes(), True)
     png: bytes = image.tobytes("png")

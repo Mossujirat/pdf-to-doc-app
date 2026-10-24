@@ -1,4 +1,5 @@
-"""Kept images: scans kept as images of the page instead of read with OCR, through the conversion function."""
+"""Kept images, through the conversion function: scans kept as images of the page instead of read
+with OCR, and pictures on text pages shown as themselves in the DOCX."""
 
 import io
 from pathlib import Path
@@ -9,9 +10,9 @@ import markdown_reader
 import numpy as np
 import pymupdf
 import pytest
-from docx_reader import A4, InlineImage, Layout, inline_images, page_texts, read_docx
+from docx_reader import A4, InlineImage, Layout, block_text, inline_images, page_texts, read_docx
 from fake_ocr import FakeEngine
-from generate import CLAUSES
+from generate import CLAUSES, SIGNATURE, SIGNATURE_LINE
 from pdf_builder import TOP, Drawn, Grid, Line, Pasted, Picture, Rotated, Scan, Styled, highlighted, pdf, remapped
 from word_builder import PageBreak, document
 
@@ -308,6 +309,138 @@ def test_a_docx_source_is_converted_as_without_kept_images() -> None:
     source = document("หน้าแรก", PageBreak(), "หน้าที่สอง")
 
     assert convert(source, keep_images=True).output == convert(source).output
+
+
+# Pictures on text pages: shown as themselves in the DOCX, their placeholders kept in the Markdown
+
+# Enough body text for a text page around a picture.
+BEFORE, AFTER = CLAUSES[:3], CLAUSES[3:]
+
+
+def docx_shown(data: bytes) -> list[list[str | tuple[float, float]]]:
+    """Each page of a DOCX: each paragraph's text, or the size of the one image it holds."""
+    shown: list[list[str | tuple[float, float]]] = []
+    for page in read_docx(data).pages:
+        shown.append([])
+        for block in page:
+            images = inline_images(block)
+            shown[-1].append((images[0].width, images[0].height) if images else block_text(block))
+    return shown
+
+
+def pictures_in(data: bytes) -> list[InlineImage]:
+    return [image for page in read_docx(data).pages for block in page for image in inline_images(block)]
+
+
+def red_slopes(pixels: pymupdf.Pixmap) -> tuple[float, float]:
+    """How much redder an RGB image is in its bottom half than its top, and in its right half than its left."""
+    red = np.frombuffer(pixels.samples, dtype=np.uint8).reshape(pixels.height, pixels.stride)[:, 0 : pixels.width * pixels.n : pixels.n]
+    height, width = red.shape
+    return red[height // 2 :].mean() - red[: height // 2].mean(), red[:, width // 2 :].mean() - red[:, : width // 2].mean()
+
+
+def test_a_photo_between_paragraphs_is_shown_as_itself_where_its_placeholder_was() -> None:
+    source = pdf([*BEFORE, Picture("photo", 120, 80), *AFTER])
+
+    result = keep_images(source)
+
+    assert docx_shown(result.outputs["docx"]) == [["".join(BEFORE), (120.0, 80.0), "".join(AFTER)]]
+    assert markdown_pages(result) == ["".join(BEFORE) + "\n\n[รูปภาพ]\n\n" + "".join(AFTER)]
+    [photo] = pictures_in(result.outputs["docx"])
+    assert photo.data.startswith(b"\xff\xd8")  # a JPEG: an opaque photo has no transparency to keep
+
+
+def test_a_signature_on_its_signature_line_is_shown_as_itself_on_a_transparent_ground() -> None:
+    data = keep_images(pdf([*CLAUSES, "", SIGNATURE, SIGNATURE_LINE])).outputs["docx"]
+
+    assert docx_shown(data) == [["".join(CLAUSES), (140.0, 45.0), SIGNATURE_LINE]]
+    [signature] = pictures_in(data)
+    assert pymupdf.Pixmap(signature.data).alpha  # the line under it shows through
+
+
+@pytest.mark.parametrize("kind", ["stamp", "chart"])
+def test_a_stamp_or_a_chart_is_shown_as_itself_on_a_transparent_ground(kind: Literal["stamp", "chart"]) -> None:
+    data = keep_images(pdf([*BEFORE, Picture(kind, 70, 70), *AFTER])).outputs["docx"]
+
+    assert docx_shown(data) == [["".join(BEFORE), (70.0, 70.0), "".join(AFTER)]]
+    [picture] = pictures_in(data)
+    assert pymupdf.Pixmap(picture.data).alpha
+
+
+def faces_as_on_the_page(source: bytes, box: pymupdf.Rect) -> None:
+    """Assert that the one picture kept from the source, a photo growing redder along its own width,
+    lies as the photo in the box does on the source's first page, rendered as shown."""
+    [photo] = pictures_in(keep_images(source).outputs["docx"])
+    on_the_page = pymupdf.open(stream=source, filetype="pdf")[0].get_pixmap(clip=box, colorspace=pymupdf.csRGB)
+    assert (photo.width, photo.height) == (box.width, box.height)
+    # Counted in steps of 20 grey levels: the photo's red runs from 30 to 230 across it, so a half
+    # that faces the other way differs by about 100, and noise by a few.
+    kept, shown = red_slopes(pymupdf.Pixmap(photo.data)), red_slopes(on_the_page)
+    assert [round(slope / 20) for slope in kept] == [round(slope / 20) for slope in shown]
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_a_picture_on_a_page_turned_upright_by_the_pdf_stands_upright(rotation: Literal[90, 270]) -> None:
+    box = pymupdf.Rect(72, 300, 192, 380)
+
+    faces_as_on_the_page(pdf(Rotated([*CLAUSES, Picture("photo", box.width, box.height, y=box.y0)], rotation)), box)
+
+
+def test_a_signature_on_a_page_turned_upright_by_the_pdf_keeps_its_transparency() -> None:
+    [signature] = pictures_in(keep_images(pdf(Rotated([*CLAUSES, "", SIGNATURE, SIGNATURE_LINE], 90))).outputs["docx"])
+
+    assert (signature.width, signature.height) == (140.0, 45.0)
+    assert pymupdf.Pixmap(signature.data).alpha
+
+
+@pytest.mark.parametrize("turn", [90, 180, 270])
+def test_a_picture_drawn_turned_is_shown_turned_as_on_the_page(turn: Literal[90, 180, 270]) -> None:
+    box = pymupdf.Rect(72, 300, 192, 380) if turn == 180 else pymupdf.Rect(72, 300, 152, 420)
+
+    faces_as_on_the_page(pdf([*CLAUSES, Picture("photo", box.width, box.height, y=box.y0, turn=turn)]), box)
+
+
+def test_a_picture_sharper_than_150_dpi_is_kept_at_150_dpi_and_a_softer_one_as_it_is() -> None:
+    data = keep_images(pdf([*BEFORE, Picture("photo", 120, 80, dpi=600), Picture("photo", 120, 80), *AFTER])).outputs["docx"]
+
+    assert [resolution(picture) for picture in pictures_in(data)] == [(150, 150), (144, 144)]
+
+
+def test_a_cmyk_photo_is_kept_in_rgb() -> None:
+    [photo] = pictures_in(keep_images(pdf([*BEFORE, Picture("photo", 120, 80, cmyk=True), *AFTER])).outputs["docx"])
+
+    assert pymupdf.Pixmap(photo.data).n == 3
+
+
+def test_a_picture_wider_than_the_text_area_is_shrunk_to_it_keeping_its_shape() -> None:
+    data = keep_images(pdf([*BEFORE, Picture("photo", 520, 100), *AFTER])).outputs["docx"]
+
+    # The text area of A4 with margins of 2.54 cm is 451.3 points wide.
+    assert docx_shown(data) == [["".join(BEFORE), (451.3, 86.8), "".join(AFTER)]]
+
+
+def test_a_picture_in_a_table_cell_comes_right_after_the_table() -> None:
+    grid = Grid(rows=(("ตำแหน่ง", "ลายมือ"), ("ผู้ให้ทุน", "")), widths=(200, 200), y=200)
+    in_cell = Picture("photo", 60, 20, x=290, y=214)
+
+    [blocks] = docx_shown(keep_images(pdf([*CLAUSES, grid, in_cell, Styled("ทั้งนี้ตามที่ตกลงกัน", y=320)])).outputs["docx"])
+
+    assert blocks[2:] == [(60.0, 20.0), "ทั้งนี้ตามที่ตกลงกัน"]
+
+
+def test_no_picture_is_shown_for_page_furniture_a_letterhead_behind_text_or_a_rule() -> None:
+    logo = Picture("photo", 60, 30, y=30)
+    body: list[Line] = [Styled(CLAUSES[0], y=160), *CLAUSES[1:]]
+    rule = Picture("photo", 400, 2)
+    source = pdf([logo, *body], [logo, *body, rule], Scan(["หัวจดหมาย"], overlay=CLAUSES, dpi=50))
+
+    assert pictures_in(keep_images(source).outputs["docx"]) == []
+
+
+def test_the_markdown_of_pictures_is_the_same_with_kept_images() -> None:
+    source = pdf([*CLAUSES, Picture("photo", 120, 80), "", SIGNATURE, SIGNATURE_LINE, "", Picture("stamp", 70, 70)])
+
+    assert keep_images(source).outputs["markdown"] == convert(source, to="markdown", ocr=FakeEngine()).output
 
 
 # The summary

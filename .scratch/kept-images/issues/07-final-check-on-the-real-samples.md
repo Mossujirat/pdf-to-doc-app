@@ -25,7 +25,8 @@
   - every scan is kept, edge to edge, and takes one Word page, with no blank page;
   - sideways pages are as they are in the original;
   - highlights and notes show;
-  - pictures on text pages show as themselves, and repeated edge logos stay out.
+  - pictures on text pages show as themselves, and repeated edge logos stay out;
+  - no picture comes out black where it was coloured, as one stored as a stencil would (ticket 03's Comments).
 - [ ] **Check the scan-detection share against the samples:**
   - every scan is kept;
   - no text page, and no page whose text is drawn as shapes, is kept.

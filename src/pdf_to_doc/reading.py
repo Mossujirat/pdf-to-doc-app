@@ -14,7 +14,8 @@ import pymupdf
 from pdf_to_doc.layout import EDGE_BAND, PageRows, Row, body_text_share, page_blocks
 from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
 from pdf_to_doc.ocr import OcrEngine, read_page, render
-from pdf_to_doc.pdf_text import text_rows
+from pdf_to_doc.pdf_images import kept_page
+from pdf_to_doc.pdf_text import kept_pictures, text_rows
 from pdf_to_doc.progress import Progress
 from pdf_to_doc.validation import trusted
 
@@ -38,9 +39,6 @@ _SCAN_INK_IN_IMAGES = 0.5
 # is hidden when hidden text covers most of it. Both were set on synthetic pages.
 _TEXT_UNDER_AN_IMAGE = 0.9
 _HIDDEN_ROW_SHARE = 0.5
-# A kept page's image: the page as it is shown, as a JPEG of this resolution and quality.
-_KEPT_DPI = 150
-_KEPT_QUALITY = 75
 
 
 def read_pdf(
@@ -66,9 +64,14 @@ def read_pdf(
     kept_pages = [index for index, kind in enumerate(kinds) if kind == "kept"]
     for count, index in enumerate(kept_pages, start=1):
         progress(Progress(stage="images", current=count, total=len(kept_pages)))
-        kept[index] = _kept_image(pages[index])
+        kept[index] = kept_page(pages[index])
         # The scan behind its text is the page itself, not a picture on it.
         rows[index] = replace(rows[index], images=(), kind="kept")
+    if keep_images:
+        # Pictures on a text page are kept as themselves.
+        with_pictures = [index for index, kind in enumerate(kinds) if kind == "text" and rows[index].images]
+        for index in with_pictures:
+            rows[index] = replace(rows[index], images=kept_pictures(pages[index]))
     ocr_pages = [index for index, kind in enumerate(kinds) if kind == "ocr"]
     engines: dict[int, str] = {}
     # The engine lives only as long as this call: an engine holds what it last read.
@@ -158,12 +161,6 @@ def _hidden_text(page: pymupdf.Page) -> list[pymupdf.Rect]:
         if what == "ignore-text" or (what in ("fill-text", "stroke-text") and under_an_image):
             hidden.append(area * page.rotation_matrix)
     return hidden
-
-
-def _kept_image(page: pymupdf.Page) -> KeptImage:
-    """The page as it is shown, annotations and all, compressed at once: its pixels are not kept."""
-    pix = page.get_pixmap(dpi=_KEPT_DPI, colorspace=pymupdf.csRGB, alpha=False)
-    return KeptImage(pix.tobytes("jpg", jpg_quality=_KEPT_QUALITY), page.rect.width, page.rect.height)
 
 
 def _ink_beyond_text(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_]:

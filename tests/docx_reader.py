@@ -130,7 +130,7 @@ def _layout(section: Section) -> Layout:
 
 def page_texts(data: bytes) -> list[str]:
     """The text of each page: each paragraph, and each cell of a table, on a line of its own."""
-    return ["\n".join(_lines(block) for block in page) for page in read_docx(data).pages]
+    return ["\n".join(block_text(block) for block in page) for page in read_docx(data).pages]
 
 
 def cells(table: Table) -> list[list[Cell]]:
@@ -154,7 +154,8 @@ def cells(table: Table) -> list[list[Cell]]:
     return rows
 
 
-def _lines(block: Block) -> str:
+def block_text(block: Block) -> str:
+    """A paragraph's text, or each cell of a table on a line of its own."""
     if isinstance(block, Paragraph):
         return block.text
     return "\n".join(cell.text for row in cells(block) for cell in row)
