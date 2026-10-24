@@ -183,6 +183,7 @@ The converter first reads each page as it does today: the text layer's rows, the
   - The scan placeholder is not counted among placeholders: the page count already says it.
 - **When the resolution was lowered,** the headline says so and gives the resolution. Every output carries the note, and so do the CLI's last line and the web page.
 - **The sandbox's summary event** carries the new page kind and the resolution. The web app's schema accepts both, strictly as now.
+- **A kept page whose text layer could not be trusted** is named in the headline: "(หน้า … ข้อความในไฟล์ไม่น่าเชื่อถือ จึงไม่ได้นำมาใช้)", so that the reader knows why its Markdown holds the placeholder alone (decided with the user at ticket 02, 2026-10-24).
 
 ### Progress
 

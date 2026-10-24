@@ -46,6 +46,7 @@
   - It is marked as not needed when no page was kept.
   - Without kept images, the steps are as today.
 - [ ] **The finished table:** its "อ่านจาก" column says "เก็บเป็นภาพ" for kept pages. The headline shows kept pages from the summary.
+- [ ] **A kept page whose text layer could not be trusted** (ticket 02) is noted as such in the table, not as "ข้อความในไฟล์ผิด จึงอ่านด้วย OCR", which is what the table says today for every page whose text layer could not be trusted. The headline already says "จึงไม่ได้นำมาใช้".
 - [ ] **Statistics** count kept pages among pages by kind.
 - [ ] **The privacy page** is unchanged. Outputs are still held in memory, and deleted within 10 minutes or when the visitor deletes them.
 

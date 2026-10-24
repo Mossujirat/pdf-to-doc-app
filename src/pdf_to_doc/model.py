@@ -121,7 +121,8 @@ class Page:
     kind: PageKind
     blocks: tuple[Block, ...]
     engine: str | None = None  # the OCR engine that read an OCR page
-    # Read with OCR because its text layer was there but could not be trusted.
+    # Its text layer was there but could not be trusted, so none of it was used: the page was
+    # read with OCR instead, or, kept as an image, gave no text.
     untrusted_text_layer: bool = False
 
     @property

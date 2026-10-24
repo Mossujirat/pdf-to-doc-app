@@ -12,7 +12,7 @@ import pytest
 from docx_reader import A4, InlineImage, Layout, inline_images, page_texts, read_docx
 from fake_ocr import FakeEngine
 from generate import CLAUSES
-from pdf_builder import Drawn, Grid, Pasted, Rotated, Scan, Styled, highlighted, pdf, remapped
+from pdf_builder import TOP, Drawn, Grid, Line, Pasted, Picture, Rotated, Scan, Styled, highlighted, pdf, remapped
 from word_builder import PageBreak, document
 
 from pdf_to_doc import ConversionResult, Opened, Progress, convert
@@ -189,6 +189,119 @@ def test_large_text_on_a_kept_page_makes_no_heading() -> None:
     result = keep_images(pdf(["ข้อความของสัญญา"], Scan(CLAUSES, overlay=[title], dpi=50)))
 
     assert markdown_pages(result) == ["ข้อความของสัญญา", "[หน้าสแกน]\n\nภาคผนวกแนบท้ายสัญญา"]
+
+
+# Scans made searchable: kept, their hidden text following the placeholder
+
+
+@pytest.mark.parametrize("hidden", ["over", "under"])
+def test_a_searchable_scan_is_kept_and_its_hidden_text_follows_its_placeholder(
+    hidden: Literal["over", "under"],
+) -> None:
+    engine = FakeEngine()
+
+    result = convert(pdf(Scan(CLAUSES, dpi=50, searchable=hidden)), ocr=engine, keep_images=True)
+
+    assert markdown_pages(result) == ["[หน้าสแกน]\n\n" + "".join(CLAUSES)]
+    assert [page.kind for page in result.summary.pages] == ["kept"]
+    assert engine.images == []
+
+
+@pytest.mark.parametrize("hidden", ["over", "under"])
+def test_a_searchable_scan_turned_upright_by_the_pdf_is_kept_with_its_hidden_text(
+    hidden: Literal["over", "under"],
+) -> None:
+    result = keep_images(pdf(Rotated(Scan(CLAUSES, dpi=50, searchable=hidden), 90)))
+
+    assert markdown_pages(result) == ["[หน้าสแกน]\n\n" + "".join(CLAUSES)]
+
+
+def test_hidden_text_makes_no_heading_and_a_hidden_header_over_every_scan_is_left_out() -> None:
+    header = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
+    title = Styled("ภาคผนวกแนบท้ายสัญญา", size=24, y=150)
+    scan = Scan([header, title, *CLAUSES], dpi=50, searchable="over")
+
+    result = keep_images(pdf(["ข้อความของสัญญา"], scan, scan))
+
+    kept = "[หน้าสแกน]\n\nภาคผนวกแนบท้ายสัญญา\n\n" + "".join(CLAUSES)
+    assert markdown_pages(result) == ["ข้อความของสัญญา", kept, kept]
+
+
+# What a reader sees is not hidden
+
+
+def test_visible_text_over_a_letterhead_image_is_still_read_from_the_text_layer() -> None:
+    engine = FakeEngine()
+
+    result = convert(pdf(Scan(["หัวจดหมาย"], overlay=CLAUSES, dpi=50)), ocr=engine, keep_images=True)
+
+    assert markdown_pages(result) == ["".join(CLAUSES)]
+    assert [page.kind for page in result.summary.pages] == ["text"]
+    assert engine.images == []
+
+
+@pytest.mark.parametrize("letterhead", [False, True], ids=["on a plain page", "on a letterhead image"])
+def test_a_transparent_picture_over_text_does_not_hide_it(letterhead: bool) -> None:
+    # A stamp on a transparent ground, pressed over all the text, which still shows through. On a
+    # letterhead it lies within the opaque image behind the text, which must not count for it.
+    stamp = Picture("stamp", 350, 350, y=TOP - 20)
+    page: Scan | list[Line] = Scan(["หัวจดหมาย"], overlay=[*CLAUSES, stamp], dpi=50) if letterhead else [*CLAUSES, stamp]
+
+    result = keep_images(pdf(page))
+
+    assert [page.kind for page in result.summary.pages] == ["text"]
+    assert markdown_pages(result) == ["[ตราประทับ]\n\n" + "".join(CLAUSES)]
+
+
+# A scan whose text layer cannot be trusted is kept without it
+
+
+def test_a_searchable_scan_whose_hidden_text_is_wrong_is_kept_without_that_text_and_the_summary_says_so() -> None:
+    engine = FakeEngine()
+    # The scanner's text reports sara aa as sara am, so "การ" comes out as "กำร".
+    source = remapped(pdf(Scan(CLAUSES, dpi=50, searchable="over")), {SARA_AA: SARA_AM})
+
+    result = convert(source, to={"markdown", "docx"}, ocr=engine, keep_images=True)
+
+    assert markdown_pages(result) == ["[หน้าสแกน]"]
+    assert [(page.kind, page.untrusted_text_layer) for page in result.summary.pages] == [("kept", True)]
+    assert engine.images == []
+    assert result.summary.headline() == (
+        "1 หน้า: อ่านจากข้อความในไฟล์ 0 หน้า, อ่านด้วย OCR 0 หน้า, เก็บเป็นภาพ 1 หน้า ได้แก่หน้า 1"
+        " (หน้า 1 ข้อความในไฟล์ไม่น่าเชื่อถือ จึงไม่ได้นำมาใช้)"
+    )
+
+
+def test_a_scan_under_a_header_whose_text_is_wrong_is_kept_without_the_header() -> None:
+    engine = FakeEngine()
+    header = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
+    # The header's font reports sara aa as a character it cannot map.
+    source = remapped(pdf(Scan(CLAUSES, overlay=[header], dpi=50)), {SARA_AA: chr(0xFFFD)})
+
+    result = convert(source, ocr=engine, keep_images=True)
+
+    assert markdown_pages(result) == ["[หน้าสแกน]"]
+    assert [page.kind for page in result.summary.pages] == ["kept"]
+    assert engine.images == []
+
+
+# Without kept images, a scan made searchable is read from its text layer
+
+
+@pytest.mark.parametrize(
+    ("hidden", "wrong", "kind"),
+    [("over", False, "text"), ("under", False, "text"), ("over", True, "ocr")],
+    ids=["hidden over", "hidden under", "hidden text wrong"],
+)
+def test_without_kept_images_a_searchable_scan_is_read_from_its_text_layer_unless_that_is_wrong(
+    hidden: Literal["over", "under"], wrong: bool, kind: str
+) -> None:
+    source = pdf(Scan(CLAUSES, dpi=50, searchable=hidden))
+
+    result = convert(remapped(source, {SARA_AA: SARA_AM}) if wrong else source, ocr=FakeEngine(CLAUSES))
+
+    assert markdown_pages(result) == ["".join(CLAUSES)]
+    assert [page.kind for page in result.summary.pages] == [kind]
 
 
 def test_a_docx_source_is_converted_as_without_kept_images() -> None:

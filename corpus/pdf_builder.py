@@ -11,7 +11,9 @@ A page is a list of lines, drawn top to bottom:
 - an empty string leaves a blank line, which starts a new paragraph
 
 A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
-drawn over the image as text: a stamped header, or the text layer of a scan made searchable.
+drawn over the image as text: a stamped header, a typed note, or the visible text layer
+of a scan made searchable. A `searchable` scan also holds its lines as text no one sees,
+as OCR software writes them: drawn invisible over the image, or under it.
 A sideways scan prints its lines on a landscape sheet set a quarter turn on the page.
 
 A `Rotated` page is stored on its side and turned upright by the page's rotation,
@@ -119,6 +121,7 @@ class Scan:
     # that a reader turns the page this many degrees clockwise to read them.
     sideways: Literal[0, 90, 270] = 0
     landscape: bool = False  # the page itself is A4 on its side, its lines laid out across it
+    searchable: Literal["over", "under"] | None = None  # where its lines are hidden as text, if they are
 
 
 @dataclass(frozen=True)
@@ -168,9 +171,13 @@ def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Pat
         else:
             page = doc.new_page()
         if isinstance(content, Scan):
+            if content.searchable == "under":
+                _draw_lines(page, content.lines, font_file)
             # On a rotated page the image is stored on its side, filling the stored page.
             stored = page.rect * page.derotation_matrix
             page.insert_image(stored, stream=_scanned_image(content, font_file, page.rotation))
+            if content.searchable == "over":
+                _draw_lines(page, content.lines, font_file, invisible=True)
             _draw_lines(page, content.overlay, font_file)
         else:
             _draw_lines(page, content, font_file)
@@ -179,15 +186,16 @@ def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Pat
     return data
 
 
-def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
+def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invisible: bool = False) -> None:
+    """Draw the lines top to bottom, as text no one sees if `invisible`, as OCR software hides its text."""
     y: float = TOP
     for line in lines:
         if isinstance(line, Styled):
             y = line.y if line.y is not None else y
-            y += _draw_styled(page, y, line, font_file)
+            y += _draw_styled(page, y, line, font_file, invisible)
             continue
         if isinstance(line, Grid):
-            y = _draw_grid(page, line.y if line.y is not None else y, line, font_file)
+            y = _draw_grid(page, line.y if line.y is not None else y, line, font_file, invisible)
             continue
         if isinstance(line, Picture):
             top = line.y if line.y is not None else y - FONT_SIZE
@@ -199,10 +207,10 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
             x: float = LEFT
             piece_font = _weight(font_file, line.bold)
             for piece in line.pieces:
-                _draw(page, x, y, piece, piece_font, FONT_SIZE)
+                _draw(page, x, y, piece, piece_font, FONT_SIZE, invisible)
                 x += _width(piece, piece_font, FONT_SIZE) + line.gap
         elif line:
-            _draw(page, LEFT, y, line, font_file, FONT_SIZE)
+            _draw(page, LEFT, y, line, font_file, FONT_SIZE, invisible)
         y += LINE_HEIGHT
 
 
@@ -402,13 +410,13 @@ def _padded(source: bytes, padding: int) -> bytes:
     return data
 
 
-def _draw_styled(page: pymupdf.Page, y: float, line: Styled, font_file: Path) -> float:
+def _draw_styled(page: pymupdf.Page, y: float, line: Styled, font_file: Path, invisible: bool) -> float:
     """Draw a styled line and return how far down the next line goes."""
     font_file = _weight(font_file, line.bold)
     x = line.x
     if line.centered:
         x = (page.rect.width - _width(line.text, font_file, line.size)) / 2
-    _draw(page, x, y, line.text, font_file, line.size)
+    _draw(page, x, y, line.text, font_file, line.size, invisible)
     return max(LINE_HEIGHT, line.size * 1.4)
 
 
@@ -416,7 +424,7 @@ CELL_PADDING = 6.0
 TAB_GAP = 24.0
 
 
-def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path) -> float:
+def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path, invisible: bool) -> float:
     """Draw a ruled table whose first row's text sits on the baseline y; return the next baseline."""
     placed: list[tuple[int, int, Cell]] = []  # row, column, cell
     covered: set[tuple[int, int]] = set()
@@ -447,7 +455,8 @@ def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path) -> flo
         for line_index, text in enumerate(cell.text.splitlines()):
             x = rect.x0 + 4
             for piece in text.split("\t"):
-                _draw(page, x, rect.y0 + 3 + FONT_SIZE + line_index * LINE_HEIGHT, piece, font_file, FONT_SIZE)
+                baseline = rect.y0 + 3 + FONT_SIZE + line_index * LINE_HEIGHT
+                _draw(page, x, baseline, piece, font_file, FONT_SIZE, invisible)
                 x += _width(piece, font_file, FONT_SIZE) + TAB_GAP
     return edges[-1] + LINE_HEIGHT + FONT_SIZE
 
@@ -470,7 +479,15 @@ def _width(text: str, font_file: Path, size: float) -> float:
     return width
 
 
-def _draw(page: pymupdf.Page, x: float, y: float, text: str, font_file: Path, size: float) -> None:
+def _draw(page: pymupdf.Page, x: float, y: float, text: str, font_file: Path, size: float, invisible: bool) -> None:
     """Draw text whose baseline starts at (x, y) on the page as shown, reading upright."""
     point = pymupdf.Point(x, y) * page.derotation_matrix
-    page.insert_text(point, text, fontfile=str(font_file), fontname=font_file.stem, fontsize=size, rotate=page.rotation)
+    page.insert_text(
+        point,
+        text,
+        fontfile=str(font_file),
+        fontname=font_file.stem,
+        fontsize=size,
+        rotate=page.rotation,
+        render_mode=3 if invisible else 0,  # 3 draws nothing
+    )

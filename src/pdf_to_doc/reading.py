@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import pymupdf
 
-from pdf_to_doc.layout import EDGE_BAND, PageRows, body_text_share, page_blocks
+from pdf_to_doc.layout import EDGE_BAND, PageRows, Row, body_text_share, page_blocks
 from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
 from pdf_to_doc.ocr import OcrEngine, read_page, render
 from pdf_to_doc.pdf_text import text_rows
@@ -32,6 +32,12 @@ _BLANK = 245
 # A page that needs OCR is a scan when at least this share of what its body shows
 # outside its text lies in its images. Text drawn as shapes lies outside them.
 _SCAN_INK_IN_IMAGES = 0.5
+# A scan made searchable hides the text of its picture: drawn invisible, or under an
+# opaque image drawn after it. Text is under an image when this share of its box lies
+# in the image's, nearly all, as a glyph's box reaches a little past what it draws; a row
+# is hidden when hidden text covers most of it. Both were set on synthetic pages.
+_TEXT_UNDER_AN_IMAGE = 0.9
+_HIDDEN_ROW_SHARE = 0.5
 # A kept page's image: the page as it is shown, as a JPEG of this resolution and quality.
 _KEPT_DPI = 150
 _KEPT_QUALITY = 75
@@ -52,6 +58,10 @@ def read_pdf(
     # A scan's text layer is checked too, as the text laid over it is kept.
     untrusted = {index for index, page_rows in enumerate(rows) if not trusted(page_rows)}
     kinds = [_kind(page, rows[index], index in untrusted, keep_images) for index, page in enumerate(pages)]
+    for index in untrusted:
+        # An untrusted text layer passes on nothing, not even its stamps, whether its page is
+        # read with OCR or kept.
+        rows[index] = replace(rows[index], rows=(), tables=())
     kept: dict[int, KeptImage] = {}
     kept_pages = [index for index, kind in enumerate(kinds) if kind == "kept"]
     for count, index in enumerate(kept_pages, start=1):
@@ -67,10 +77,7 @@ def read_pdf(
         progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         if engine is None:
             engine = ocr()
-        image = render(pages[index])
-        # An untrusted text layer passes on nothing, not even its stamps.
-        text_layer = replace(rows[index], rows=(), tables=()) if index in untrusted else rows[index]
-        rows[index] = read_page(engine, image, text_layer)
+        rows[index] = read_page(engine, render(pages[index]), rows[index])
         engines[index] = engine.name
     return Document(
         pages=tuple(
@@ -88,18 +95,69 @@ def read_pdf(
 
 
 def _kind(page: pymupdf.Page, rows: PageRows, untrusted: bool, keep_images: bool) -> PageKind:
-    """How the page is read: from its text layer, unless that cannot be trusted or covers little of
-    the body while the body shows more outside it; then with OCR, or, with images kept, not at all
-    when the page is a scan."""
+    """How the page is read. With images kept, a scan is not read at all: judged by the text a
+    reader sees on it, it would be read with OCR, and what it shows outside that text lies mostly
+    in its images. So a scan made searchable is kept too, and so is a scan whose text layer cannot
+    be trusted. Otherwise a page is read from its text layer, unless that cannot be trusted, or
+    covers little of the body while the body shows more outside it; then it is read with OCR."""
+    if keep_images:
+        shown = _shown(page, rows)
+        inked = _ink_needing_ocr(page, shown)
+        if inked is not None and _is_scan(inked, shown):
+            return "kept"
     if untrusted:
         return "ocr"
+    return "text" if _ink_needing_ocr(page, rows) is None else "ocr"
+
+
+def _ink_needing_ocr(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_] | None:
+    """What the page shows outside the rows, as `_ink_beyond_text` finds it, when that makes it a page
+    to read with OCR: the rows cover little of the body, and the body shows more outside them than
+    they cover. None when the rows are the page's text."""
     text = body_text_share(rows)
     if text >= _OCR_MAX_TEXT_SHARE:
-        return "text"
+        return None
     inked = _ink_beyond_text(page, rows)
-    if _body(inked).mean() <= text:
-        return "text"
-    return "kept" if keep_images and _is_scan(inked, rows) else "ocr"
+    return inked if _body(inked).mean() > text else None
+
+
+def _shown(page: pymupdf.Page, rows: PageRows) -> PageRows:
+    """The rows a reader sees: without those that the text a scan made searchable hides covers."""
+    hidden = _hidden_text(page)
+    if not hidden:
+        return rows
+
+    def seen(row: Row) -> bool:
+        box = pymupdf.Rect(row.x0, row.y0, row.x1, row.y1)
+        return bool(sum((box & text).get_area() for text in hidden) < _HIDDEN_ROW_SHARE * box.get_area())
+
+    return replace(rows, rows=tuple(row for row in rows.rows if seen(row)))
+
+
+def _hidden_text(page: pymupdf.Page) -> list[pymupdf.Rect]:
+    """Where the page draws text that no one sees, on the page as shown: text drawn invisible, and
+    text that an opaque image drawn after it covers.
+
+    PyMuPDF logs what the page draws, in order, on the page as stored. It lists the page's images
+    in the same order, saying which have a mask, which lets what lies under the image show through.
+    Should the two not hold as many images, no image is taken to hide anything.
+    """
+    drawn = page.get_bboxlog()
+    masked = [image["has-mask"] for image in page.get_image_info()]
+    images = sum(1 for what, _ in drawn if what == "fill-image")
+    opaque = [not mask for mask in masked] if len(masked) == images else [False] * images
+    covering: list[pymupdf.Rect] = []  # the opaque images drawn after the text being looked at
+    hidden: list[pymupdf.Rect] = []
+    for what, box in reversed(drawn):
+        area = pymupdf.Rect(box)
+        if what == "fill-image":
+            if opaque.pop():
+                covering.append(area)
+            continue
+        under_an_image = sum((area & image).get_area() for image in covering) >= _TEXT_UNDER_AN_IMAGE * area.get_area()
+        if what == "ignore-text" or (what in ("fill-text", "stroke-text") and under_an_image):
+            hidden.append(area * page.rotation_matrix)
+    return hidden
 
 
 def _kept_image(page: pymupdf.Page) -> KeptImage:
@@ -131,7 +189,7 @@ def _is_scan(inked: npt.NDArray[np.bool_], rows: PageRows) -> bool:
         top, bottom, left, right = (int(edge * _DRAWN_ZOOM) for edge in (image.top, image.bottom, image.x0, image.x1))
         pictured[top : bottom + 1, left : right + 1] = True
     ink = _body(inked)
-    return bool(ink.any()) and (ink & _body(pictured)).sum() >= _SCAN_INK_IN_IMAGES * ink.sum()
+    return bool((ink & _body(pictured)).sum() >= _SCAN_INK_IN_IMAGES * ink.sum())
 
 
 def _body(pixels: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
