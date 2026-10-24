@@ -88,6 +88,7 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
 - A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
+- A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` or `degraded/` differ from what the generator makes.
 
