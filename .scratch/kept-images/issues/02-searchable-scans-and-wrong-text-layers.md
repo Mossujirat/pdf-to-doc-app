@@ -23,7 +23,7 @@ A page whose visible text lies over a background image stays a text page. Withou
 - [ ] A page becomes a kept page when three things hold:
   - today's rule makes it a text page;
   - its text is hidden;
-  - its images together cover most of its body.
+  - most of what its body shows outside its text lies in its images, the measure ticket 01 uses for scans.
 - [ ] In the Markdown, its hidden text follows the placeholder. Page furniture is removed, and no headings are made: the font sizes of hidden text are whatever the scanner's software set.
 - [ ] A page whose visible text lies over a background image, such as a letterhead, stays a text page. Its image is left out as today.
 

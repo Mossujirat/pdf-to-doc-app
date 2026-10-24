@@ -32,8 +32,9 @@ class Summary:
 
     def headline(self, uncertain_marked_as: str | None = None) -> str:
         """One Thai sentence for people: how many pages, how each was read, which were read with
-        OCR, how many placeholders of each kind stand in for what was not transcribed, and how
-        much text is uncertain and where. `uncertain_marked_as` says how an output marks it."""
+        OCR, which were kept as images if any were, how many placeholders of each kind stand in for
+        what was not transcribed, and how much text is uncertain and where. `uncertain_marked_as`
+        says how an output marks it."""
         sentence = (
             f"{len(self.pages)} หน้า: "
             f"อ่านจากข้อความในไฟล์ {self.count('text')} หน้า, "
@@ -46,6 +47,8 @@ class Summary:
         untrusted = [page.number for page in self.pages if page.untrusted_text_layer]
         if untrusted:
             sentence += f" (หน้า {_page_ranges(untrusted)} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงอ่านด้วย OCR)"
+        if kept := [page.number for page in self.pages if page.kind == "kept"]:
+            sentence += f", เก็บเป็นภาพ {len(kept)} หน้า ได้แก่หน้า {_page_ranges(kept)}"
         counts = [(Placeholder(kind).name, self.placeholder_count(kind)) for kind in get_args(PlaceholderKind)]
         if any(count for _, count in counts):
             sentence += " ส่วนที่ไม่ได้ถอดเป็นข้อความ: " + ", ".join(f"{name} {count} จุด" for name, count in counts if count)
@@ -76,7 +79,8 @@ def summarize(document: Document) -> Summary:
                 page.kind,
                 page.engine,
                 page.untrusted_text_layer,
-                tuple(block.kind for block in page.blocks if isinstance(block, Placeholder)),
+                # A kept page's placeholder is counted as the page kind it stands for.
+                tuple(block.kind for block in page.blocks if isinstance(block, Placeholder) and block.kind != "scan"),
                 sum(len(uncertain_text(block)) for block in page.blocks),
             )
             for page in document.pages

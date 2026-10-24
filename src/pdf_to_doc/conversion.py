@@ -43,6 +43,7 @@ def convert(
     password: str | None = None,
     ocr: OcrEngine | None = None,
     progress: ProgressCallback | None = None,
+    keep_images: bool = False,
 ) -> ConversionResult:
     """Convert a source file's bytes into the output format `to`, or into each format in a set of them.
     Every output is rendered from one reading of the source file, and shares one summary. A DOCX
@@ -50,6 +51,7 @@ def convert(
 
     `password` opens a PDF that needs one. `ocr` reads OCR pages; PaddleOCR does
     by default, and raises `ModelsMissing` if its models are not installed.
+    `keep_images` keeps each scan of a PDF as an image of the page instead of reading it with OCR.
     `progress` hears how far the conversion has got: first `Opened`, once the page
     count is known, then each stage in order. A source file that cannot or will not
     be converted raises an `IntakeError`, whose type says why, before any report.
@@ -71,7 +73,7 @@ def convert(
         with open_pdf(source, password) as pdf:
             report(Opened(source_type="pdf", pages=pdf.page_count))
             report(Progress(stage="reading"))
-            document = read_pdf(pdf, (lambda: ocr) if ocr else default_engine, report)
+            document = read_pdf(pdf, (lambda: ocr) if ocr else default_engine, report, keep_images=keep_images)
     report(Progress(stage="writing"))
     summary = summarize(document)
     outputs = {name: _render(document, summary, name) for name in get_args(OutputFormat) if name in formats}

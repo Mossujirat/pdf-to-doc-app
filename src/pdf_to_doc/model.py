@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from typing import Literal, assert_never
 
-PageKind = Literal["text", "ocr"]
+# How a page was read: from its text layer, with OCR, or not at all, as a scan kept as an image.
+PageKind = Literal["text", "ocr", "kept"]
 # Markdown and Word both have six heading levels.
 DEEPEST_HEADING = 6
 # Where a stretch of a block's text starts and ends, as positions in its text.
@@ -48,14 +49,25 @@ class Table:
         return any(cell.rowspan > 1 or cell.colspan > 1 for row in self.rows for cell in row)
 
 
-PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table"]
+PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table", "scan"]
+
+
+@dataclass(frozen=True)
+class KeptImage:
+    """An image an output shows as it is, when images are kept: compressed, never raw pixels."""
+
+    data: bytes  # a JPEG
+    width: float  # the size it is shown at, in points
+    height: float
 
 
 @dataclass(frozen=True)
 class Placeholder:
-    """Content the converter deliberately does not transcribe, shown as a short Thai label."""
+    """Content the converter deliberately does not transcribe, shown as a short Thai label.
+    With images kept, it carries the image that DOCX shows in its place: a scan's whole page."""
 
     kind: PlaceholderKind
+    image: KeptImage | None = None
 
     @property
     def name(self) -> str:
@@ -70,6 +82,8 @@ class Placeholder:
                 return "ลายมือ"
             case "incomplete_table":
                 return "ตารางอาจไม่สมบูรณ์"
+            case "scan":
+                return "หน้าสแกน"
             case _:
                 assert_never(self.kind)
 
@@ -109,6 +123,12 @@ class Page:
     engine: str | None = None  # the OCR engine that read an OCR page
     # Read with OCR because its text layer was there but could not be trusted.
     untrusted_text_layer: bool = False
+
+    @property
+    def kept_image(self) -> KeptImage | None:
+        """A kept page's image of itself, which its scan placeholder carries; None on any other page."""
+        scans = (block for block in self.blocks if isinstance(block, Placeholder) and block.kind == "scan")
+        return next((block.image for block in scans), None)
 
 
 @dataclass(frozen=True)

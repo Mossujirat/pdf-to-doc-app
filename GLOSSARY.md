@@ -73,7 +73,7 @@ A page whose body is a picture of a printed or written page, such as a page from
 _Avoid_: image page
 
 **Kept page**:
-A scan that the DOCX output shows as an image of the whole page, because images are kept. It is not read with OCR: the Markdown output gives a placeholder in its place, followed by any trustworthy text the source file holds on it.
+A scan that the DOCX output shows as an image of the whole page, because images are kept, or any other page that would be read with OCR and shows nothing but pictures, such as a logo alone on a page. It is not read with OCR: the Markdown output gives a placeholder in its place, followed by any trustworthy text the source file holds on it.
 _Avoid_: image page
 
 **Sideways page**:

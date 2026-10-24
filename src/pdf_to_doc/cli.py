@@ -26,6 +26,8 @@ from pdf_to_doc.refusals import refusal_message
 
 _MB = 1024 * 1024
 _LINE_START = chr(13)  # a carriage return: the next print overwrites the line
+# What the line says before the count, for each stage that counts its pages.
+_COUNTED = {"images": "เก็บภาพหน้า", "ocr": "OCR หน้า"}
 
 _EXIT_CODES = f"""\
 exit code:
@@ -58,6 +60,12 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
         "-o", "--output", type=Path, help="ไฟล์ผลลัพธ์ (ค่าเริ่มต้น: ชื่อเดียวกับต้นฉบับ นามสกุล .md หรือ .docx)"
     )
     parser.add_argument("--password", help="รหัสผ่านสำหรับเปิดไฟล์ PDF ที่ล็อกไว้")
+    parser.add_argument(
+        "--keep-images",
+        action="store_true",
+        help="เก็บหน้าสแกนและรูปไว้เป็นภาพใน DOCX แทนการอ่านด้วย OCR"
+        " ส่วน Markdown ได้ป้าย [หน้าสแกน] แทนหน้าสแกน (ค่าเริ่มต้น: อ่านหน้าสแกนด้วย OCR)",
+    )
     args = parser.parse_args(argv)
 
     thai_safe_output()
@@ -69,7 +77,14 @@ def main(argv: list[str] | None = None, *, ocr: OcrEngine | None = None) -> int:
     except OSError as error:
         parser.error(f"อ่านไฟล์ {args.source} ไม่ได้ ({error.strerror})")
     try:
-        result = convert(source, to=output_format, password=args.password, ocr=ocr, progress=_show_progress)
+        result = convert(
+            source,
+            to=output_format,
+            password=args.password,
+            ocr=ocr,
+            progress=_show_progress,
+            keep_images=args.keep_images,
+        )
     except IntakeError as error:
         print(f"{args.source}: {_refusal(error)}", file=sys.stderr)
         return REFUSAL_EXIT_CODES[type(error)]
@@ -92,11 +107,13 @@ def _format_named_by(output: Path | None) -> OutputFormat:
 
 
 def _show_progress(update: Opened | Progress) -> None:
-    """One line per OCR page; on a terminal, each page overwrites the last. Other reports pass unseen."""
+    """One line per page image and per OCR page; on a terminal, each page overwrites the last.
+    Other reports pass unseen."""
     match update:
-        case Progress(stage="ocr", current=int(current), total=int(total)):
+        case Progress(stage="images" | "ocr" as stage, current=int(current), total=int(total)):
             overwrite = sys.stderr.isatty() and current < total
-            print(f"OCR หน้า {current}/{total}", end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
+            line = f"{_COUNTED[stage]} {current}/{total}"
+            print(line, end=_LINE_START if overwrite else None, file=sys.stderr, flush=True)
 
 
 def _refusal(error: IntakeError) -> str:

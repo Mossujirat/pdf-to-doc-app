@@ -32,6 +32,7 @@ uv run pdf-to-doc-models                         # once: fetch the OCR models (a
 uv run pdf-to-doc document.pdf -o document.md
 uv run pdf-to-doc document.pdf --to docx         # writes document.docx; -o document.docx does the same
 uv run pdf-to-doc locked.pdf --password "..."   # a PDF that needs a password to open
+uv run pdf-to-doc scans.pdf --to docx --keep-images  # keep scans as images of the page instead of OCR
 ```
 
 Each page is read on its own: from its text layer, or with OCR when the page is a scan, its text is drawn as shapes, or its text layer is wrong (such as "กำร" where the page shows "การ"). Legacy Thai fonts' Private Use Area characters are mapped back to Thai. Images on text pages become short Thai placeholders where they sit: `[รูปภาพ]`, or `[ลายเซ็น]` and `[ตราประทับ]` where the image is clearly a signature on its signature line or a round coloured stamp. Text read with OCR that the converter cannot confirm is marked as uncertain: a word the dictionary does not hold, which a misread mark or letter usually leaves, or a stretch the OCR engine read with low confidence. Markdown wraps it in `<mark>`, and DOCX highlights it yellow. A misread that is itself a word is not caught. The CLI shows progress while OCR runs, and the summary at the top of the output names the OCR pages, counts the placeholders, and counts the uncertain text and the pages it is on. The models live in `~/.cache/pdf-to-doc/models`, or wherever `PDF_TO_DOC_MODELS` points; nothing is downloaded while converting.
@@ -39,6 +40,8 @@ Each page is read on its own: from its text layer, or with OCR when the page is 
 A DOCX source is read from the structure Word saved: headings from heading styles, lists with the numbers Word draws (Thai digits and letters too), tables with merged cells, and pictures as placeholders. Its pages are where Word last laid them out, as Word records on saving; a file without those records breaks pages where breaks were typed. Text deleted with tracked changes on is left out.
 
 The DOCX output keeps the original's structure, not its page layout: headings in Word's heading styles, lists, and tables with real merged cells. Each page of the original starts a new page. Text is set in TH Sarabun New 16 pt, with Thai marked as complex script so that Word breaks its lines between words; the font must be installed for Word to show it.
+
+With `--keep-images`, scans are not read with OCR. In the DOCX, each scan is the page as it looks, highlights and notes included: a 150 dpi image filling a Word page of the original's size and orientation from edge to edge. Word cannot search the text of such a page. In the Markdown, each scan becomes `[หน้าสแกน]`, followed by any text the file holds on it, such as a typed note. Pages whose text is drawn as shapes, and pages whose text layer cannot be trusted, are still read with OCR, and a file of scans alone needs no OCR models. The summary names the pages kept as images.
 
 The source type is read from the file's content, not its name. These files are refused with a Thai message and an exit code of their own, listed by `pdf-to-doc --help`:
 

@@ -17,11 +17,16 @@ A sideways scan prints its lines on a landscape sheet set a quarter turn on the 
 A `Rotated` page is stored on its side and turned upright by the page's rotation,
 as some scanners save pages. It shows the same as the page it holds.
 
+A `Drawn` page draws its lines as shapes, with no text layer, as some PDF printers draw text.
+
+A `Pasted` page, of a size of its own, has a plain grey scan pasted over part or all of it.
+
 The same inputs always give the same bytes, so generated files can be committed.
 
 For intake tests, `protected` encrypts a built PDF, which gives different bytes on
 every run, and `grown_to` pads one to an exact size. `remapped` rewrites a built
-PDF's fonts so that its text layer reports some characters as others.
+PDF's fonts so that its text layer reports some characters as others. `highlighted`
+marks a passage of a built PDF's first page, as a reader does in a PDF editor.
 """
 
 import re
@@ -113,6 +118,7 @@ class Scan:
     # A sideways page: the lines are laid out on a landscape sheet, set on the page so
     # that a reader turns the page this many degrees clockwise to read them.
     sideways: Literal[0, 90, 270] = 0
+    landscape: bool = False  # the page itself is A4 on its side, its lines laid out across it
 
 
 @dataclass(frozen=True)
@@ -127,14 +133,38 @@ class Rotated:
     rotation: Literal[90, 270]
 
 
-def pdf(*pages: Sequence[Line] | Scan | Rotated, font_file: Path = SARABUN) -> bytes:
+@dataclass(frozen=True)
+class Drawn:
+    lines: Sequence[Line]
+
+
+@dataclass(frozen=True)
+class Pasted:
+    """A page `width` by `height` points: a Word page with a scan pasted in, a page larger
+    than Word takes, or a logo alone on a page."""
+
+    width: float
+    height: float
+    box: tuple[float, float, float, float] | None = None  # where the scan sits; all of the page if None
+
+
+def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Path = SARABUN) -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({})
     for content in pages:
+        if isinstance(content, Drawn):
+            _draw_as_shapes(doc.new_page(), content.lines, font_file)
+            continue
+        if isinstance(content, Pasted):
+            pasted = doc.new_page(width=content.width, height=content.height)
+            pasted.insert_image(pymupdf.Rect(content.box) if content.box else pasted.rect, pixmap=_grey_scan())
+            continue
         if isinstance(content, Rotated):
-            page = doc.new_page(width=842, height=595)  # A4 on its side
+            page = _on_its_side(doc)
             page.set_rotation(content.rotation)
             content = content.page
+        elif isinstance(content, Scan) and content.landscape:
+            page = _on_its_side(doc)
         else:
             page = doc.new_page()
         if isinstance(content, Scan):
@@ -176,11 +206,34 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
         y += LINE_HEIGHT
 
 
+def _on_its_side(doc: pymupdf.Document) -> pymupdf.Page:
+    """A new page of A4 on its side."""
+    page: pymupdf.Page = doc.new_page(width=842, height=595)
+    return page
+
+
+def _grey_scan() -> pymupdf.Pixmap:
+    """A scan of nothing but grey paper, which counts as ink, as scanned paper does."""
+    grey = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 200, 100), False)
+    grey.set_rect(grey.irect, (200,))
+    return grey
+
+
+def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
+    """The lines drawn as text on a page of their own, turned into paths by way of SVG, and placed on `page`."""
+    with pymupdf.open() as paper:
+        _draw_lines(paper.new_page(), lines, font_file)
+        svg = paper[0].get_svg_image(text_as_path=True)
+    with pymupdf.open(stream=svg.encode("utf-8"), filetype="svg") as drawing:
+        with pymupdf.open("pdf", drawing.convert_to_pdf()) as shapes:
+            page.show_pdf_page(page.rect, shapes, 0)
+
+
 def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
     """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy,
     turned the other way from how a reader turns a sideways page, and turned back by the page's rotation."""
     with pymupdf.open() as paper:
-        _draw_lines(paper.new_page(width=842, height=595) if scan.sideways else paper.new_page(), scan.lines, font_file)
+        _draw_lines(_on_its_side(paper) if scan.sideways or scan.landscape else paper.new_page(), scan.lines, font_file)
         zoom = scan.dpi / 72
         turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - scan.sideways - rotation)
         pix = paper[0].get_pixmap(matrix=turn, colorspace=pymupdf.csGRAY)
@@ -251,6 +304,18 @@ def remapped(source: bytes, mapping: dict[str, str]) -> bytes:
         glyphs = _to_unicode(doc.xref_stream(cmap).decode("latin-1"))
         changed = {glyph: "".join(mapping.get(char, char) for char in text) for glyph, text in glyphs.items()}
         doc.update_stream(cmap, _cmap(changed).encode("latin-1"))
+    data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
+    doc.close()
+    return data
+
+
+def highlighted(source: bytes, box: tuple[float, float, float, float]) -> bytes:
+    """The same PDF, with a box over its first page filled yellow, as a reader marks a
+    passage in a PDF editor. The mark is an annotation, not part of the page."""
+    doc = pymupdf.open(stream=source, filetype="pdf")
+    mark = doc[0].add_rect_annot(pymupdf.Rect(box))
+    mark.set_colors(stroke=(1, 1, 0), fill=(1, 1, 0))
+    mark.update()
     data: bytes = doc.tobytes(garbage=3, deflate=True, no_new_id=True)
     doc.close()
     return data

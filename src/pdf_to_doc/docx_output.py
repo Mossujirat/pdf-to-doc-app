@@ -1,16 +1,21 @@
-"""Renders the document model as a Word file for editing, keeping its structure rather than its page layout."""
+"""Renders the document model as a Word file for editing, keeping its structure rather than its page
+layout. A page kept as an image is the exception: a Word page of its own, the image filling it."""
 
 import io
 import re
 from collections.abc import Iterator
+from copy import deepcopy
 
 import docx
 from docx.document import Document as WordDocument
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
+from docx.oxml.section import CT_SectPr
+from docx.oxml.text.paragraph import CT_P
 from docx.oxml.xmlchemy import BaseOxmlElement
-from docx.shared import Cm, Mm, Pt
+from docx.shared import Cm, Inches, Mm, Pt
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph as WordParagraph
 
@@ -19,6 +24,7 @@ from pdf_to_doc.model import (
     Block,
     Document,
     Heading,
+    KeptImage,
     ListItem,
     Span,
     Table,
@@ -36,6 +42,8 @@ _BODY_SIZE = 16  # points
 _HEADING_SIZES = {1: 20, 2: 18}
 # The space the template leaves after each paragraph, kept below a table too.
 _SPACE_AFTER_TABLE = Pt(10)
+# Word takes no page larger than this either way.
+_LARGEST_PAGE = Inches(22)
 
 # A run of English: from a letter or digit to a letter or digit, holding ASCII spaces
 # and punctuation, typographic apostrophes and the en dash in between.
@@ -54,10 +62,22 @@ def render_docx(document: Document, summary: Summary) -> bytes:
     for level in range(1, DEEPEST_HEADING + 1):
         _set_heading_font(word.styles[f"Heading {level}"].element, _HEADING_SIZES.get(level, _BODY_SIZE))
     unmarked_list_id = _add_unmarked_list(word.part.numbering_part.element)
+    a4 = deepcopy(section._sectPr)  # the section properties of every page not kept as an image
     summary_paragraph = word.add_paragraph()
     _add_text(summary_paragraph, "สรุปการแปลง", bold=True)
     _add_text(summary_paragraph, f" {summary.headline(uncertain_marked_as='ไฮไลต์สีเหลือง')}")
+    writing = a4  # the properties of the section being written
     for index, page in enumerate(document.pages):
+        kept = page.kept_image
+        # A kept page is a section of its own, and so are the other pages after it, back on A4.
+        # A section starts a new page, so its first paragraph needs no page break.
+        new_section = kept is not None or writing is not a4
+        if new_section:
+            _end_section(word, writing)
+        writing = a4 if kept is None else _kept_page_section(a4, kept)
+        if kept is not None:
+            _add_page_image(word, kept, writing)
+            continue
         first: WordParagraph | None = None
         previous: Block | None = None
         for block in page.blocks:
@@ -69,15 +89,52 @@ def render_docx(document: Document, summary: Summary) -> bytes:
                 # Headings have space above them already; other text would sit on the table's bottom line.
                 paragraph.paragraph_format.space_before = _SPACE_AFTER_TABLE
             previous = block
-        if index > 0:
+        if new_section and first is None:
+            word.add_paragraph()  # an empty page, so that the section holds something
+        elif index > 0 and not new_section:
             # Each page of the original starts a new page, at its own first paragraph. A page
             # break in a paragraph of its own falls onto a page of its own when the page before
             # is full, and leaves that page blank. An empty page is an empty paragraph.
             (first or word.add_paragraph()).paragraph_format.page_break_before = True
+    if writing is not a4:
+        # The last section's properties are the body's own.
+        section._sectPr.getparent().replace(section._sectPr, writing)
     # Written to memory: a conversion leaves no file behind.
     buffer = io.BytesIO()
     word.save(buffer)
     return buffer.getvalue()
+
+
+def _end_section(word: WordDocument, properties: CT_SectPr) -> None:
+    """End the section written so far, as Word does: its properties go in its last paragraph. A
+    section that ends with a table gets an empty paragraph after it, to carry them."""
+    body = word.element.body
+    last = body[-2]  # after it come the properties of the body's last section
+    if not isinstance(last, CT_P):
+        last = word.add_paragraph()._p
+    last.set_sectPr(deepcopy(properties))
+
+
+def _kept_page_section(a4: CT_SectPr, image: KeptImage) -> CT_SectPr:
+    """The section properties of a kept page, from those of the other pages: its own size and
+    orientation, with no margins. A page larger than Word takes is scaled down to fit, keeping its shape."""
+    properties = deepcopy(a4)
+    scale = min(1.0, _LARGEST_PAGE / max(Pt(image.width), Pt(image.height)))
+    properties.page_width, properties.page_height = Pt(image.width * scale), Pt(image.height * scale)
+    properties.orientation = WD_ORIENT.LANDSCAPE if image.width > image.height else WD_ORIENT.PORTRAIT
+    for margin in ("top_margin", "right_margin", "bottom_margin", "left_margin", "header", "footer", "gutter"):
+        setattr(properties, margin, 0)
+    return properties
+
+
+def _add_page_image(word: WordDocument, image: KeptImage, properties: CT_SectPr) -> None:
+    """The image of a kept page, filling the page its section `properties` give. Its paragraph has
+    no space around it, so that nothing is left over for a page of its own."""
+    paragraph = word.add_paragraph()
+    paragraph.paragraph_format.space_before = paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.line_spacing = 1.0
+    # As large as the page itself, which Word sizes in whole twentieths of a point.
+    paragraph.add_run().add_picture(io.BytesIO(image.data), width=properties.page_width, height=properties.page_height)
 
 
 def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordParagraph:

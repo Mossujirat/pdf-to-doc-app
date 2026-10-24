@@ -100,8 +100,10 @@ There is no option for both images and OCR text. The command line takes `--keep-
 
 The converter first reads each page as it does today: the text layer's rows, the text-layer check, and the test for whether a page needs OCR. With kept images on, a page is a **kept page** when it is a scan:
 
-- **A scan.** The page needs OCR, by today's test or because its text layer cannot be trusted, and its images together cover most of the page's body, outside the edge bands.
-  - A page whose text is drawn as shapes has no such picture, so it is still read with OCR.
+- **A scan.** The page needs OCR, by today's test or because its text layer cannot be trusted, and most of what its body shows outside its text, outside the edge bands, lies in its images.
+  - A page whose text is drawn as shapes shows its text outside any image, so it is still read with OCR.
+  - A scan pasted at half the size of a Word page is still a scan: what the page shows lies in it, though it covers half the body. (Changed at ticket 01 from "its images together cover most of the page's body".)
+  - A page that shows nothing but a picture, such as a logo alone, is kept too (decided with the user on 2026-10-24). Its image is all there is to keep, and OCR would read the picture as nonsense.
   - The exact share is the implementer's. Set it on synthetic pages, then check it on the samples during /implement if the user allows.
 - **A searchable scan.** By today's rule it is a text page, read from its text layer, but that text is hidden: drawn before an image that covers it, or drawn invisible.
   - PyMuPDF's bounding-box log records what the page draws, in order. It shows text drawn under an image (`fill-text` before `fill-image`) and invisible text (`ignore-text`). Checked on synthetic pages with PyMuPDF 1.28.2.
