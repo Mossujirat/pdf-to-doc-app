@@ -6,7 +6,7 @@
 
 **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Seen on:** a scanned contract supplement among the local samples in `docs/example_pdf/`. It was converted on 2026-10-22 and 2026-10-23 with the user's permission, while grilling the kept-images feature, and every page was checked against its image. The same fault hits any text set side by side:
 - six two-column pages of standard terms and conditions;
@@ -98,7 +98,7 @@ A 110-page Thai contract with scans pasted into Word pages shows it again, in th
 - **Summary:** it does not say which pages were split.
 
 **To do**
-- [ ] Fast tests with `FakeEngine`, with `Styled` lines placed in columns:
+- [x] Fast tests with `FakeEngine`, with `Styled` lines placed in columns:
   - A Thai and an English two-column page each read column by column.
   - These must not split:
     - label–value lists: at a tab stop, with colons, long labels with short values, and a block inside body text;
@@ -109,11 +109,11 @@ A 110-page Thai contract with scans pasted into Word pages shows it again, in th
     - a single-column page and a sideways page.
   - A text-layer row over a column lands in that column. A stamped header and a page counter are still removed.
   - A new column starts a new paragraph, and a new list item.
-- [ ] Confirm with PaddleOCR in `pytest -m ocr`: a two-column scan reads in order, and a label–value scan reads row by row.
-- [ ] A synthetic document `two-column-scans` in the corpus, with reference text: a Thai two-column page, an English terms page, and a label–value page as a control.
-- [ ] Check content, not only CER. On every page that splits, each column must be read whole, and no label separated from its value.
-- [ ] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
-- [ ] Local samples, allowed by the user on 2026-10-24 for /implement only. Convert all three files on this machine, to set the thresholds on real pages and as the final check.
+- [x] Confirm with PaddleOCR in `pytest -m ocr`: a two-column scan reads in order, and a label–value scan reads row by row.
+- [x] A synthetic document `two-column-scans` in the corpus, with reference text: a Thai two-column page, an English terms page, and a label–value page as a control.
+- [x] Check content, not only CER. On every page that splits, each column must be read whole, and no label separated from its value.
+- [x] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
+- [x] Local samples, allowed by the user on 2026-10-24 for /implement only. Convert all three files on this machine, to set the thresholds on real pages and as the final check.
   - Nothing of them is committed or put in a ticket or test, and the output is deleted after.
   - The supplement's six two-column pages split and read right. Measure their gutters for the narrow-gutter decision.
   - Every other OCR page of the three files reads as today. Check any other page that splits against its image.
@@ -123,3 +123,85 @@ A 110-page Thai contract with scans pasted into Word pages shows it again, in th
 **Also found while measuring, outside this ticket**
 - OCR misreads the dotted lines of signature blocks. A synthetic signing page read in the right order still scored CER about 0.10.
 - A stray "-" box made a line of a two-column page start a list item, with today's code as well.
+
+## Comments
+
+**2026-10-24, implemented on branch `fix/two-column-scans`**
+
+- **What changed**
+  - `ocr._ocr_page` reads an OCR page in parts (`_reading_parts`): bands down the page, and where a band is set in columns, each column to its end before the one to its right. A page without columns is one part and reads exactly as before.
+  - The cut works on the engine's boxes, after any turn, in median box heights: a band at 0.8, a gutter at 0.5.
+  - Text-layer rows over the scan take part in the cut as boxes of their own, so that a note lands in its column.
+  - A band is read in columns only when every column:
+    - is body text: lines of 24 characters or more at the median, spaces left out, and fewer than half its characters digits;
+    - lines up: most of its lines start at one place, or centre on one, within half a box height.
+  - A part of a single line, such as initials in the margin, joins the column beside it, across the narrower gutter.
+  - A band goes with the columns of body text above it only when it is more of them:
+    - body text set in the same columns, their gutters lining up, as when two columns' paragraphs end on the same line;
+    - or body text under the one column that reaches further down than the others.
+    - Labels and values, or signatures, under the columns are read row by row after them.
+  - `layout.Row.starts_block`: the first row of each part starts a paragraph or list item, as the first row of a page does.
+- **Changed from the triage decisions**
+  - **No guard on column width.** A column of 24-character lines is never narrow. The digits guard stays, for tables of amounts whose numbers sit close together.
+  - **Fill was left out.** How far lines fill their column did not separate the row layouts (0.84 at most) from body text (0.86 at least).
+  - **Two rules came from the final check on the samples, below:**
+    - **A column that carries on below the other.** On the last page of the supplement's terms, the right column ends mid-page. The band cut split the left column in two, read on either side of the right column.
+    - **Lines that line up,** decided with the user on 2026-10-24. On the 110-page contract, the holes a diagonal watermark leaves in three lines lined up and were taken for a gutter: the tail of one numbered item moved below the start of the next.
+      - Real columns' lines started within 0.3 box heights of each other, and two centred captions' centres matched exactly.
+      - On either side of the watermark's holes, the lines started up to 5.5 box heights apart, and centred up to 5.2 apart.
+- **Measured on the local samples.** OCR read each of the three files once. The boxes it found were then put through the code on `main` and on this branch.
+  - **Pages that changed:** 7 of the 130 OCR pages.
+    - The supplement's six two-column pages.
+    - On the 110-page contract, one page with two figure captions side by side.
+  - **Each changed page was checked against its image.** Every column reads whole and in order, and no letter or digit was lost or added. No other OCR page changed.
+  - **Time:**
+    - On the seven pages read in columns, finding columns took 0.7–5.3 ms, against 5.3–12.3 s to read the page in that run.
+    - Over every OCR page it took 0.2–0.3 ms at the median.
+  - **Gutters:**
+    - The supplement's columns left 8–9 pt between their boxes, 0.8–1.0 box heights, above the 0.5 needed. They split on boxes alone, so the image step was not added.
+    - The two captions left 44 pt.
+    - On synthetic pages, Thai gutters up to 16 pt and English ones up to 12 pt still read as before.
+  - **After the code review,** OCR read the three files again. The fixed code read every page exactly as the version checked by eye, and changed the same seven pages.
+- **Synthetic pages.** The sub-agent's recorded PaddleOCR boxes were replayed through this branch.
+
+  | Page | Before | After |
+  | --- | --- | --- |
+  | Thai two-column page | 0.742 | 0.014 |
+  | English two-column terms | 0.705 | 0.001 |
+  | The Thai page with a stamped header and page counter | 0.768 | 0.044 |
+  | Captions side by side | 0.137 | 0.018 |
+
+  - Every label–value layout, form, table, sideways page, single-column page, side panel, signature page and narrow gutter reads exactly as before.
+  - **Corpus `two-column-scans`:** CER 0.0114 on the Thai page, 0.0014 on the English page, and 0.0194 on the cover sheet, which is read row by row.
+- **Tests**
+  - **`test_ocr_pages.py`, with `FakeEngine`:**
+    - Thai and English two-column pages;
+    - columns whose paragraphs end on the same line;
+    - a column that carries on below the other;
+    - a note under a column;
+    - a stamped header and page counter;
+    - initials in the margin;
+    - a numbered clause running across columns;
+    - eight label–value layouts and three short-line layouts read row by row;
+    - labels and values, and signatures, under two columns;
+    - a watermark's holes;
+    - a line with a wide gap.
+  - **`test_corpus.py`:** the `two-column-scans` pages scored against their references with PaddleOCR.
+  - **Checked by breaking the code on purpose.** Each mechanism has a test that fails without it:
+    - the cut;
+    - the line length;
+    - the digits;
+    - the lining up;
+    - joining single-line parts;
+    - bands with lined-up gutters;
+    - a column carrying on;
+    - checking that a band is body text before it goes with the columns;
+    - text-layer rows in the cut;
+    - `starts_block`.
+- **Code review (two axes) found two faults, both fixed:**
+  - Rows under two columns whose gaps lay under the gutter, such as labels and values or signature blocks, were taken into the columns, so labels were separated from their values.
+  - Any band under the longer column was taken into it, a signature or a date line included.
+  - A band now goes with the columns only when it is body text itself.
+- **Left as they are**
+  - Body text under the longer column, after the other column has ended, is read at the end of that column, such as a closing paragraph that runs across the page but stops short of the gutter. There is none in the samples.
+  - `layout.Row.in_columns` means parts of a row set apart at tab stops, which the glossary's Column is not. Renaming it reaches beyond this ticket.

@@ -92,3 +92,14 @@ def test_a_note_typed_over_a_rotated_scan_comes_out_once_and_no_line_is_lost() -
         reference = (SYNTHETIC / "rotated-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
         assert page.count(note) == 1, f"page {number}"
         assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
+
+
+@pytest.mark.ocr
+def test_two_columns_are_read_one_after_the_other_and_a_cover_sheet_row_by_row() -> None:
+    # Pages 1 and 2 are set in two columns; page 3 sets labels apart from their values.
+    # Read across the columns, or labels apart from their values, such a page is off by a third or more.
+    markdown = convert((SYNTHETIC / "two-column-scans.pdf").read_bytes()).output.decode("utf-8")
+
+    for number, page in enumerate(markdown_page_texts(markdown), start=1):
+        reference = (SYNTHETIC / "two-column-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
+        assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"

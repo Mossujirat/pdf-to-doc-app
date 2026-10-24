@@ -90,6 +90,7 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.
 - A sideways page has its content printed on a landscape sheet set a quarter turn on the page, so a reader turns the page to read it: `sideways-scans` holds a price schedule turned each way.
+- `two-column-scans` holds pages set in two columns of body text, read one column after the other: a Thai page and an English page of terms. Its third page is a cover sheet whose labels are set apart from their values, read row by row.
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` or `degraded/` differ from what the generator makes.
 

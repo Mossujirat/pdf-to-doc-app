@@ -13,7 +13,22 @@ from pathlib import Path
 from typing import Literal
 
 import word_builder as word
-from pdf_builder import NIRAMIT, SARABUN, Cell, Grid, Line, Picture, Rotated, Scan, Spaced, Styled, pdf, remapped
+from pdf_builder import (
+    LINE_HEIGHT,
+    NIRAMIT,
+    SARABUN,
+    TOP,
+    Cell,
+    Grid,
+    Line,
+    Picture,
+    Rotated,
+    Scan,
+    Spaced,
+    Styled,
+    pdf,
+    remapped,
+)
 
 from pdf_to_doc.quality import reference_file_name
 
@@ -479,8 +494,134 @@ SIDEWAYS_DOCUMENTS = (
     ),
 )
 
+# Pages set in two columns of body text, each paragraph whole in its column, and a
+# cover sheet whose labels are set apart from their values.
+THAI_COLUMNS_TITLE = "ข้อกำหนดและเงื่อนไขการให้ทุนวิจัย"
+THAI_COLUMNS = (
+    [
+        [
+            "สัญญาฉบับนี้ทำขึ้นระหว่างหน่วยงานผู้",
+            "ให้ทุนกับมหาวิทยาลัยผู้รับทุน เพื่อ",
+            "สนับสนุนโครงการวิจัยตามข้อเสนอที่",
+            "แนบท้ายสัญญา และให้ถือเป็น",
+            "ส่วนหนึ่งของสัญญานี้",
+        ],
+        [
+            "ผู้รับทุนตกลงจะเริ่มดำเนินงานภายใน",
+            "สามสิบวันนับแต่วันลงนาม และ",
+            "ดำเนินงานให้แล้วเสร็จภายในสิบสอง",
+            "เดือน หากไม่อาจดำเนินงานได้",
+            "ตามกำหนดต้องแจ้งเป็นหนังสือ",
+            "ล่วงหน้า",
+        ],
+    ],
+    [
+        [
+            "ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวด งวด",
+            "แรกเมื่อลงนามในสัญญา งวดที่สองเมื่อ",
+            "ได้รับรายงานความก้าวหน้า และงวด",
+            "สุดท้ายเมื่อได้รับรายงานฉบับสมบูรณ์",
+        ],
+        [
+            "ผู้รับทุนต้องใช้เงินทุนตามแผน",
+            "งบประมาณที่ได้รับอนุมัติเท่านั้น และ",
+            "เก็บหลักฐานการจ่ายเงินไว้ให้ผู้ให้ทุน",
+            "ตรวจสอบได้ตลอดระยะเวลาของ",
+            "โครงการ",
+        ],
+    ],
+)
+ENGLISH_COLUMNS_TITLE = "GENERAL TERMS AND CONDITIONS OF PURCHASE"
+ENGLISH_COLUMNS = (
+    [
+        ["1.1 Agreement means these terms and conditions", "together with the purchase order and any schedules", "attached to it."],
+        ["1.2 Supplier means the person or company from", "whom the Buyer purchases the goods or services in", "the order."],
+        ["1.3 Deliverables means all documents, products and", "materials that the Supplier develops as part of the", "services."],
+    ],
+    [
+        ["2.1 The Supplier shall deliver the goods to the", "address stated in the order on the agreed date,", "during normal business hours."],
+        ["2.2 Each delivery shall come with a delivery note", "stating the order number and the type and quantity", "of the goods."],
+        ["2.3 The Buyer shall pay correctly rendered invoices", "within thirty days of receiving them."],
+    ],
+)
+COVER_SHEET_INTRO = "ผู้รับทุนขอยืนยันรายละเอียดของโครงการตามรายการต่อไปนี้"
+COVER_SHEET = [
+    ("ชื่อโครงการ", "การพัฒนาระบบติดตามงานวิจัยแบบออนไลน์"),
+    ("หัวหน้าโครงการ", "นางสาวสมหญิง รักดี"),
+    ("หน่วยงาน", "คณะวิศวกรรมศาสตร์ มหาวิทยาลัยตัวอย่าง"),
+    ("ระยะเวลา", "สิบสองเดือนนับแต่วันลงนามในสัญญา"),
+    ("งบประมาณ", "หนึ่งล้านสองแสนบาทถ้วน"),
+]
+
+
+def column_lines(columns: Sequence[list[list[str]]], xs: Sequence[float], size: float, pitch: float) -> list[Line]:
+    """Each column's paragraphs line under line from the same top, a blank line between them."""
+    lines: list[Line] = []
+    for x, paragraphs in zip(xs, columns, strict=True):
+        slot = 0
+        for paragraph in paragraphs:
+            for text in paragraph:
+                lines.append(Styled(text, size=size, x=x, y=150 + slot * pitch))
+                slot += 1
+            slot += 1
+    return lines
+
+
+TWO_COLUMN_DOCUMENTS = (
+    SyntheticDocument(
+        name="two-column-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        Styled(THAI_COLUMNS_TITLE, size=18, bold=True, y=95, centered=True),
+                        *column_lines(THAI_COLUMNS, xs=(72, 311), size=14, pitch=21),
+                    ],
+                    seed=11,
+                ),
+                reference="\n\n".join(
+                    [THAI_COLUMNS_TITLE, *("".join(paragraph) for column in THAI_COLUMNS for paragraph in column)]
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        Styled(ENGLISH_COLUMNS_TITLE, size=13, bold=True, y=95, centered=True),
+                        *column_lines(ENGLISH_COLUMNS, xs=(72, 306), size=9.5, pitch=12.5),
+                    ],
+                    seed=12,
+                ),
+                reference=f"{ENGLISH_COLUMNS_TITLE}\n\n"
+                + "\n".join(f"- {' '.join(clause)}" for column in ENGLISH_COLUMNS for clause in column),
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        COVER_SHEET_INTRO,
+                        "",
+                        *(
+                            Styled(text, x=x, y=TOP + (2 + row) * LINE_HEIGHT)
+                            for row, (label, value) in enumerate(COVER_SHEET)
+                            for x, text in ((72, label), (230, value))
+                        ),
+                    ],
+                    seed=13,
+                ),
+                reference=f"{COVER_SHEET_INTRO}\n\n" + "\n".join(f"{label} {value}" for label, value in COVER_SHEET),
+            ),
+        ),
+    ),
+)
+
 ALL_DOCUMENTS = (
-    DOCUMENTS + SCANNED_DOCUMENTS + TEXT_LAYER_DOCUMENTS + PLACEHOLDER_DOCUMENTS + ROTATED_DOCUMENTS + SIDEWAYS_DOCUMENTS
+    DOCUMENTS
+    + SCANNED_DOCUMENTS
+    + TEXT_LAYER_DOCUMENTS
+    + PLACEHOLDER_DOCUMENTS
+    + ROTATED_DOCUMENTS
+    + SIDEWAYS_DOCUMENTS
+    + TWO_COLUMN_DOCUMENTS
 )
 
 
