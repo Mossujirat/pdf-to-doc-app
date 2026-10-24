@@ -33,6 +33,9 @@ _Avoid_: image mode, picture mode
 Any place where the output's text differs from what a reader sees in the original: missing, misplaced or substituted vowels and tone marks, spaces inside a word, a word split across lines, wrong reading order, or text that is missing altogether.
 _Avoid_: garbled text, ตัวหนังสือขาด (when used loosely)
 
+**Reading order**:
+The order a reader takes a page's text in: from top to bottom, and where text is set in columns, each column to its end before the column to its right. A table, or a list of labels and their values, is read row by row.
+
 **Uncertain text**:
 Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
 _Avoid_: low-quality text, error
@@ -72,6 +75,10 @@ _Avoid_: image page
 **Sideways page**:
 A page whose content is printed a quarter turn from the page, so a reader turns the page to read it, such as a wide table printed across a tall page. A page that the PDF itself turns upright when it is shown is not a sideways page.
 _Avoid_: rotated page, landscape page
+
+**Column**:
+Text set beside other text on a page, with a clear gap between them, which a reader reads to its end before the text beside it: one of the two columns of a terms-and-conditions page, a panel of addresses beside a letter, or one of several signature blocks side by side. A table's columns are not columns in this sense, nor are labels set apart from their values, as on a form: they are read row by row.
+_Avoid_: text block, side-by-side text
 
 **Picture**:
 An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.

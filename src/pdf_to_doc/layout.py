@@ -88,6 +88,9 @@ class Row:
     # What the row was read from, in reading order: the OCR engine's boxes, and text
     # from the text layer beside them. Empty for a row taken from the text layer alone.
     pieces: tuple[Piece, ...] = ()
+    # The reading order comes to the row from elsewhere on the page, as to the top of a
+    # column: it starts a paragraph or list item, as the first row of a page does.
+    starts_block: bool = False
 
 
 @dataclass(frozen=True)
@@ -389,8 +392,13 @@ def _continues(group: list[Row], row: Row, page: PageRows, right_edge: float, li
     )
     # A row set out in columns is a line of its own, like a row of a table.
     in_columns = previous.in_columns or row.in_columns
-    return same_size and close_below and not indented and not in_columns and not _starts_new_item(
-        row, previous, in_list_item, right_edge
+    return (
+        same_size
+        and close_below
+        and not indented
+        and not in_columns
+        and not row.starts_block
+        and not _starts_new_item(row, previous, in_list_item, right_edge)
     )
 
 
