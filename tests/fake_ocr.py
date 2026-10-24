@@ -1,14 +1,18 @@
-"""A fake OCR engine for tests: it reads each page image as the next lines it was given."""
+"""A fake OCR engine for tests: it reads each page as the next lines it was given, and
+crops and turned images of a page as parts of that page."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from pdf_builder import LINE_HEIGHT, TOP, Styled
 
-from pdf_to_doc.ocr import Language, PageImage, TextBox
+from pdf_to_doc.ocr import Box, Language, PageImage, TextBox, turned_box
 
 # How sure the engine is of a line, unless the line says otherwise.
 CONFIDENT = 0.99
+# How sure it is of text it reads upside down.
+UPSIDE_DOWN = 0.5
 
 
 @dataclass(frozen=True)
@@ -19,37 +23,89 @@ class Unsure:
     confidence: float = 0.5
 
 
+Line = str | Styled | Unsure
+
+
+@dataclass(frozen=True)
+class Sideways:
+    """A sideways page: its lines lie on a landscape sheet, as `pdf_builder` draws a
+    sideways `Scan`, which a reader turns `turn` degrees clockwise to read. Its `shown`
+    lines are printed upright on the page as shown, as a note typed over the scan is.
+    With `blank_crops`, the engine finds no text in a crop of it, as in a box drawn
+    around a scribble."""
+
+    lines: Sequence[Line]
+    turn: Literal[90, 270]
+    shown: Sequence[Line] = ()
+    blank_crops: bool = False
+
+
 class FakeEngine:
     """Lays the lines out as `pdf_builder` draws them, one box per line.
 
     A line is a string, or a `Styled` line with its own size and position; an
     empty string leaves a blank line. Either can be `Unsure`. A box is as tall as
     a real detector draws it, about one and a half times the font size.
+
+    Each image of a page as shown starts the next page. Like PaddleOCR, it reads a
+    line printed sideways as a tall box, which it turns counter-clockwise before
+    reading it: so it reads a sideways page right one way and upside down the other.
+    Any smaller image is a crop of one of a sideways page's lines: read upright, it
+    has the confidence of the least sure of them, and upside down little.
     """
 
     name = "fake"
 
-    def __init__(self, *pages: Sequence[str | Styled | Unsure]) -> None:
+    def __init__(self, *pages: Sequence[Line] | Sideways) -> None:
         self.pages = list(pages)
         self.images: list[PageImage] = []  # every image it was asked to read
 
     def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:
-        lines = self.pages[len(self.images)]
+        shown = [seen for seen in self.images if seen.turn == 0]
+        if image.turn == 0:
+            shown.append(image)
+        page, page_image = self.pages[len(shown) - 1], shown[-1]
         self.images.append(image)
-        scale = image.dpi / 72
-        boxes = []
-        baseline: float = TOP
-        for entry in lines:
-            line, confidence = (entry.line, entry.confidence) if isinstance(entry, Unsure) else (entry, CONFIDENT)
-            styled = line if isinstance(line, Styled) else Styled(line)
-            baseline = styled.y if styled.y is not None else baseline
-            if styled.text:
-                size = styled.size
-                box = (styled.x, baseline - 1.1 * size, styled.x + size / 2 * len(styled.text), baseline + 0.4 * size)
-                x0, y0, x1, y1 = (edge * scale for edge in box)
-                boxes.append(TextBox(styled.text, (x0, y0, x1, y1), confidence))
-            baseline += max(LINE_HEIGHT, styled.size * 1.4) if isinstance(line, Styled) else LINE_HEIGHT
-        return tuple(boxes)
+        # How far the image's text is turned clockwise from upright.
+        off = (image.turn - page.turn) % 360 if isinstance(page, Sideways) else image.turn
+        if {image.width, image.height} != {page_image.width, page_image.height}:
+            if isinstance(page, Sideways) and page.blank_crops:
+                return ()
+            lines = page.lines if isinstance(page, Sideways) else page
+            upright = min((confidence for _, _, confidence in _laid_out(lines, 1)), default=CONFIDENT)
+            return (TextBox("-", (0, 0, image.width, image.height), UPSIDE_DOWN if off else upright),)
+        if isinstance(page, Sideways):
+            return _read(page.lines, off, image) + _read(page.shown, image.turn, image)
+        return _read(page, off, image)
+
+
+def _read(lines: Sequence[Line], off: int, image: PageImage) -> tuple[TextBox, ...]:
+    """The lines as read off an image on which they are turned `off` degrees clockwise
+    from upright. Turned a quarter turn, they stand tall and are turned counter-clockwise
+    to be read, so they read right when turned clockwise."""
+    sheet = (image.height, image.width) if off % 180 else (image.width, image.height)
+    readable = off in (0, 90)
+    return tuple(
+        TextBox(text, turned_box(box, off, *sheet), confidence if readable else UPSIDE_DOWN)
+        for text, box, confidence in _laid_out(lines, image.dpi / 72)
+    )
+
+
+def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float]]:
+    """Each line's text, box in pixels on the upright sheet, and confidence."""
+    boxes = []
+    baseline: float = TOP
+    for entry in lines:
+        line, confidence = (entry.line, entry.confidence) if isinstance(entry, Unsure) else (entry, CONFIDENT)
+        styled = line if isinstance(line, Styled) else Styled(line)
+        baseline = styled.y if styled.y is not None else baseline
+        if styled.text:
+            size = styled.size
+            box = (styled.x, baseline - 1.1 * size, styled.x + size / 2 * len(styled.text), baseline + 0.4 * size)
+            x0, y0, x1, y1 = (edge * scale for edge in box)
+            boxes.append((styled.text, (x0, y0, x1, y1), confidence))
+        baseline += max(LINE_HEIGHT, styled.size * 1.4) if isinstance(line, Styled) else LINE_HEIGHT
+    return boxes
 
 
 class BlankEngine:

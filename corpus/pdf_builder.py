@@ -12,6 +12,7 @@ A page is a list of lines, drawn top to bottom:
 
 A `Scan` page is an image of its lines, as a scanner makes. Its `overlay` lines are
 drawn over the image as text: a stamped header, or the text layer of a scan made searchable.
+A sideways scan prints its lines on a landscape sheet set a quarter turn on the page.
 
 A `Rotated` page is stored on its side and turned upright by the page's rotation,
 as some scanners save pages. It shows the same as the page it holds.
@@ -109,6 +110,9 @@ class Scan:
     angle: float = 0.0  # degrees the paper sat askew
     noise: float = 0.0  # standard deviation of the grain, in grey levels
     seed: int = 0
+    # A sideways page: the lines are laid out on a landscape sheet, set on the page so
+    # that a reader turns the page this many degrees clockwise to read them.
+    sideways: Literal[0, 90, 270] = 0
 
 
 @dataclass(frozen=True)
@@ -174,11 +178,11 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> N
 
 def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
     """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy,
-    and turned back by the page's rotation."""
+    turned the other way from how a reader turns a sideways page, and turned back by the page's rotation."""
     with pymupdf.open() as paper:
-        _draw_lines(paper.new_page(), scan.lines, font_file)
+        _draw_lines(paper.new_page(width=842, height=595) if scan.sideways else paper.new_page(), scan.lines, font_file)
         zoom = scan.dpi / 72
-        turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - rotation)
+        turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - scan.sideways - rotation)
         pix = paper[0].get_pixmap(matrix=turn, colorspace=pymupdf.csGRAY)
     pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
     grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0

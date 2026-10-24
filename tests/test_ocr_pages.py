@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from fake_ocr import FakeEngine
+from fake_ocr import FakeEngine, Sideways, Unsure
 from markdown_reader import page_texts
 from pdf_builder import LINE_HEIGHT, TOP, Rotated, Scan, Styled, pdf
 
@@ -204,3 +204,91 @@ def test_a_note_typed_over_a_rotated_scan_is_read_once_and_the_scan_around_it_is
     assert misread_note.text not in page
     assert [clause for clause in CLAUSES if clause not in page] == []
     assert page.index(CLAUSES[13]) < page.index(note.text) < page.index(CLAUSES[14])
+
+
+# Sideways pages: a reader turns the page to read them, and so does the converter
+
+PRICE_SCHEDULE = [
+    "ตารางราคางานพัฒนาระบบ Price Schedule",
+    "ค่าตอบแทนผู้วิจัย 100,000 บาท",
+    "ค่าวัสดุและอุปกรณ์ 30,000 บาท",
+    "ค่าเดินทางไปประชุม 12,500 บาท",
+    "รวมทั้งสิ้น 142,500 บาท",
+]
+
+
+@pytest.mark.parametrize("turn", [90, 270])
+def test_a_sideways_page_reads_as_the_same_page_upright(turn: Literal[90, 270]) -> None:
+    upright = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=FakeEngine(PRICE_SCHEDULE))
+
+    sideways = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50, sideways=turn)), ocr=FakeEngine(Sideways(PRICE_SCHEDULE, turn)))
+
+    assert markdown_pages(sideways) == markdown_pages(upright)
+    assert [page.kind for page in sideways.summary.pages] == ["ocr"]
+
+
+def page_turns(engine: FakeEngine) -> list[int]:
+    """How far each image of a whole page that the engine read was turned; crops left out."""
+    page = engine.images[0]
+    return [image.turn for image in engine.images if {image.width, image.height} == {page.width, page.height}]
+
+
+def test_an_upright_page_with_a_little_sideways_text_is_not_turned() -> None:
+    # Two column headers set sideways, among lines that run across the page.
+    engine = FakeEngine(Sideways(["เดือนที่ดำเนินการ", "ร้อยละของผลผลิต"], 90, shown=PRICE_SCHEDULE))
+
+    result = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=engine)
+
+    assert page_turns(engine) == [0]
+    assert markdown_pages(result)[0].startswith(PRICE_SCHEDULE[0])
+
+
+def test_a_sideways_page_is_not_turned_the_wrong_way_when_its_box_reads_as_nothing_turned() -> None:
+    # The box read upside down at first; turned, the engine finds nothing in it at all.
+    engine = FakeEngine(Sideways(PRICE_SCHEDULE, 90, blank_crops=True))
+
+    convert(pdf(Scan(PRICE_SCHEDULE, dpi=50, sideways=90)), ocr=engine)
+
+    assert page_turns(engine) == [0]
+
+
+def test_a_sideways_page_that_reads_no_better_turned_is_read_as_it_is() -> None:
+    # Lines the engine cannot make out either way, such as faint handwriting.
+    engine = FakeEngine(Sideways([Unsure(line) for line in PRICE_SCHEDULE], 90))
+
+    convert(pdf(Scan(PRICE_SCHEDULE, dpi=50, sideways=90)), ocr=engine)
+
+    assert page_turns(engine) == [0]
+
+
+@pytest.mark.parametrize(("turn", "x"), [(90, 40), (270, 420)])
+def test_a_note_typed_over_a_sideways_page_comes_out_once_where_it_sits_on_the_page(
+    turn: Literal[90, 270], x: float
+) -> None:
+    # The note is typed upright at the foot of the page as shown, beside the turned table.
+    # Turned with the page, it would lie before the table.
+    note = Styled("หมายเหตุ ตรวจสอบแล้ว", x=x, y=800)
+    misread_note = Styled("หมายเหตุ ตรวจสอบแลว", x=x, y=800)
+    engine = FakeEngine(Sideways(PRICE_SCHEDULE, turn, shown=[misread_note]))
+
+    result = convert(pdf(Scan(PRICE_SCHEDULE, overlay=[note], dpi=50, sideways=turn)), ocr=engine)
+
+    [page] = markdown_pages(result)
+    assert page.count(note.text) == 1
+    assert misread_note.text not in page
+    assert page.index(PRICE_SCHEDULE[-1]) < page.index(note.text)
+
+
+@pytest.mark.parametrize("turn", [90, 270])
+def test_a_header_stamped_over_scans_is_removed_from_a_sideways_page_too(turn: Literal[90, 270]) -> None:
+    stamp = Styled("เอกสารปกปิด ห้ามเผยแพร่ก่อนได้รับอนุญาต", size=14, y=40)
+    body = ["เนื้อหาหน้าแรกของสัญญา"]
+    source = pdf(Scan(body, overlay=[stamp], dpi=50), Scan(PRICE_SCHEDULE, overlay=[stamp], dpi=50, sideways=turn))
+    # The engine reads the stamp in each image too.
+    engine = FakeEngine([stamp, *body], Sideways(PRICE_SCHEDULE, turn, shown=[stamp]))
+
+    first, second = markdown_pages(convert(source, ocr=engine))
+
+    assert first == body[0]
+    assert second.startswith(PRICE_SCHEDULE[0])
+    assert stamp.text not in second
