@@ -3,7 +3,10 @@
 from dataclasses import dataclass
 from typing import get_args
 
+from pdf_to_doc.intake import MAX_OUTPUTS
 from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind, uncertain_text
+
+_MB = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,8 @@ class PageSummary:
 @dataclass(frozen=True)
 class Summary:
     pages: tuple[PageSummary, ...]
+    # The resolution kept images were lowered to, in dots per inch, so that the outputs stay within their limit.
+    images_lowered_to: int | None = None
 
     def count(self, kind: PageKind) -> int:
         return sum(1 for page in self.pages if page.kind == kind)
@@ -32,8 +37,10 @@ class Summary:
 
     def headline(self, uncertain_marked_as: str | None = None) -> str:
         """One Thai sentence for people: how many pages, how each was read, which were read with
-        OCR, how many placeholders of each kind stand in for what was not transcribed, and how
-        much text is uncertain and where. `uncertain_marked_as` says how an output marks it."""
+        OCR, which were kept as images if any were, which of those had a text layer that could not be
+        trusted, how many placeholders of each kind stand in for what was not transcribed, how much
+        text is uncertain and where, and, if they were, what kept images were lowered to.
+        `uncertain_marked_as` says how an output marks uncertain text."""
         sentence = (
             f"{len(self.pages)} หน้า: "
             f"อ่านจากข้อความในไฟล์ {self.count('text')} หน้า, "
@@ -43,9 +50,12 @@ class Summary:
         if ocr_pages:
             engines = ", ".join(sorted({page.engine for page in ocr_pages if page.engine}))
             sentence += f" ได้แก่หน้า {_page_ranges([page.number for page in ocr_pages])} ด้วย {engines}"
-        untrusted = [page.number for page in self.pages if page.untrusted_text_layer]
-        if untrusted:
-            sentence += f" (หน้า {_page_ranges(untrusted)} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงอ่านด้วย OCR)"
+        if untrusted := self._untrusted("ocr"):
+            sentence += f" (หน้า {untrusted} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงอ่านด้วย OCR)"
+        if kept := [page.number for page in self.pages if page.kind == "kept"]:
+            sentence += f", เก็บเป็นภาพ {len(kept)} หน้า ได้แก่หน้า {_page_ranges(kept)}"
+            if untrusted := self._untrusted("kept"):
+                sentence += f" (หน้า {untrusted} ข้อความในไฟล์ไม่น่าเชื่อถือ จึงไม่ได้นำมาใช้)"
         counts = [(Placeholder(kind).name, self.placeholder_count(kind)) for kind in get_args(PlaceholderKind)]
         if any(count for _, count in counts):
             sentence += " ส่วนที่ไม่ได้ถอดเป็นข้อความ: " + ", ".join(f"{name} {count} จุด" for name, count in counts if count)
@@ -54,7 +64,14 @@ class Summary:
             sentence += f" ข้อความที่ไม่แน่ใจ {self.uncertain} จุด ในหน้า {pages} ควรตรวจกับต้นฉบับ"
             if uncertain_marked_as:
                 sentence += f" ({uncertain_marked_as})"
+        if self.images_lowered_to:
+            limit = MAX_OUTPUTS // _MB
+            sentence += f" ภาพใน DOCX ลดความละเอียดเหลือ {self.images_lowered_to} dpi ให้ผลลัพธ์ไม่เกิน {limit} MB"
         return sentence
+
+    def _untrusted(self, kind: PageKind) -> str:
+        """The pages of the kind whose text layer could not be trusted, written short; "" if none."""
+        return _page_ranges([page.number for page in self.pages if page.kind == kind and page.untrusted_text_layer])
 
 
 def _page_ranges(numbers: list[int]) -> str:
@@ -76,9 +93,11 @@ def summarize(document: Document) -> Summary:
                 page.kind,
                 page.engine,
                 page.untrusted_text_layer,
-                tuple(block.kind for block in page.blocks if isinstance(block, Placeholder)),
+                # A kept page's placeholder is counted as the page kind it stands for.
+                tuple(block.kind for block in page.blocks if isinstance(block, Placeholder) and block.kind != "scan"),
                 sum(len(uncertain_text(block)) for block in page.blocks),
             )
             for page in document.pages
-        )
+        ),
+        images_lowered_to=document.images_lowered_to,
     )

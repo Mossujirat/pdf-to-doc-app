@@ -1,11 +1,15 @@
 """The document model: one structured representation that every output is rendered from (ADR 0003)."""
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Literal, assert_never
 
-PageKind = Literal["text", "ocr"]
+# How a page was read: from its text layer, with OCR, or not at all, as a scan kept as an image.
+PageKind = Literal["text", "ocr", "kept"]
 # Markdown and Word both have six heading levels.
 DEEPEST_HEADING = 6
+# Word takes no page larger than this either way, in points (22 inches), so it shows no image larger.
+LARGEST_PAGE = 22 * 72
 # Where a stretch of a block's text starts and ends, as positions in its text.
 Span = tuple[int, int]
 
@@ -48,14 +52,26 @@ class Table:
         return any(cell.rowspan > 1 or cell.colspan > 1 for row in self.rows for cell in row)
 
 
-PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table"]
+PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table", "scan"]
+
+
+@dataclass(frozen=True)
+class KeptImage:
+    """An image an output shows as it is, when images are kept: compressed, never raw pixels."""
+
+    data: bytes  # a JPEG, or a PNG where the image lets what lies under it show through
+    width: float  # the size it is shown at, in points
+    height: float
 
 
 @dataclass(frozen=True)
 class Placeholder:
-    """Content the converter deliberately does not transcribe, shown as a short Thai label."""
+    """Content the converter deliberately does not transcribe, shown as a short Thai label.
+    With images kept, it carries the image that DOCX shows in its place: a scan's whole page,
+    or a picture."""
 
     kind: PlaceholderKind
+    image: KeptImage | None = None
 
     @property
     def name(self) -> str:
@@ -70,6 +86,8 @@ class Placeholder:
                 return "ลายมือ"
             case "incomplete_table":
                 return "ตารางอาจไม่สมบูรณ์"
+            case "scan":
+                return "หน้าสแกน"
             case _:
                 assert_never(self.kind)
 
@@ -107,10 +125,35 @@ class Page:
     kind: PageKind
     blocks: tuple[Block, ...]
     engine: str | None = None  # the OCR engine that read an OCR page
-    # Read with OCR because its text layer was there but could not be trusted.
+    # Its text layer was there but could not be trusted, so none of it was used: the page was
+    # read with OCR instead, or, kept as an image, gave no text.
     untrusted_text_layer: bool = False
+
+    @property
+    def kept_image(self) -> KeptImage | None:
+        """A kept page's image of itself, which its scan placeholder carries; None on any other page."""
+        scans = (block for block in self.blocks if isinstance(block, Placeholder) and block.kind == "scan")
+        return next((block.image for block in scans), None)
 
 
 @dataclass(frozen=True)
 class Document:
     pages: tuple[Page, ...]
+    # The resolution kept images were lowered to, in dots per inch, so that the outputs stay within their limit.
+    images_lowered_to: int | None = None
+
+    def kept_images(self) -> set[KeptImage]:
+        """Every image a placeholder carries, each once."""
+        blocks = (block for page in self.pages for block in page.blocks)
+        return {block.image for block in blocks if isinstance(block, Placeholder) and block.image}
+
+    def with_kept_images(self, images: Mapping[KeptImage, KeptImage], lowered_to: int) -> "Document":
+        """The document with each kept image replaced by the one `images` gives for it, lowered to `lowered_to`."""
+
+        def changed(block: Block) -> Block:
+            if isinstance(block, Placeholder) and block.image:
+                return replace(block, image=images[block.image])
+            return block
+
+        pages = tuple(replace(page, blocks=tuple(changed(block) for block in page.blocks)) for page in self.pages)
+        return replace(self, pages=pages, images_lowered_to=lowered_to)

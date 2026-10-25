@@ -1,4 +1,4 @@
-"""Source intake: which source files the converter takes.
+"""Source intake: which source files the converter takes, and the most its outputs may hold.
 
 A source file's type comes from its content, never from its name. Each kind of
 refusal is its own error type, so the command line and the web service can
@@ -25,6 +25,8 @@ MAX_BYTES = 50 * 1024 * 1024
 MAX_PAGES = 150
 # A DOCX is a zip archive: one that unpacks to more than this is a zip bomb.
 MAX_UNPACKED_BYTES = 200 * 1024 * 1024
+# All outputs of one conversion together: the most the web service takes back from a sandbox.
+MAX_OUTPUTS = 50 * 1024 * 1024
 
 # Readers accept a PDF whose header is preceded by up to 1 KB of other bytes.
 _PDF_HEADER = b"%PDF-"

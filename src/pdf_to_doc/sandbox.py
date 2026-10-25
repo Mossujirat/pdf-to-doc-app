@@ -55,7 +55,12 @@ def run(stdin: BinaryIO, stdout: BinaryIO, stderr: BinaryIO, *, ocr: OcrEngine |
         # An error's message can quote what it was reading, so only its type goes out.
         _send(stderr, {"event": "failure", "error": type(error).__name__})
         return EXIT_MODELS_MISSING if isinstance(error, ModelsMissing) else EXIT_FAILED
-    _send(stderr, {"event": "summary", **asdict(result.summary)})
+    summary = asdict(result.summary)
+    if summary["images_lowered_to"] is None:
+        # Said only when images were lowered, so that every other summary goes out as before
+        # images could be: what the web app reads is checked field by field.
+        del summary["images_lowered_to"]
+    _send(stderr, {"event": "summary", **summary})
     for name, output in result.outputs.items():
         stdout.write(f"{name} {len(output)}\n".encode("ascii") + output)
     stdout.flush()

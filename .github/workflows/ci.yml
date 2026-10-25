@@ -36,6 +36,8 @@ jobs:
           sandbox pdf-to-doc pytest
           # Real PaddleOCR on the corpus scans, with the models baked into the image.
           sandbox pdf-to-doc pytest -m ocr
+          # Conversions too large to run on every change, such as outputs at their 50 MB limit.
+          sandbox pdf-to-doc pytest -m slow
           # The gate covers text pages; OCR pages are measured and reported.
           sandbox pdf-to-doc pdf-to-doc-eval corpus/synthetic --max-broken 0
 

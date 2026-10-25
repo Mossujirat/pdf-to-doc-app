@@ -1,14 +1,17 @@
-"""Reads a DOCX output back the way Word shows it: the summary, then page by page,
-and how Word draws each run of text."""
+"""Reads a DOCX output back the way Word shows it: the summary, then page by page, how
+each page is laid out, the images in it, and how Word draws each run of text."""
 
 import io
 from dataclasses import dataclass, replace
 from typing import cast
 
 import docx
+from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 from docx.oxml.xmlchemy import BaseOxmlElement
 from docx.parts.document import DocumentPart
+from docx.section import Section
+from docx.shared import Emu
 from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
 
@@ -16,9 +19,33 @@ Block = Paragraph | Table
 
 
 @dataclass(frozen=True)
+class Layout:
+    """A Word page's size and margins, in points rounded to a tenth."""
+
+    width: float
+    height: float
+    landscape: bool
+    margins: tuple[float, float, float, float]  # top, right, bottom, left
+
+
+A4 = Layout(595.3, 841.9, False, (72.0, 72.0, 72.0, 72.0))  # with Word's usual margins of 2.54 cm
+
+
+@dataclass(frozen=True)
+class InlineImage:
+    """An image set in a paragraph's line, as Word stores and shows it."""
+
+    data: bytes  # the image file
+    width: float  # in points rounded to a tenth
+    height: float
+
+
+@dataclass(frozen=True)
 class Output:
     summary: Paragraph  # the first paragraph
+    summary_layout: Layout  # how the page the summary opens is laid out
     pages: list[list[Block]]  # the paragraphs and tables of each page, without empty paragraphs
+    layouts: list[Layout]  # how each page is laid out
 
 
 @dataclass(frozen=True)
@@ -49,20 +76,61 @@ class Cell:
 
 
 def read_docx(data: bytes) -> Output:
-    summary, *body = docx.Document(io.BytesIO(data)).iter_inner_content()
+    """A page starts at a paragraph set to break the page before it, or at the start of a section,
+    except the section after the summary's, when the summary has a page of its own."""
+    word = docx.Document(io.BytesIO(data))
+    summary, *body = word.iter_inner_content()
     assert isinstance(summary, Paragraph)
+    layouts = [_layout(section) for section in word.sections]
+    section = 1 if _ends_section(summary) else 0
     pages: list[list[Block]] = [[]]
+    page_layouts = [layouts[section]]
+    after_section = False
     for block in body:
-        if _starts_page(block):
+        if _starts_page(block) or after_section:
             pages.append([])
-        if isinstance(block, Table) or block.text:
+            page_layouts.append(layouts[section])
+        if isinstance(block, Table) or block.text or inline_images(block):
             pages[-1].append(block)
-    return Output(summary=summary, pages=pages)
+        after_section = _ends_section(block)
+        section += after_section
+    return Output(summary=summary, summary_layout=layouts[0], pages=pages, layouts=page_layouts)
+
+
+def inline_images(block: Block) -> list[InlineImage]:
+    """The images in a paragraph's lines, in order."""
+    if isinstance(block, Table):
+        return []
+    found = []
+    for inline in block._p.iter(qn("wp:inline")):
+        extent = inline.find(qn("wp:extent"))
+        [blip] = inline.iter(qn("a:blip"))
+        image = block.part.related_parts[blip.get(qn("r:embed"))]
+        width, height = (round(Emu(int(extent.get(side))).pt, 1) for side in ("cx", "cy"))
+        found.append(InlineImage(image.blob, width, height))
+    return found
+
+
+def _ends_section(block: Block) -> bool:
+    return isinstance(block, Paragraph) and block._p.pPr is not None and block._p.pPr.sectPr is not None
+
+
+def _layout(section: Section) -> Layout:
+    def points(length: object) -> float:
+        return round(float(cast(Emu, length).pt), 1)
+
+    margins = (section.top_margin, section.right_margin, section.bottom_margin, section.left_margin)
+    return Layout(
+        width=points(section.page_width),
+        height=points(section.page_height),
+        landscape=section.orientation == WD_ORIENT.LANDSCAPE,
+        margins=cast(tuple[float, float, float, float], tuple(points(margin) for margin in margins)),
+    )
 
 
 def page_texts(data: bytes) -> list[str]:
     """The text of each page: each paragraph, and each cell of a table, on a line of its own."""
-    return ["\n".join(_lines(block) for block in page) for page in read_docx(data).pages]
+    return ["\n".join(block_text(block) for block in page) for page in read_docx(data).pages]
 
 
 def cells(table: Table) -> list[list[Cell]]:
@@ -86,7 +154,8 @@ def cells(table: Table) -> list[list[Cell]]:
     return rows
 
 
-def _lines(block: Block) -> str:
+def block_text(block: Block) -> str:
+    """A paragraph's text, or each cell of a table on a line of its own."""
     if isinstance(block, Paragraph):
         return block.text
     return "\n".join(cell.text for row in cells(block) for cell in row)

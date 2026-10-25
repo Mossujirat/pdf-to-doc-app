@@ -46,9 +46,13 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["corpus", "tests"]
-# Fast tests by default; `pytest -m ocr` runs real PaddleOCR (models from `pdf-to-doc-models`).
-addopts = "-m 'not ocr'"
-markers = ["ocr: reads with real PaddleOCR, so it needs the models and takes longer"]
+# Fast tests by default; `pytest -m ocr` runs real PaddleOCR (models from `pdf-to-doc-models`),
+# and `pytest -m slow` the conversions too large to run on every change.
+addopts = "-m 'not ocr and not slow'"
+markers = [
+    "ocr: reads with real PaddleOCR, so it needs the models and takes longer",
+    "slow: converts a file large enough to take tens of seconds, such as outputs at their 50 MB limit",
+]
 
 [tool.mypy]
 strict = true

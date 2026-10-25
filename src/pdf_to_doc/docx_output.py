@@ -1,25 +1,33 @@
-"""Renders the document model as a Word file for editing, keeping its structure rather than its page layout."""
+"""Renders the document model as a Word file for editing, keeping its structure rather than its page
+layout. A page kept as an image is the exception: a Word page of its own, the image filling it."""
 
 import io
 import re
 from collections.abc import Iterator
+from copy import deepcopy
 
 import docx
 from docx.document import Document as WordDocument
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
+from docx.oxml.section import CT_SectPr
+from docx.oxml.text.paragraph import CT_P
 from docx.oxml.xmlchemy import BaseOxmlElement
-from docx.shared import Cm, Mm, Pt
+from docx.shared import Cm, Emu, Length, Mm, Pt
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph as WordParagraph
 
 from pdf_to_doc.model import (
     DEEPEST_HEADING,
+    LARGEST_PAGE,
     Block,
     Document,
     Heading,
+    KeptImage,
     ListItem,
+    Placeholder,
     Span,
     Table,
     TableCell,
@@ -36,6 +44,11 @@ _BODY_SIZE = 16  # points
 _HEADING_SIZES = {1: 20, 2: 18}
 # The space the template leaves after each paragraph, kept below a table too.
 _SPACE_AFTER_TABLE = Pt(10)
+_LARGEST_PAGE = Pt(LARGEST_PAGE)  # Word takes no page larger either way
+# A4 with Word's usual margins, in place of the template's US Letter, and the text area between them.
+_A4_WIDTH, _A4_HEIGHT = Mm(210), Mm(297)
+_MARGIN = Cm(2.54)
+_TEXT_WIDTH, _TEXT_HEIGHT = Emu(_A4_WIDTH - 2 * _MARGIN), Emu(_A4_HEIGHT - 2 * _MARGIN)
 
 # A run of English: from a letter or digit to a letter or digit, holding ASCII spaces
 # and punctuation, typographic apostrophes and the en dash in between.
@@ -47,17 +60,28 @@ _THAI = re.compile(THAI_LETTER)
 def render_docx(document: Document, summary: Summary) -> bytes:
     word = docx.Document()
     [section] = word.sections
-    # A4 with Word's usual margins, in place of the template's US Letter.
-    section.page_width, section.page_height = Mm(210), Mm(297)
-    section.left_margin = section.right_margin = section.top_margin = section.bottom_margin = Cm(2.54)
+    section.page_width, section.page_height = _A4_WIDTH, _A4_HEIGHT
+    section.left_margin = section.right_margin = section.top_margin = section.bottom_margin = _MARGIN
     _set_default_font(word.styles.element)
     for level in range(1, DEEPEST_HEADING + 1):
         _set_heading_font(word.styles[f"Heading {level}"].element, _HEADING_SIZES.get(level, _BODY_SIZE))
     unmarked_list_id = _add_unmarked_list(word.part.numbering_part.element)
+    a4 = deepcopy(section._sectPr)  # the section properties of every page not kept as an image
     summary_paragraph = word.add_paragraph()
     _add_text(summary_paragraph, "สรุปการแปลง", bold=True)
     _add_text(summary_paragraph, f" {summary.headline(uncertain_marked_as='ไฮไลต์สีเหลือง')}")
+    writing = a4  # the properties of the section being written
     for index, page in enumerate(document.pages):
+        kept = page.kept_image
+        # A kept page is a section of its own, and so are the other pages after it, back on A4.
+        # A section starts a new page, so its first paragraph needs no page break.
+        new_section = kept is not None or writing is not a4
+        if new_section:
+            _end_section(word, writing)
+        writing = a4 if kept is None else _kept_page_section(a4, kept)
+        if kept is not None:
+            _add_page_image(word, kept, writing)
+            continue
         first: WordParagraph | None = None
         previous: Block | None = None
         for block in page.blocks:
@@ -69,15 +93,51 @@ def render_docx(document: Document, summary: Summary) -> bytes:
                 # Headings have space above them already; other text would sit on the table's bottom line.
                 paragraph.paragraph_format.space_before = _SPACE_AFTER_TABLE
             previous = block
-        if index > 0:
+        if new_section and first is None:
+            word.add_paragraph()  # an empty page, so that the section holds something
+        elif index > 0 and not new_section:
             # Each page of the original starts a new page, at its own first paragraph. A page
             # break in a paragraph of its own falls onto a page of its own when the page before
             # is full, and leaves that page blank. An empty page is an empty paragraph.
             (first or word.add_paragraph()).paragraph_format.page_break_before = True
+    if writing is not a4:
+        # The last section's properties are the body's own.
+        section._sectPr.getparent().replace(section._sectPr, writing)
     # Written to memory: a conversion leaves no file behind.
     buffer = io.BytesIO()
     word.save(buffer)
     return buffer.getvalue()
+
+
+def _end_section(word: WordDocument, properties: CT_SectPr) -> None:
+    """End the section written so far, as Word does: its properties go in its last paragraph. A
+    section that ends with a table gets an empty paragraph after it, to carry them."""
+    body = word.element.body
+    last = body[-2]  # after it come the properties of the body's last section
+    if not isinstance(last, CT_P):
+        last = word.add_paragraph()._p
+    last.set_sectPr(deepcopy(properties))
+
+
+def _kept_page_section(a4: CT_SectPr, image: KeptImage) -> CT_SectPr:
+    """The section properties of a kept page, from those of the other pages: its own size and
+    orientation, with no margins. A page larger than Word takes is scaled down to fit, keeping its shape."""
+    properties = deepcopy(a4)
+    properties.page_width, properties.page_height = _shrunk(image, _LARGEST_PAGE, _LARGEST_PAGE)
+    properties.orientation = WD_ORIENT.LANDSCAPE if image.width > image.height else WD_ORIENT.PORTRAIT
+    for margin in ("top_margin", "right_margin", "bottom_margin", "left_margin", "header", "footer", "gutter"):
+        setattr(properties, margin, 0)
+    return properties
+
+
+def _add_page_image(word: WordDocument, image: KeptImage, properties: CT_SectPr) -> None:
+    """The image of a kept page, filling the page its section `properties` give. Its paragraph has
+    no space around it, so that nothing is left over for a page of its own."""
+    paragraph = word.add_paragraph()
+    paragraph.paragraph_format.space_before = paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.line_spacing = 1.0
+    # As large as the page itself, which Word sizes in whole twentieths of a point.
+    paragraph.add_run().add_picture(io.BytesIO(image.data), width=properties.page_width, height=properties.page_height)
 
 
 def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordParagraph:
@@ -85,6 +145,8 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
     if isinstance(block, Table):
         first_paragraph: WordParagraph = _add_table(word, block).cell(0, 0).paragraphs[0]
         return first_paragraph
+    if isinstance(block, Placeholder) and block.image is not None:
+        return _add_picture(word, block.image)
     if isinstance(block, Heading):
         paragraph = word.add_paragraph(style=f"Heading {block.level}")
     elif isinstance(block, ListItem) and block.bulleted:
@@ -98,6 +160,23 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
         paragraph = word.add_paragraph()
     _add_text(paragraph, block.text, uncertain=uncertain_text(block))
     return paragraph
+
+
+def _add_picture(word: WordDocument, image: KeptImage) -> WordParagraph:
+    """A picture kept as itself, in a paragraph of its own, at the size it is shown on the page;
+    shrunk to the text area, keeping its shape, when it is larger. Single spacing keeps the line
+    no taller than the picture."""
+    width, height = _shrunk(image, _TEXT_WIDTH, _TEXT_HEIGHT)
+    paragraph = word.add_paragraph()
+    paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.add_run().add_picture(io.BytesIO(image.data), width=width, height=height)
+    return paragraph
+
+
+def _shrunk(image: KeptImage, most_width: Length, most_height: Length) -> tuple[Length, Length]:
+    """The size the image is shown at, shrunk, keeping its shape, when it is wider or taller than the most."""
+    scale = min(1.0, most_width / Pt(image.width), most_height / Pt(image.height))
+    return Pt(image.width * scale), Pt(image.height * scale)
 
 
 def _add_table(word: WordDocument, table: Table) -> WordTable:
