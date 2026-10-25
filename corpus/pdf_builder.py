@@ -152,6 +152,10 @@ class Pasted:
     width: float
     height: float
     box: tuple[float, float, float, float] | None = None  # where the scan sits; all of the page if None
+    # A scan of colour noise this many pixels across, as hard as a scan gets to compress, in
+    # place of plain grey paper; each seed gives noise of its own.
+    noise_pixels: int = 0
+    seed: int = 0
 
 
 def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Path = SARABUN) -> bytes:
@@ -163,7 +167,8 @@ def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Pat
             continue
         if isinstance(content, Pasted):
             pasted = doc.new_page(width=content.width, height=content.height)
-            pasted.insert_image(pymupdf.Rect(content.box) if content.box else pasted.rect, pixmap=_grey_scan())
+            scan = _noise(content.noise_pixels, content.seed) if content.noise_pixels else _grey_scan()
+            pasted.insert_image(pymupdf.Rect(content.box) if content.box else pasted.rect, pixmap=scan)
             continue
         if isinstance(content, Rotated):
             page = _on_its_side(doc)
@@ -228,6 +233,12 @@ def _grey_scan() -> pymupdf.Pixmap:
     grey = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 200, 100), False)
     grey.set_rect(grey.irect, (200,))
     return grey
+
+
+def _noise(across: int, seed: int) -> pymupdf.Pixmap:
+    """A square scan of colour noise, `across` pixels each way."""
+    pixels = np.random.default_rng(seed).integers(0, 256, (across, across, 3), dtype=np.uint8)
+    return pymupdf.Pixmap(pymupdf.csRGB, across, across, pixels.tobytes(), False)
 
 
 def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:

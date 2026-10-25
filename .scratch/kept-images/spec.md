@@ -133,6 +133,7 @@ The converter first reads each page as it does today: the text layer's rows, the
 - **A kept page's image:**
   - It shows the page as it is shown: rotation applied, and annotations included (highlights, ink, notes).
   - It is rendered in RGB at 150 dpi and encoded as JPEG at once. The raw pixmap is dropped straight away.
+  - A page larger than Word takes (22 inches a side) is shown shrunk to it, so its image is 150 dpi at that size, not the page's own (ticket 04).
   - The JPEG quality is the implementer's. On a noisy synthetic A4 scan, quality 75 gave 280 KB in 0.3 s. The real sample averaged about 190 KB a page at 150 dpi.
 - **A picture on a text page is the image object itself,** not a crop of the page:
   - nothing drawn over or under it is included;
@@ -174,6 +175,7 @@ The converter first reads each page as it does today: the text layer's rows, the
   - The steps are the implementer's. Take the highest resolution that fits.
   - The lowest step must fit the largest source file taken (150 pages); confirm it by arithmetic.
   - A noisy 150-page scan at 150 dpi comes to about 42 MB of images, so the limit will be met in practice.
+  - As built (ticket 04): the steps are 120, 100, 85, 72, 60, 50, 40, 30 and 20 dpi. The arithmetic and the measurements are in ticket 04's Comments.
 - **The summary records the resolution** the images were lowered to.
 
 ### Summary

@@ -1,12 +1,15 @@
 """The document model: one structured representation that every output is rendered from (ADR 0003)."""
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Literal, assert_never
 
 # How a page was read: from its text layer, with OCR, or not at all, as a scan kept as an image.
 PageKind = Literal["text", "ocr", "kept"]
 # Markdown and Word both have six heading levels.
 DEEPEST_HEADING = 6
+# Word takes no page larger than this either way, in points (22 inches), so it shows no image larger.
+LARGEST_PAGE = 22 * 72
 # Where a stretch of a block's text starts and ends, as positions in its text.
 Span = tuple[int, int]
 
@@ -136,3 +139,21 @@ class Page:
 @dataclass(frozen=True)
 class Document:
     pages: tuple[Page, ...]
+    # The resolution kept images were lowered to, in dots per inch, so that the outputs stay within their limit.
+    images_lowered_to: int | None = None
+
+    def kept_images(self) -> set[KeptImage]:
+        """Every image a placeholder carries, each once."""
+        blocks = (block for page in self.pages for block in page.blocks)
+        return {block.image for block in blocks if isinstance(block, Placeholder) and block.image}
+
+    def with_kept_images(self, images: Mapping[KeptImage, KeptImage], lowered_to: int) -> "Document":
+        """The document with each kept image replaced by the one `images` gives for it, lowered to `lowered_to`."""
+
+        def changed(block: Block) -> Block:
+            if isinstance(block, Placeholder) and block.image:
+                return replace(block, image=images[block.image])
+            return block
+
+        pages = tuple(replace(page, blocks=tuple(changed(block) for block in page.blocks)) for page in self.pages)
+        return replace(self, pages=pages, images_lowered_to=lowered_to)

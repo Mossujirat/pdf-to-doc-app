@@ -18,6 +18,8 @@ from word_builder import PageBreak, document
 
 from pdf_to_doc import ConversionResult, Opened, Progress, convert
 from pdf_to_doc.cli import main
+from pdf_to_doc.intake import MAX_OUTPUTS
+from pdf_to_doc.model import LARGEST_PAGE
 
 SARA_AA = chr(0x0E32)
 SARA_AM = chr(0x0E33)
@@ -152,11 +154,13 @@ def test_a_sideways_scan_is_kept_as_it_is() -> None:
     assert (bottom - top) * 842 > (right - left) * 595
 
 
-def test_a_page_larger_than_word_takes_is_scaled_down_keeping_its_shape() -> None:
+def test_a_page_larger_than_word_takes_is_scaled_down_keeping_its_shape_and_150_dpi_at_that_size() -> None:
     # 2000 by 1000 points, about 28 by 14 inches; Word takes 22 inches at most.
-    output = read_docx(keep_images(pdf(Pasted(2000, 1000))).outputs["docx"])
+    data = keep_images(pdf(Pasted(2000, 1000))).outputs["docx"]
 
-    assert output.layouts == [Layout(1584.0, 792.0, True, (0.0, 0.0, 0.0, 0.0))]
+    assert read_docx(data).layouts == [Layout(1584.0, 792.0, True, (0.0, 0.0, 0.0, 0.0))]
+    image = kept_page_image(data)
+    assert (image.width, image.height, resolution(image)) == (1584.0, 792.0, (150, 150))
 
 
 def test_a_highlight_on_a_scan_shows_in_its_kept_image() -> None:
@@ -441,6 +445,32 @@ def test_the_markdown_of_pictures_is_the_same_with_kept_images() -> None:
     source = pdf([*CLAUSES, Picture("photo", 120, 80), "", SIGNATURE, SIGNATURE_LINE, "", Picture("stamp", 70, 70)])
 
     assert keep_images(source).outputs["markdown"] == convert(source, to="markdown", ocr=FakeEngine()).output
+
+
+# Outputs within 50 MB
+
+
+@pytest.mark.slow
+def test_outputs_that_would_pass_50_mb_fit_once_their_images_are_lowered() -> None:
+    # Colour noise is as hard as a scan gets to compress: seven pages of it, 22 by 22 inches,
+    # come to about 52 MB of page images at 150 dpi. Compressing them takes most of a minute.
+    source = pdf(*(Pasted(LARGEST_PAGE, LARGEST_PAGE, noise_pixels=800, seed=seed) for seed in range(7)))
+
+    result = keep_images(source)
+
+    assert sum(len(output) for output in result.outputs.values()) <= MAX_OUTPUTS
+    lowered_to = result.summary.images_lowered_to
+    assert lowered_to is not None and lowered_to < 150
+    assert f"ภาพใน DOCX ลดความละเอียดเหลือ {lowered_to} dpi ให้ผลลัพธ์ไม่เกิน 50 MB" in result.summary.headline()
+    assert all(max(resolution(image)) <= lowered_to for image in pictures_in(result.outputs["docx"]))
+
+
+def test_outputs_within_50_mb_keep_their_images_at_150_dpi_and_say_nothing_of_it() -> None:
+    result = keep_images(pdf(Scan(CLAUSES, dpi=50), [*BEFORE, Picture("photo", 120, 80), *AFTER]))
+
+    assert result.summary.images_lowered_to is None
+    assert "dpi" not in result.summary.headline()
+    assert [max(resolution(image)) for image in pictures_in(result.outputs["docx"])] == [150, 144]
 
 
 # The summary

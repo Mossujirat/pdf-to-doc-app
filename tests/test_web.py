@@ -278,6 +278,21 @@ SUMMARY = b'{"event": "summary", "pages": []}'
             Ended(4, b""),
             id="a size within the limit",
         ),
+        pytest.param(
+            [b'{"event": "summary", "pages": [], "images_lowered_to": "100"}'],
+            Ended(0, b"markdown 0\n"),
+            id="a resolution that is not a number",
+        ),
+        pytest.param(
+            [b'{"event": "summary", "pages": [], "images_lowered_to": 150}'],
+            Ended(0, b"markdown 0\n"),
+            id="a resolution not lowered",
+        ),
+        pytest.param(
+            [b'{"event": "summary", "pages": [], "images_lowered_to": 0}'],
+            Ended(0, b"markdown 0\n"),
+            id="a resolution of nothing",
+        ),
     ],
 )
 def test_what_a_sandbox_sends_is_checked_and_anything_off_fails(lines: list[bytes], ended: Ended | None) -> None:
@@ -285,3 +300,13 @@ def test_what_a_sandbox_sends_is_checked_and_anything_off_fails(lines: list[byte
         link = upload(client, pdf(["หน้าแรก"]))
 
         assert ended_state(client, link) == "failed"
+
+
+def test_a_summary_of_images_made_less_sharp_finishes_and_the_page_says_how_sharp() -> None:
+    summary = b'{"event": "summary", "pages": [], "images_lowered_to": 100}'
+
+    with browser(ScriptedSandbox([summary], Ended(0, b"markdown 0\n"))) as client:
+        link = upload(client, pdf(["หน้าแรก"]))
+
+        assert ended_state(client, link) == "finished"
+        assert "ภาพใน DOCX ลดความละเอียดเหลือ 100 dpi ให้ผลลัพธ์ไม่เกิน 50 MB" in client.get(link).text

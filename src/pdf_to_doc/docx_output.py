@@ -15,12 +15,13 @@ from docx.oxml.ns import nsdecls, qn
 from docx.oxml.section import CT_SectPr
 from docx.oxml.text.paragraph import CT_P
 from docx.oxml.xmlchemy import BaseOxmlElement
-from docx.shared import Cm, Emu, Inches, Length, Mm, Pt
+from docx.shared import Cm, Emu, Length, Mm, Pt
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph as WordParagraph
 
 from pdf_to_doc.model import (
     DEEPEST_HEADING,
+    LARGEST_PAGE,
     Block,
     Document,
     Heading,
@@ -43,8 +44,7 @@ _BODY_SIZE = 16  # points
 _HEADING_SIZES = {1: 20, 2: 18}
 # The space the template leaves after each paragraph, kept below a table too.
 _SPACE_AFTER_TABLE = Pt(10)
-# Word takes no page larger than this either way.
-_LARGEST_PAGE = Inches(22)
+_LARGEST_PAGE = Pt(LARGEST_PAGE)  # Word takes no page larger either way
 # A4 with Word's usual margins, in place of the template's US Letter, and the text area between them.
 _A4_WIDTH, _A4_HEIGHT = Mm(210), Mm(297)
 _MARGIN = Cm(2.54)

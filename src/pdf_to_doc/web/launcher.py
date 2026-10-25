@@ -23,9 +23,9 @@ from typing import Protocol, Self
 
 from pydantic import BaseModel, ConfigDict
 
-from pdf_to_doc.intake import MAX_BYTES
+from pdf_to_doc.intake import MAX_BYTES, MAX_OUTPUTS
 from pdf_to_doc.web.docker import DockerEngine, Stream
-from pdf_to_doc.web.protocol import MAX_EVENT_LINE, MAX_OUTPUTS, Malformed, read_event
+from pdf_to_doc.web.protocol import MAX_EVENT_LINE, Malformed, read_event
 from pdf_to_doc.web.sandboxes import Ended, Usage
 from pdf_to_doc.web.settings import LauncherSettings, Misconfigured, from_environment
 
