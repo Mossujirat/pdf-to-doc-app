@@ -1,17 +1,19 @@
 """A stand-in for Docker, for the launcher's tests: each sandbox is a process on this machine.
 
 It runs the sandbox entry point, or a script that misbehaves as a sandbox could, with the
-source file on its stdin. It counts the sandboxes it holds, so that a test can tell whether
-each one was removed, and how many ran at once.
+source file on its stdin and the environment a sandbox's container is created with. It counts
+the sandboxes it holds, so that a test can tell whether each one was removed, and how many ran
+at once.
 """
 
 import asyncio
+import os
 import sys
 from asyncio.subprocess import PIPE, Process
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
-from pdf_to_doc.web.docker import Stream
+from pdf_to_doc.web.docker import Stream, sandbox_config
 from pdf_to_doc.web.sandboxes import Usage
 
 _PIECE = 64 * 1024
@@ -33,8 +35,13 @@ class FakeDocker:
         self.leftovers_removed += 1
 
     @asynccontextmanager
-    async def sandbox(self, source: bytes) -> AsyncIterator["FakeContainer"]:
-        process = await asyncio.create_subprocess_exec(*self._command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    async def sandbox(self, source: bytes, *, keep_images: bool = False) -> AsyncIterator["FakeContainer"]:
+        # The environment the launcher's Docker engine creates the container with, added to this one's.
+        config = sandbox_config(image="", environment="local", runtime="runc", keep_images=keep_images)
+        environment = {**os.environ, **dict(setting.split("=", 1) for setting in config["Env"])}
+        process = await asyncio.create_subprocess_exec(
+            *self._command, stdin=PIPE, stdout=PIPE, stderr=PIPE, env=environment
+        )
         self.started += 1
         self.alive += 1
         self.most_alive = max(self.most_alive, self.alive)

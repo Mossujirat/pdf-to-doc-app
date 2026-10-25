@@ -3,7 +3,8 @@
 The source file's bytes come in on stdin. Each output goes out on stdout as a part:
 a line with its format and its length in bytes, then the output itself. Events go
 out on stderr, one JSON object per line, and never carry any of the file's content.
-Its only setting is the OCR thread count, in `PDF_TO_DOC_OCR_THREADS`.
+Its settings are the OCR thread count, in `PDF_TO_DOC_OCR_THREADS`, and kept images, in
+`PDF_TO_DOC_KEEP_IMAGES`.
 """
 
 import json
@@ -19,6 +20,17 @@ from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.ocr_models import ModelsMissing
 from pdf_to_doc.progress import Opened, Progress
 
+KEEP_IMAGES_VARIABLE = "PDF_TO_DOC_KEEP_IMAGES"
+
+
+def keep_images_setting(keep_images: bool) -> str:
+    """The value of `KEEP_IMAGES_VARIABLE` that asks the sandbox to keep images, or to read scans with OCR."""
+    return "1" if keep_images else "0"
+
+
+# Unset or empty, the variable reads scans with OCR, as an empty setting counts as none.
+_KEEP_IMAGES = {keep_images_setting(keep): keep for keep in (False, True)} | {"": False}
+
 
 def main() -> int:
     """The command the sandbox container runs.
@@ -26,27 +38,33 @@ def main() -> int:
     Only the parts reach stdout, and only the events stderr. Anything else written
     to them, such as Paddle's own messages from its C++ side or a library's warning,
     goes nowhere: the standard streams are pointed at the null device, and the
-    parts and events go out through copies of them made first.
+    parts and events go out through copies of them made first. A kept-images setting
+    of any other value stops it before it reads the source file, with an error the
+    launcher takes for a broken protocol.
     """
+    keep_images = _KEEP_IMAGES[os.environ.get(KEEP_IMAGES_VARIABLE, "")]
     stdout = os.fdopen(os.dup(sys.stdout.fileno()), "wb")
     stderr = os.fdopen(os.dup(sys.stderr.fileno()), "wb")
     nowhere = os.open(os.devnull, os.O_WRONLY)
     os.dup2(nowhere, sys.stdout.fileno())
     os.dup2(nowhere, sys.stderr.fileno())
     os.close(nowhere)
-    return run(sys.stdin.buffer, stdout, stderr)
+    return run(sys.stdin.buffer, stdout, stderr, keep_images=keep_images)
 
 
-def run(stdin: BinaryIO, stdout: BinaryIO, stderr: BinaryIO, *, ocr: OcrEngine | None = None) -> int:
+def run(
+    stdin: BinaryIO, stdout: BinaryIO, stderr: BinaryIO, *, ocr: OcrEngine | None = None, keep_images: bool = False
+) -> int:
     """Convert the source file on `stdin` into both outputs, or Markdown only for a DOCX,
-    and return the exit code. `ocr` replaces the default OCR engine, for tests."""
+    and return the exit code. `keep_images` keeps scans and pictures as images. `ocr`
+    replaces the default OCR engine, for tests."""
 
     def report(update: Opened | Progress) -> None:
         _send(stderr, {"event": "opened" if isinstance(update, Opened) else "progress", **asdict(update)})
 
     try:
         # No password reaches the sandbox, so a PDF that needs one is refused.
-        result = convert(stdin.read(), to={"markdown", "docx"}, ocr=ocr, progress=report)
+        result = convert(stdin.read(), to={"markdown", "docx"}, ocr=ocr, progress=report, keep_images=keep_images)
     except IntakeError as error:
         exit_code = REFUSAL_EXIT_CODES[type(error)]
         _send(stderr, _refusal_event(error))

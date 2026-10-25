@@ -32,9 +32,9 @@ class InProcessRun:
     events: list[dict[str, Any]]  # each line on stderr, read as JSON
 
 
-def sandbox(source: bytes, ocr: OcrEngine | None = None) -> InProcessRun:
+def sandbox(source: bytes, ocr: OcrEngine | None = None, *, keep_images: bool = False) -> InProcessRun:
     stdout, stderr = io.BytesIO(), io.BytesIO()
-    exit_code = run(io.BytesIO(source), stdout, stderr, ocr=ocr)
+    exit_code = run(io.BytesIO(source), stdout, stderr, ocr=ocr, keep_images=keep_images)
     return InProcessRun(exit_code, parts(stdout.getvalue()), events(stderr.getvalue()))
 
 
@@ -49,6 +49,24 @@ def test_a_mixed_pdf_comes_back_as_both_outputs() -> None:
     pages = ["หน้าที่มีข้อความ", "หน้าสแกนแรก", "หน้าสแกนที่สอง"]
     assert markdown_reader.page_texts(ran.parts["markdown"].decode("utf-8")) == pages
     assert docx_reader.page_texts(ran.parts["docx"]) == pages
+
+
+@pytest.mark.parametrize(
+    ("keep_images", "stage", "kind", "markdown"),
+    [
+        pytest.param(False, "ocr", "ocr", "หน้าสแกนแรก", id="read with OCR"),
+        pytest.param(True, "images", "kept", "[หน้าสแกน]", id="kept images"),
+    ],
+)
+def test_a_scan_is_read_with_ocr_or_kept_as_an_image_as_the_setting_says(
+    keep_images: bool, stage: str, kind: str, markdown: str
+) -> None:
+    ran = sandbox(pdf(Scan(SCANS[0], dpi=50)), FakeEngine(SCANS[0]), keep_images=keep_images)
+
+    assert ran.exit_code == 0
+    assert {"event": "progress", "stage": stage, "current": 1, "total": 1} in ran.events
+    assert [page["kind"] for page in ran.events[-1]["pages"]] == [kind]
+    assert markdown_reader.page_texts(ran.parts["markdown"].decode("utf-8")) == [markdown]
 
 
 def test_a_docx_comes_back_as_markdown_only() -> None:

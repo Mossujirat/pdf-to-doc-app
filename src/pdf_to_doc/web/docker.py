@@ -18,6 +18,7 @@ from typing import Any, Literal, Self
 
 import httpx
 
+from pdf_to_doc.sandbox import KEEP_IMAGES_VARIABLE, keep_images_setting
 from pdf_to_doc.web.protocol import Malformed
 from pdf_to_doc.web.sandboxes import Usage
 from pdf_to_doc.web.settings import Environment
@@ -50,15 +51,16 @@ def sandbox_name(environment: Environment) -> str:
     return f"pdf-to-doc-sandbox-{environment}-{secrets.token_hex(8)}"
 
 
-def sandbox_config(*, image: str, environment: Environment, runtime: str) -> dict[str, Any]:
-    """What a sandbox's container is created with: the sandbox entry point from `image`, in the
-    container runtime `runtime`, under every restriction in ADR 0004 and the spec."""
+def sandbox_config(*, image: str, environment: Environment, runtime: str, keep_images: bool) -> dict[str, Any]:
+    """What a sandbox's container is created with: the sandbox entry point from `image`, keeping
+    images if `keep_images`, in the container runtime `runtime`, under every restriction in ADR
+    0004 and the spec."""
     return {
         "Image": image,
         "Cmd": ["pdf-to-doc-sandbox"],
         "User": "converter",  # the image's own, which cannot change the installed code
         # Added to the image's own environment, which holds no secret.
-        "Env": [f"PDF_TO_DOC_OCR_THREADS={_CPUS}"],
+        "Env": [f"PDF_TO_DOC_OCR_THREADS={_CPUS}", f"{KEEP_IMAGES_VARIABLE}={keep_images_setting(keep_images)}"],
         "AttachStdin": True,
         "AttachStdout": True,
         "AttachStderr": True,
@@ -121,13 +123,15 @@ class DockerEngine:
             _log.info("removed %d leftover sandboxes", len(listed.json()))
 
     @asynccontextmanager
-    async def sandbox(self, source: bytes) -> AsyncIterator["_Container"]:
+    async def sandbox(self, source: bytes, *, keep_images: bool = False) -> AsyncIterator["_Container"]:
         async with _client() as client, AsyncExitStack() as cleanup:
             name = sandbox_name(self._environment)
             # Before it is asked for, so that a container created as the conversion is cancelled
             # goes too: Docker removes a container by its name as well as its ID.
             cleanup.push_async_callback(_remove, client, name)
-            config = sandbox_config(image=self._image, environment=self._environment, runtime=self._runtime)
+            config = sandbox_config(
+                image=self._image, environment=self._environment, runtime=self._runtime, keep_images=keep_images
+            )
             created = await client.post("/containers/create", params={"name": name}, json=config)
             created.raise_for_status()
             if warnings := created.json().get("Warnings"):

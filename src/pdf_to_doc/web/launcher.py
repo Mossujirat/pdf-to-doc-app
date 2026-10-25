@@ -6,8 +6,9 @@ the two of them share.
 
 Over that socket, each side sends frames: a line with the frame's kind and its payload's length
 in bytes, then the payload, as the sandbox entry point frames its parts. For one conversion, the
-web app opens a connection and sends a `run` frame holding the source file. The launcher sends
-back an `event` frame for each event line, then the sandbox's `stdout`, then `ended`.
+web app opens a connection and sends a `run` frame holding the source file, or a
+`run-keeping-images` frame to keep images. The launcher sends back an `event` frame for each event
+line, then the sandbox's `stdout`, then `ended`.
 """
 
 import asyncio
@@ -33,8 +34,10 @@ MAX_SANDBOXES = 3  # running at once
 # On a volume that only the web app and the launcher share; the image makes the folder.
 SOCKET = "/run/pdf-to-doc/launcher.sock"
 _log = logging.getLogger(__name__)
+# The frame that starts a conversion, by whether it keeps images.
+_RUN = {False: "run", True: "run-keeping-images"}
 # Each frame's kind, and the longest payload it may have, as each side reads them.
-_FROM_THE_WEB_APP = {"run": MAX_BYTES}
+_FROM_THE_WEB_APP = {kind: MAX_BYTES for kind in _RUN.values()}
 _FROM_THE_LAUNCHER = {"event": MAX_EVENT_LINE, "stdout": MAX_OUTPUTS, "ended": 1024}
 _LONGEST_LENGTH = len(str(MAX_OUTPUTS))  # in digits
 _PIECE = 64 * 1024  # bytes read at a time
@@ -71,8 +74,9 @@ class Container(Protocol):
 
 
 class Docker(Protocol):
-    def sandbox(self, source: bytes) -> AbstractAsyncContextManager[Container]:
-        """A sandbox converting `source`, removed on leaving, however the conversion ends."""
+    def sandbox(self, source: bytes, *, keep_images: bool = False) -> AbstractAsyncContextManager[Container]:
+        """A sandbox converting `source`, keeping images if `keep_images`, removed on leaving,
+        however the conversion ends."""
         ...
 
     async def remove_leftovers(self) -> None:
@@ -93,13 +97,14 @@ class Launcher:
         self._time_limit = time_limit
         self._places = asyncio.Semaphore(MAX_SANDBOXES)
 
-    async def run(self, source: bytes, send: Send) -> None:
-        """Convert the source file: send each event line as it comes, then how it ended. A
-        conversion past the time limit is stopped, and ends as timed out. What the sandbox writes
-        is untrusted, so each line is checked first; raises `Malformed` for a line that does not
-        follow its schema or is too long, or for outputs too large in all. However it ends, the
-        sandbox is removed. The time limit starts once the conversion has a place."""
-        async with self._places, self._docker.sandbox(source) as sandbox:
+    async def run(self, source: bytes, send: Send, *, keep_images: bool = False) -> None:
+        """Convert the source file, keeping images if `keep_images`: send each event line as it
+        comes, then how it ended. A conversion past the time limit is stopped, and ends as timed
+        out. What the sandbox writes is untrusted, so each line is checked first; raises
+        `Malformed` for a line that does not follow its schema or is too long, or for outputs too
+        large in all. However it ends, the sandbox is removed. The time limit starts once the
+        conversion has a place."""
+        async with self._places, self._docker.sandbox(source, keep_images=keep_images) as sandbox:
             try:
                 async with asyncio.timeout(self._time_limit) as limit:
                     exit_code, stdout = await _relay(sandbox, send)
@@ -194,7 +199,7 @@ async def serve_connection(launcher: Launcher, reader: asyncio.StreamReader, wri
     an `ended` frame. A `cancel` frame, or anything else the web app sends, or its closing the
     connection, stops the conversion; the connection is closed once its sandbox has been removed."""
     try:
-        _, source = await _receive(reader, _FROM_THE_WEB_APP)
+        kind, source = await _receive(reader, _FROM_THE_WEB_APP)
     except BrokenFrames:
         writer.close()
         return
@@ -205,7 +210,7 @@ async def serve_connection(launcher: Launcher, reader: asyncio.StreamReader, wri
             ending.set()
         await _send_item(writer, item)
 
-    converting = asyncio.create_task(launcher.run(source, send))
+    converting = asyncio.create_task(launcher.run(source, send, keep_images=kind == _RUN[True]))
     stopping = asyncio.create_task(reader.read(1))  # a cancel, or the web app gone
     try:
         await asyncio.wait((converting, stopping), return_when=asyncio.FIRST_COMPLETED)
@@ -241,11 +246,11 @@ class LauncherSandbox:
             raise NotImplementedError("the launcher listens on a Unix socket, on the server")
         return cls(partial(asyncio.open_unix_connection, path))
 
-    async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
+    async def convert(self, source: bytes, *, keep_images: bool = False) -> AsyncGenerator[bytes | Ended]:
         reader, writer = await self._connected()
         ended = False
         try:
-            await _send(writer, "run", source)
+            await _send(writer, _RUN[keep_images], source)
             stdout = b""
             while not ended:
                 kind, payload = await _receive(reader, _FROM_THE_LAUNCHER)

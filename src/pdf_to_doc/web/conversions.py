@@ -17,6 +17,7 @@ from typing import Literal
 
 from pdf_to_doc.conversion import OutputFormat
 from pdf_to_doc.exit_codes import EXIT_OK
+from pdf_to_doc.progress import Stage
 from pdf_to_doc.summary import Summary
 from pdf_to_doc.web.allowance import Allowance, Charge
 from pdf_to_doc.web.protocol import (
@@ -66,12 +67,14 @@ class Conversion:
     # The client's address as its allowance counts it; held in memory only, and dropped when the
     # conversion ends.
     client_ip: str | None
+    keep_images: bool = False  # the visitor's choice for the file's scans and pictures
     state: State = "waiting"
     charge: Charge | None = None  # its pages, charged to the client's allowance
     pages_left: int | None = None  # what the client had left today, when the file had more pages
     opened: OpenedEvent | None = None
     progress: ProgressEvent | None = None
-    read_with_ocr: bool = False  # whether any page has been, so that its steps never show OCR it skipped
+    # The stages the sandbox has reported, so that its steps never show one it skipped as done.
+    reached: set[Stage] = field(default_factory=set)
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
@@ -122,10 +125,10 @@ class Conversions:
         self._running: dict[str, asyncio.Task[None]] = {}
         self._stopping = False
 
-    def start(self, source: bytes, file_name: str, token: str, client_ip: str) -> str:
+    def start(self, source: bytes, file_name: str, token: str, client_ip: str, *, keep_images: bool = False) -> str:
         """Queue the source file for the browser holding `token`, at the client address `client_ip`,
-        to convert as soon as a place is free, and return the conversion's identifier: 128 random
-        bits, for its link.
+        to convert as soon as a place is free, keeping images if `keep_images`, and return the
+        conversion's identifier: 128 random bits, for its link.
 
         Raises `AlreadyConverting` when that browser has a conversion waiting or running, and
         `QueueFull` when no more may wait. Either way, nothing of the file is kept.
@@ -138,7 +141,9 @@ class Conversions:
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
             raise QueueFull()
         identifier = secrets.token_urlsafe(16)
-        self._held[identifier] = Conversion(token, file_name, client_ip, queued_at=self._clock())
+        self._held[identifier] = Conversion(
+            token, file_name, client_ip, keep_images=keep_images, queued_at=self._clock()
+        )
         self._waiting[identifier] = source
         self._start_next()
         return identifier
@@ -227,7 +232,7 @@ class Conversions:
         outcome: State = "failed"  # unless the sandbox says how it ended
         outputs: dict[OutputFormat, bytes] = {}
         try:
-            async with aclosing(self._sandbox.convert(source)) as sent:
+            async with aclosing(self._sandbox.convert(source, keep_images=conversion.keep_images)) as sent:
                 async for item in sent:
                     if isinstance(item, Ended):
                         conversion.timed_out = item.timed_out
@@ -253,8 +258,10 @@ class Conversions:
             case OpenedEvent():
                 self._charge(conversion, event)
             case ProgressEvent():
+                if event.stage == "images" and not conversion.keep_images:
+                    raise Malformed("pages kept as images when that was not asked for")
                 conversion.progress = event
-                conversion.read_with_ocr |= event.stage == "ocr"
+                conversion.reached.add(event.stage)
             case SummaryEvent():
                 conversion.summary = event.summary()
             case RefusalEvent():

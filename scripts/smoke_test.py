@@ -207,7 +207,8 @@ class StagingSmokeTest:
         if not inspected:
             self.check(False, "a sandbox was seen while it ran")
             return
-        wanted = sandbox_config(image="", environment=ENVIRONMENT, runtime="runsc")
+        # Its uploads make no choice of kept images, so their scans are read with OCR.
+        wanted = sandbox_config(image="", environment=ENVIRONMENT, runtime="runsc", keep_images=False)
         for key, value in wanted["HostConfig"].items():
             actual = inspected["HostConfig"].get(key)
             self.check(_holds(actual, value), f"the sandbox runs with {key} {json.dumps(value)} (Docker: {json.dumps(actual)})")

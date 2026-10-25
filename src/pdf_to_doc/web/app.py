@@ -199,7 +199,9 @@ def create_app(
             return HTMLResponse(pages.bot_check_failed(), status_code=403)
         token = _token(request.cookies.get(COOKIE))
         try:
-            identifier = conversions.start(upload.source, upload.file_name, token, client_ip.of(request))
+            identifier = conversions.start(
+                upload.source, upload.file_name, token, client_ip.of(request), keep_images=upload.keep_images
+            )
         except AlreadyConverting as converting:
             return refuse("one at a time", pages.already_converting(converting.identifier), 409)
         except QueueFull:
