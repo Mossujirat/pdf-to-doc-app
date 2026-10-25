@@ -12,11 +12,13 @@ from html import escape
 
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
 from pdf_to_doc.model import Placeholder
+from pdf_to_doc.progress import Stage
 from pdf_to_doc.refusals import refusal_message, too_large_unmeasured
 from pdf_to_doc.validation import MIN_DICTIONARY_SHARE, MIN_WORDS_TO_JUDGE
 from pdf_to_doc.web.bot_check import ACTION, SCRIPT
 from pdf_to_doc.web.conversions import Conversion
 from pdf_to_doc.web.protocol import RefusalEvent
+from pdf_to_doc.web.upload import KEEP_IMAGES_FIELD, KEEP_IMAGES_VALUES
 
 _MB = 1024 * 1024
 _NAME = "ครบคำ"
@@ -52,10 +54,15 @@ _STEPS = [
     ("queue", "รอคิว"),
     ("open", "เปิดไฟล์"),
     ("read", "อ่านข้อความในไฟล์"),
+    ("images", "เก็บหน้าสแกนเป็นภาพ"),
     ("ocr", "อ่านด้วย OCR"),
     ("write", "สร้างไฟล์ผลลัพธ์"),
 ]
 _STEP_STATES = {"done": "เสร็จแล้ว", "skipped": "ข้าม", "now": "กำลังทำ", "later": "ยังไม่ถึง"}
+# The step each stage the sandbox reports belongs to.
+_STAGE_STEPS: dict[Stage, str] = {"reading": "read", "images": "images", "ocr": "ocr", "writing": "write"}
+# The steps a file may have no page for: keeping pages as images, and OCR.
+_SKIPPABLE = {"images", "ocr"}
 
 
 def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) -> str:
@@ -76,6 +83,11 @@ def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) ->
 พร้อมวางในแชต AI หรือแก้ต่อใน Word ใช้ฟรี ไม่ต้องสมัคร</p>
 </section>
 <form id="upload" class="upload" method="post" action="/conversions" enctype="multipart/form-data">{widget}
+<fieldset class="choices">
+<legend class="visually-hidden">หน้าสแกนและรูปภาพ</legend>
+{_choice("no", "อ่านหน้าสแกนด้วย OCR", "ได้หน้าสแกนเป็นข้อความที่แก้ต่อได้ แต่อาจใช้เวลาหลายนาที")}
+{_choice("yes", "เก็บหน้าสแกนเป็นภาพ", "DOCX แสดงหน้าสแกนและรูปภาพเหมือนต้นฉบับ แปลงเร็วกว่า แต่แก้ข้อความในหน้าสแกนไม่ได้")}
+</fieldset>
 <div class="drop-frame">
 <label class="drop">
 <span class="drop-plus">{_PLUS}</span>
@@ -96,8 +108,8 @@ def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) ->
 <li class="how-step"><div><h3>วางหรือเลือกไฟล์</h3>
 <p>PDF หรือ DOCX ครั้งละหนึ่งไฟล์ {limits} แปลงได้วันละ {pages_per_day}&nbsp;หน้า</p></div></li>
 <li class="how-step"><div><h3>รอแปลง</h3>
-<p>หน้าเว็บบอกลำดับคิวและความคืบหน้า ไฟล์สแกนต้องอ่านด้วย OCR จึงอาจใช้เวลาหลายนาที
-สลับไปทำอย่างอื่นแล้วกลับมาที่หน้าเดิมได้</p></div></li>
+<p>หน้าเว็บบอกลำดับคิวและความคืบหน้า หน้าสแกนที่อ่านด้วย OCR อาจใช้เวลาหลายนาที
+ถ้าเลือกเก็บหน้าสแกนเป็นภาพจะเร็วกว่ามาก สลับไปทำอย่างอื่นแล้วกลับมาที่หน้าเดิมได้</p></div></li>
 <li class="how-step"><div><h3>คัดลอกหรือดาวน์โหลด</h3>
 <p>คัดลอก Markdown ไปวางในแชต AI หรือดาวน์โหลด DOCX ไปแก้ใน Word
 ผลลัพธ์ถูกลบภายใน {kept} นาที หรือกดลบเองได้ทันที</p></div></li>
@@ -105,6 +117,18 @@ def home(bot_check_site_key: str | None, keep_for: float, pages_per_day: int) ->
 </section>
 {_inside(kept)}{script}""",
     )
+
+
+def _choice(value: str, title: str, note: str) -> str:
+    """The option of the choice above the drop area that sends `value`, a card that is wholly its
+    radio button's label: its title names it, and its note describes it. OCR, the default, is
+    chosen whenever the page opens, and the browser is told not to bring back a choice made before."""
+    chosen = "" if KEEP_IMAGES_VALUES[value] else " checked"
+    name = f"keep-images-{value}"
+    return f"""<label class="choice">
+<input class="choice-input" type="radio" name="{KEEP_IMAGES_FIELD}" value="{value}" autocomplete="off"{chosen} aria-labelledby="{name}" aria-describedby="{name}-note">
+<span class="choice-text"><span class="choice-title" id="{name}">{title}</span><span class="choice-note" id="{name}-note">{note}</span></span>
+</label>"""
 
 
 def _inside(kept: int) -> str:
@@ -150,14 +174,19 @@ def _inside(kept: int) -> str:
 <p>หน้าที่มีข้อความเก็บอยู่ในไฟล์และเชื่อถือได้ อ่านจากข้อความนั้นโดยตรง จึงได้ตัวอักษรตรงตามที่พิมพ์ไว้</p>
 <p>หน้าที่ไม่มีข้อความให้อ่าน เช่น หน้าสแกน หรือตัวอักษรที่ถูกวาดเป็นเส้น และหน้าที่ข้อความในไฟล์ผิด
 อ่านด้วย OCR คือให้โปรแกรมอ่านตัวอักษรจากภาพของหน้า ซึ่งช้ากว่า</p>
+<p>ถ้าเลือกเก็บหน้าสแกนเป็นภาพ หน้าสแกนจะไม่ถูกอ่านด้วย OCR แต่อยู่ใน DOCX เป็นภาพเต็มหน้าเหมือนต้นฉบับ
+รวมไฮไลต์และโน้ตที่เขียนไว้ ส่วน Markdown ได้ป้าย <span class="nowrap">[{Placeholder("scan").name}]</span>
+ตามด้วยข้อความในไฟล์บนหน้านั้นที่เชื่อถือได้ ถ้ามี เช่น โน้ตที่พิมพ์ไว้
+หน้าที่ตัวอักษรถูกวาดเป็นเส้น และหน้าที่ไม่ใช่หน้าสแกนแต่ข้อความในไฟล์ผิด ยังอ่านด้วย OCR</p>
 </div>
 <figure class="picture">
 <div class="sheets">
 {_sheet("มีข้อความในไฟล์", "อ่านตรง")}
-{_sheet("หน้าสแกน", "OCR", scan=True)}
+{_sheet("หน้าสแกน", "OCR หรือภาพ", scan=True)}
 {_sheet("ข้อความในไฟล์ผิด", "OCR", word="กำร")}
 </div>
-<figcaption class="visually-hidden">สามหน้า: หน้าที่มีข้อความในไฟล์อ่านตรง หน้าสแกนและหน้าที่ข้อความในไฟล์ผิดอ่านด้วย OCR</figcaption>
+<figcaption class="visually-hidden">สามหน้า: หน้าที่มีข้อความในไฟล์อ่านตรง หน้าสแกนอ่านด้วย OCR หรือเก็บเป็นภาพตามที่เลือก
+และหน้าที่ข้อความในไฟล์ผิดอ่านด้วย OCR</figcaption>
 </figure>
 </div>
 
@@ -165,7 +194,8 @@ def _inside(kept: int) -> str:
 <div class="inside-text">
 <h3>จับข้อความในไฟล์ที่ผิด</h3>
 <p>บางไฟล์เก็บข้อความไว้ผิด ทั้งที่หน้ากระดาษแสดงถูก เช่น ฟอนต์บางตัวทำให้คำว่า การ ถูกเก็บเป็น กำร
-ตัวแปลงจึงตรวจข้อความของทุกหน้าก่อนใช้ หน้าที่เข้าข่ายข้อใดข้อหนึ่งจะถูกอ่านใหม่ด้วย OCR</p>
+ตัวแปลงจึงตรวจข้อความของทุกหน้าก่อนใช้ หน้าที่เข้าข่ายข้อใดข้อหนึ่งจะถูกอ่านใหม่ด้วย OCR
+ส่วนหน้าสแกนที่เลือกเก็บเป็นภาพ ข้อความที่ผิดจะไม่ถูกนำมาใช้</p>
 <ul class="points">
 <li>มีตัวอักษรที่อ่านไม่ได้ คือตัวที่ฟอนต์ไม่ได้บอกว่าเป็นตัวอะไร</li>
 <li>มีสระอำอยู่ผิดที่ เช่น ไม่ได้ตามหลังพยัญชนะหรือวรรณยุกต์</li>
@@ -220,7 +250,8 @@ def _inside(kept: int) -> str:
 ส่วนหน้าที่อ่านด้วย OCR ยังไม่แยกหัวข้อและตาราง ข้อความที่ซ้ำกันที่ขอบบนหรือขอบล่างของหลายหน้า
 เช่น หัวกระดาษและเลขหน้า ถูกตัดออก</p>
 <p>ในหน้าที่มีข้อความในไฟล์ รูปภาพ ลายเซ็น และตราประทับที่ฝังอยู่ ถูกแทนด้วยป้าย เช่น <span class="nowrap">[ลายเซ็น]</span>
-ไม่มีการเดาเป็นข้อความ ส่วนหน้าที่อ่านด้วย OCR ไม่มีป้ายเหล่านี้ และสิ่งที่ OCR อ่านได้ไม่ชัด เช่น ลายมือหรือรอยเปื้อน
+ไม่มีการเดาเป็นข้อความ ถ้าเลือกเก็บหน้าสแกนเป็นภาพ DOCX จะแสดงรูปเหล่านี้ตามจริงแทนป้าย แต่ Markdown ยังเป็นป้ายเหมือนเดิม
+ส่วนหน้าที่อ่านด้วย OCR ไม่มีป้ายเหล่านี้ และสิ่งที่ OCR อ่านได้ไม่ชัด เช่น ลายมือหรือรอยเปื้อน
 ถูกทำเครื่องหมายว่าไม่แน่ใจ</p>
 </div>
 <figure class="picture">
@@ -241,7 +272,8 @@ def _inside(kept: int) -> str:
 <div class="inside-text">
 <h3>เอกสารเดียว ได้สองไฟล์</h3>
 <p>ทุกหน้าถูกรวมเป็นเอกสารเดียวก่อน แล้วจึงเขียนออกเป็น Markdown สำหรับวางในแชต AI และ DOCX สำหรับแก้ใน Word
-ทั้งสองไฟล์จึงมีเนื้อหาเดียวกัน และบอกส่วนที่ไม่แน่ใจไว้ทั้งคู่ ไฟล์ DOCX ที่ส่งมาได้ Markdown อย่างเดียว</p>
+ทั้งสองไฟล์จึงมีเนื้อหาเดียวกัน และบอกส่วนที่ไม่แน่ใจไว้ทั้งคู่ ต่างกันแค่เมื่อเลือกเก็บหน้าสแกนเป็นภาพ
+ที่ DOCX แสดงภาพ ส่วน Markdown แสดงป้ายแทน ไฟล์ DOCX ที่ส่งมาได้ Markdown อย่างเดียว</p>
 </div>
 <figure class="picture">
 <div class="outputs">
@@ -397,6 +429,8 @@ def status(conversion: Conversion, place: int | None) -> str:
             return "ยกเลิกการแปลงแล้ว"
         case "over_allowance":
             return "เกินจำนวนหน้าที่แปลงได้ในวันนี้"
+    if progress is not None and progress.stage == "images":
+        return f"เก็บภาพหน้า {progress.current}/{progress.total}"
     if progress is not None and progress.stage == "ocr":
         return f"OCR หน้า {progress.current}/{progress.total}"
     if progress is not None and progress.stage == "writing":
@@ -408,13 +442,17 @@ def status(conversion: Conversion, place: int | None) -> str:
 
 def steps(conversion: Conversion, place: int | None) -> str:
     """The steps of a conversion that waits or runs: each done, skipped, happening now, or yet to
-    come. OCR is skipped by a file with no page that needs it. The page asks for them again every
-    2 seconds, with its state."""
-    at = _step_at(conversion)
+    come. Keeping pages as images is listed only when images are kept, and skipped by a file with
+    no page to keep; OCR is skipped by a file with no page that needs it. The page asks for them
+    again every 2 seconds, with its state."""
+    shown = [(step, label) for step, label in _STEPS if step != "images" or conversion.keep_images]
+    at = [step for step, _ in shown].index(_step_at(conversion))
+    reached = {_STAGE_STEPS[stage] for stage in conversion.reached}
+    progress = conversion.progress
     items = []
-    for index, (step, label) in enumerate(_STEPS):
+    for index, (step, label) in enumerate(shown):
         if index < at:
-            state = "skipped" if step == "ocr" and not conversion.read_with_ocr else "done"
+            state = "skipped" if step in _SKIPPABLE and step not in reached else "done"
         else:
             state = "now" if index == at else "later"
         detail = meter = ""
@@ -422,8 +460,8 @@ def steps(conversion: Conversion, place: int | None) -> str:
             detail = f"ลำดับที่ {place}"
         elif step == "open" and conversion.opened is not None:
             detail = f"{conversion.opened.pages} หน้า"
-        elif step == "ocr" and conversion.progress is not None and conversion.progress.stage == "ocr":
-            current, total = conversion.progress.current, conversion.progress.total
+        elif progress is not None and progress.current is not None and _STAGE_STEPS[progress.stage] == step:
+            current, total = progress.current, progress.total
             detail = f"หน้า {current}/{total}"
             if current is not None and total:
                 meter = f'\n<progress class="step-meter" max="{total}" value="{current}">{current}/{total}</progress>'
@@ -539,15 +577,17 @@ def _what_became_of_it(conversion: Conversion) -> str:
 
 
 def _page_rows(conversion: Conversion) -> str:
-    """A finished conversion's pages: how each was read, and what on it the visitor should check.
-    A page with uncertain text is tagged to check, as the summary's headline says."""
+    """A finished conversion's pages: how each was read, or that it was kept as an image, and what
+    on it the visitor should check. A page with uncertain text is tagged to check, as the
+    summary's headline says."""
     assert conversion.summary is not None
     rows = []
     for page in conversion.summary.pages:
-        read = "อ่านด้วย OCR" if page.kind == "ocr" else "ข้อความในไฟล์"
+        read = {"text": "ข้อความในไฟล์", "ocr": "อ่านด้วย OCR", "kept": "เก็บเป็นภาพ"}[page.kind]
         notes = []
         if page.untrusted_text_layer:
-            notes.append("ข้อความในไฟล์ผิด จึงอ่านด้วย OCR")
+            # A kept page's untrusted text layer is dropped; any other page's is read again with OCR.
+            notes.append(f"ข้อความในไฟล์ผิด {'จึงไม่ได้นำมาใช้' if page.kind == 'kept' else 'จึงอ่านด้วย OCR'}")
         if page.uncertain:
             notes.append(f"ไม่แน่ใจ {page.uncertain} จุด")
         for kind in dict.fromkeys(page.placeholders):
@@ -559,14 +599,13 @@ def _page_rows(conversion: Conversion) -> str:
     return "\n".join(rows)
 
 
-def _step_at(conversion: Conversion) -> int:
+def _step_at(conversion: Conversion) -> str:
     """Which of `_STEPS` the conversion is at."""
     if conversion.state == "waiting":
-        return 0
+        return "queue"
     if conversion.opened is None:
-        return 1
-    stage = conversion.progress.stage if conversion.progress is not None else "reading"
-    return {"reading": 2, "ocr": 3, "writing": 4}[stage]
+        return "open"
+    return _STAGE_STEPS[conversion.progress.stage if conversion.progress is not None else "reading"]
 
 
 def _refusal(refusal: RefusalEvent) -> str:

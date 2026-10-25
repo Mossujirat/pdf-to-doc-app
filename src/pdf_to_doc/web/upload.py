@@ -16,6 +16,10 @@ from pdf_to_doc.intake import MAX_BYTES
 # Room for the form's own framing around a file of the largest size taken.
 _FRAMING = 64 * 1024
 _FILE_FIELD = "file"
+# The choice of kept images, by the value the form sends. A form without it, as from a page loaded
+# before the choice was offered, reads scans with OCR.
+KEEP_IMAGES_FIELD = "keep_images"
+KEEP_IMAGES_VALUES = {"no": False, "yes": True}
 
 
 class UploadTooLarge(Exception):
@@ -23,13 +27,14 @@ class UploadTooLarge(Exception):
 
 
 class NotAnUpload(Exception):
-    """The request holds no multipart form with a file in it."""
+    """The request holds no multipart form with a file in it, or makes a choice the form does not offer."""
 
 
 @dataclass(frozen=True)
 class Upload:
     source: bytes
     file_name: str  # as the browser named it
+    keep_images: bool
     fields: dict[str, str]  # the form's other fields, such as the bot check's token
 
 
@@ -63,9 +68,10 @@ async def read_upload(request: Request) -> Upload:
             if len(part.data) > MAX_BYTES:
                 raise UploadTooLarge()
             source, file_name = bytes(part.data), details[b"filename"].decode("utf-8", errors="replace")
-    if source is None:
+    keep_images = KEEP_IMAGES_VALUES.get(fields.get(KEEP_IMAGES_FIELD, "no"))
+    if source is None or keep_images is None:
         raise NotAnUpload()
-    return Upload(source, file_name, fields)
+    return Upload(source, file_name, keep_images, fields)
 
 
 async def _read_parts(request: Request, boundary: bytes) -> list[_Part]:

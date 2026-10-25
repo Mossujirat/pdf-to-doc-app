@@ -129,6 +129,15 @@ components:
     height: "clamp(15rem, 34vw, 19rem)"
   drop-area-hover:
     backgroundColor: "{colors.brand-hover}"
+  choice:
+    backgroundColor: "{colors.page}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.panel}"
+    padding: "0.875rem 1rem"
+  choice-chosen:
+    backgroundColor: "{colors.brand-tint}"
+    textColor: "{colors.ink}"
   card:
     backgroundColor: "{colors.page}"
     textColor: "{colors.ink}"
@@ -167,7 +176,7 @@ The tone is calm and trustworthy enough for a confidential contract: flat surfac
 Everything is served by the site itself. The Content-Security-Policy forbids inline script and inline style and anything from other sites except Cloudflare Turnstile. So all styling lives in one stylesheet (`src/pdf_to_doc/web/static/site.css`, no build step), the one script is `static/app.js`, the fonts are self-hosted, and icons are inline SVG written in `pages.py`.
 
 **Key Characteristics:**
-- One plain, centred task per page; home is title, drop area, privacy line, then how it works.
+- One plain, centred task per page; home is title, the choice of what becomes of scans, drop area, privacy line, then how it works.
 - One dark green for the drop area, the one primary button and steps done; amber only for pages to check.
 - Prompt, loopless Thai, in three weights (400, 500, 600) for everything.
 - Flat: borders and pale fills, not shadows.
@@ -180,7 +189,7 @@ One dark green on white, a pale green tint for "now", amber only for "check this
 ### Primary
 - **Contract Green** (brand, #0f6b55): the drop area, the one primary button per page, the marks of steps done, the wordmark, links, focus rings, the icons beside the privacy line and facts. White on it is 6.45:1; it is 6.45:1 on white, 5.99:1 on Soft Mist and 5.62:1 on Pale Leaf.
 - **Deep Contract Green** (brand-hover, #0b5747): hover for the drop area, primary buttons and links. White on it is 8.51:1.
-- **Pale Leaf** (brand-tint, #e6f2ee): the current step's mark, a just-changed step's brief tint, the progress track, the how-it-works numbers, text selection. Ink on it is 14.6:1.
+- **Pale Leaf** (brand-tint, #e6f2ee): the current step's mark, a just-changed step's brief tint, the progress track, the how-it-works numbers, the chosen option above the drop area, text selection. Ink on it is 14.6:1, Muted Slate 6.04:1, and Contract Green 5.62:1.
 - **Sage Line** (brand-line, #8fc4b4): the dashed frame around the drop area and the dotted line joining the stops of a file's route. Decorative only (1.96:1 on white); never text.
 
 ### Secondary
@@ -197,7 +206,7 @@ One dark green on white, a pale green tint for "now", amber only for "check this
 - Notes on the drop area use white at 88% opacity: 5.39:1 on Contract Green, 7.01:1 on hover.
 
 ### Named Rules
-**The One Green Rule.** Contract Green fills only the drop area, the single primary button on a page, the marks of a conversion's progress (finished steps, the current step's dot and the progress bar), and small markers (list bullets, the last stop of a file's route). Every other green is a line, an icon or text.
+**The One Green Rule.** Contract Green fills only the drop area, the single primary button on a page, the marks of a conversion's progress (finished steps, the current step's dot and the progress bar), and small markers (list bullets, the last stop of a file's route, the chosen option's radio). Every other green is a line, an icon or text.
 
 **The Amber Means Check Rule.** Amber appears only where text should be checked against the original: the chips for pages to check, and uncertain text as DOCX highlights it, in the home page's picture. It never decorates, warns about limits or marks errors of the service.
 
@@ -225,18 +234,18 @@ Fonts are self-hosted woff2 subsets in `static/fonts/` (Regular 400, Medium 500,
 - **Button** (500, 1.0625rem, 1.3).
 
 ### Named Rules
-**The Three Weights Rule.** Only 400, 500 and 600 exist. 600 for headings and titles, 500 for buttons, chips, step labels and table row headers, 400 for reading. No italics, no letter-spacing, no uppercase.
+**The Three Weights Rule.** Only 400, 500 and 600 exist. 600 for headings and titles, 500 for buttons, chips, step labels, option titles and table row headers, 400 for reading. No italics, no letter-spacing, no uppercase.
 
 **The Tabular Numbers Rule.** Anything that counts (chips, step details, the pages table) uses tabular numbers so "หน้า 23/85" does not jitter as it updates.
 
 ## Layout
 
 - **Container:** the top bar and `main` share a 72rem maximum, with side padding of the gutter (clamp(1rem, 3vw, 2rem)). `main` has clamp(2rem, 6vw, 4.5rem) above and clamp(3rem, 7vw, 5rem) below. The body is a column so short pages still push to full height.
-- **Home:** the hero and the upload form are centred columns of 46rem. The drop area sits clamp(1.75rem, 4vw, 2.75rem) under the hero; the privacy line 1rem under it. Two parts follow, each clamp(4rem, 9vw, 6.5rem) below the last, under a centred Section headline: "แปลงอย่างไร", three steps side by side, and "ข้างในทำอะไรกับไฟล์ของคุณ", six rows each with its text on the left and its picture on the right (gap clamp(1.5rem, 5vw, 4rem)), the rows clamp(2rem, 5vw, 3.5rem) apart. On a phone the steps stack, and each row puts its text above its picture.
+- **Home:** the hero and the upload form are centred columns of 46rem. The choice of what becomes of scans sits clamp(1.75rem, 4vw, 2.75rem) under the hero, the drop area 1rem under it, and the privacy line 1rem under that. Two parts follow, each clamp(4rem, 9vw, 6.5rem) below the last, under a centred Section headline: "แปลงอย่างไร", three steps side by side, and "ข้างในทำอะไรกับไฟล์ของคุณ", six rows each with its text on the left and its picture on the right (gap clamp(1.5rem, 5vw, 4rem)), the rows clamp(2rem, 5vw, 3.5rem) apart. On a phone the steps stack, and each row puts its text above its picture.
 - **Every other page:** one card, 44rem wide, centred, its contents a column with a 1.5rem gap. A page to read, the privacy policy, is the same card with a 0.75rem gap and `h2` sections.
 - **Every page** ends with the footer, pushed to the bottom of a short page.
 - **Rhythm:** gaps step through 0.25, 0.5, 0.75, 1, 1.5 and 1.75rem; inner padding uses 0.625 to 1rem. Responsive spacing uses `clamp()` rather than breakpoints.
-- **Phone width (at or below 47.5rem):** the top bar's line hides, leaving the wordmark; "how it works" becomes one column; the privacy line aligns left; a step's detail drops under its label; the pages table loses its scroll box, so every page shows. Long file names wrap anywhere. A number stays on its unit's line (`&nbsp;` in "50&nbsp;MB", "150&nbsp;หน้า").
+- **Phone width (at or below 47.5rem):** the top bar's line hides, leaving the wordmark; the two options above the drop area stack once each would be narrower than 16rem; "how it works" becomes one column; the privacy line aligns left; a step's detail drops under its label; the pages table loses its scroll box, so every page shows. Long file names wrap anywhere. A number stays on its unit's line (`&nbsp;` in "50&nbsp;MB", "150&nbsp;หน้า").
 
 ## Elevation & Depth
 
@@ -258,6 +267,14 @@ Soft, generous rounding that grows with the size of the surface: 0.5rem miniatur
 ### Hero
 - Centred title (Display) and subtitle (Muted Slate, clamp(1.0625rem, 1.8vw, 1.25rem), balanced wrap), 1rem apart.
 
+### Choice above the drop area
+- What becomes of the file's scans: read with OCR, the default, or kept as images. It sits inside the upload form, so the choice goes with a file picked or dropped, and above the drop area, because a file starts converting as soon as it comes.
+- Two radio buttons in a `fieldset` whose legend is visually hidden. Each option is a card that is wholly its radio button's label: the radio, then its title (500, Body) and a muted note (Label) under it. The title names the option and the note describes it (`aria-labelledby`, `aria-describedby`).
+- A card: Paper, a 1px Hairline border, 1rem corners, padding 0.875rem by 1rem, 0.75rem between the radio and the text. The two sit side by side, 0.75rem apart, and stack once each would be narrower than 16rem.
+- The native radio, 1.25rem, in Contract Green (`accent-color`), centred on the title's first line.
+- **Chosen:** Pale Leaf with a Contract Green border, and the radio's green dot. **Hover:** a Contract Green border. **Focus:** the whole card takes the 3px Contract Green ring, not the radio alone.
+- OCR is chosen whenever the page opens: the radios carry `autocomplete="off"`, so a browser does not bring back an earlier choice, and a page shown again from history is reset. Choosing never opens the file picker, as the cards lie outside the drop area's label; a file dropped on them is still sent, as the whole form takes drops. Without the script, the noscript button sends the choice with the file.
+
 ### Drop area
 - The whole area is the file input's label: a transparent input covers it, so tapping anywhere opens the picker, and dropping a file anywhere on the form sends it. With the script, choosing or dropping sends at once; without it, a full-width primary "แปลงไฟล์" button appears (noscript).
 - Contract Green, 1.25rem corners, min-height clamp(15rem, 34vw, 19rem), content centred: a 4.75rem white circle with a green "+" icon, the drop title, then a note with the formats and limits. A dashed Sage Line frame surrounds it.
@@ -277,7 +294,7 @@ Soft, generous rounding that grows with the size of the surface: 0.5rem miniatur
 - **Text alternatives:** a picture made of real text needs none. A picture that needs one has a visually hidden `figcaption`, or a visible note as its caption.
 - **The pictures:**
   - **The file checked:** a white card with the file name and a ticked list of checks.
-  - **Pages read two ways:** three miniature pages (3:4, Hairline border, grey bars for lines), the scan in Scan Grey, each captioned with a white chip.
+  - **Pages read two ways:** three miniature pages (3:4, Hairline border, grey bars for lines), the scan in Scan Grey, each captioned with a white chip; the scan's says "OCR หรือภาพ", as the visitor chooses.
   - **Wrong text caught:** two word boxes with an arrow between them: "กำร" in Delete Red, struck through, and "การ" in Contract Green with a green border, then a muted note. The words are 600, clamp(1.75rem, 3.4vw, 2.25rem).
   - **The Thai repair:** the printed lines above (split by a dashed Hairline), an arrow pointing down, then the result in a green-bordered box.
   - **Structure kept:** a white card with a struck-out page number, a heading, a numbered list and placeholder chips.
@@ -305,13 +322,14 @@ Soft, generous rounding that grows with the size of the surface: 0.5rem miniatur
 
 ### Steps list with progress
 - A bordered list (1rem corners), rows split by Hairline, each row a 1.75rem mark, the label (500) and a right-aligned muted detail ("ลำดับที่ 2", "หน้า 23/85").
-- Marks: done is a filled Contract Green circle with a white tick; now is a Pale Leaf circle with a green border and a green dot; later is an empty Hairline circle, its label muted. OCR, for a file with no page that needs it, is skipped: an empty circle, a muted label and the detail "ไม่ต้องใช้", never a tick. Each label carries a visually hidden state word for screen readers.
-- During OCR a progress bar runs under the label: 0.5rem pill, Pale Leaf track, Contract Green fill.
+- The steps: รอคิว, เปิดไฟล์, อ่านข้อความในไฟล์, เก็บหน้าสแกนเป็นภาพ (only when images are kept), อ่านด้วย OCR, สร้างไฟล์ผลลัพธ์.
+- Marks: done is a filled Contract Green circle with a white tick; now is a Pale Leaf circle with a green border and a green dot; later is an empty Hairline circle, its label muted. Keeping pages as images, for a file with no page to keep, and OCR, for a file with no page that needs it, are skipped: an empty circle, a muted label and the detail "ไม่ต้องใช้", never a tick. Each label carries a visually hidden state word for screen readers.
+- While pages are kept as images, and during OCR, a progress bar runs under the label: 0.5rem pill, Pale Leaf track, Contract Green fill.
 - A step whose state just changed is lit Pale Leaf, holds for 4 seconds, then fades over 1.8 seconds. While the tab is hidden the fade pauses, so the change is still visible on return. The script updates each step in place rather than rebuilding the list, so a poll does not cut the fade short.
 
 ### Pages table
 - Inside a bordered, 1rem-cornered wrapper that scrolls past 28rem on wider screens (a focusable, labelled region, so a keyboard can scroll it), with a sticky Soft Mist header in muted 500 text. Label size, tabular numbers, 0.625rem by 1rem cells, Hairline between rows, none after the last.
-- Columns: page (row header, 500), how it was read, what to check. A page to check starts its note with an amber "ตรวจ" chip; nothing to check is a muted dash.
+- Columns: page (row header, 500), how it was read (ข้อความในไฟล์, อ่านด้วย OCR, or เก็บเป็นภาพ for a page kept as an image), what to check. A page to check starts its note with an amber "ตรวจ" chip; nothing to check is a muted dash.
 
 ### Facts list
 - For a conversion that ended with no result: a Soft Mist panel (1rem corners, 1rem by 1.25rem padding) of plain sentences, each led by a green tick icon, saying what became of the file.

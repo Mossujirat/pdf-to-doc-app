@@ -19,6 +19,7 @@ from pdf_to_doc.web.bot_check import TOKEN_FIELD
 from pdf_to_doc.web.sandboxes import Sandbox
 from pdf_to_doc.web.settings import Settings
 from pdf_to_doc.web.statistics import Statistics
+from pdf_to_doc.web.upload import KEEP_IMAGES_FIELD
 
 # The service as the tests run it: with its bot check's keys, for this test site.
 SETTINGS = Settings(turnstile_site_key="site-key", turnstile_secret_key="secret-key", hostname=HOSTNAME)
@@ -64,13 +65,18 @@ def as_browser(client: TestClient, token: str) -> TestClient:
 
 
 def send(
-    client: TestClient, source: bytes, name: str = "สัญญา.pdf", headers: list[tuple[str, str]] | None = None
+    client: TestClient,
+    source: bytes,
+    name: str = "สัญญา.pdf",
+    headers: list[tuple[str, str]] | None = None,
+    keep_images: str | None = None,
 ) -> httpx2.Response:
     """Send a file from the home page's form, with the token its bot check put there, and any
-    `headers` of the request's own."""
+    `headers` of the request's own. `keep_images` is the value of the form's choice, if it sends one."""
+    fields = {TOKEN_FIELD: TOKEN} if keep_images is None else {TOKEN_FIELD: TOKEN, KEEP_IMAGES_FIELD: keep_images}
     return client.post(
         "/conversions",
-        data={TOKEN_FIELD: TOKEN},
+        data=fields,
         files={"file": (name, source)},
         headers=headers,
         follow_redirects=False,
@@ -78,10 +84,14 @@ def send(
 
 
 def upload(
-    client: TestClient, source: bytes, name: str = "สัญญา.pdf", headers: list[tuple[str, str]] | None = None
+    client: TestClient,
+    source: bytes,
+    name: str = "สัญญา.pdf",
+    headers: list[tuple[str, str]] | None = None,
+    keep_images: str | None = None,
 ) -> str:
     """Send a file from the home page's form, and return the conversion's link."""
-    response = send(client, source, name, headers)
+    response = send(client, source, name, headers, keep_images)
     assert response.status_code == 303, response.text
     return str(response.headers["location"])
 

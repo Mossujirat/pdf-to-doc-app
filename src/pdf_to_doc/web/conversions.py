@@ -17,6 +17,7 @@ from typing import Literal
 
 from pdf_to_doc.conversion import OutputFormat
 from pdf_to_doc.exit_codes import EXIT_OK
+from pdf_to_doc.progress import Stage
 from pdf_to_doc.summary import Summary
 from pdf_to_doc.web.allowance import Allowance, Charge
 from pdf_to_doc.web.protocol import (
@@ -45,6 +46,10 @@ class QueueFull(Exception):
     """Every place is taken, and as many conversions wait as may."""
 
 
+class HeldOutputsFull(Exception):
+    """The outputs that ended conversions hold in memory total their cap or more."""
+
+
 class AlreadyConverting(Exception):
     """The browser already has a conversion waiting or running: one file at a time."""
 
@@ -66,12 +71,14 @@ class Conversion:
     # The client's address as its allowance counts it; held in memory only, and dropped when the
     # conversion ends.
     client_ip: str | None
+    keep_images: bool = False  # the visitor's choice for the file's scans and pictures
     state: State = "waiting"
     charge: Charge | None = None  # its pages, charged to the client's allowance
     pages_left: int | None = None  # what the client had left today, when the file had more pages
     opened: OpenedEvent | None = None
     progress: ProgressEvent | None = None
-    read_with_ocr: bool = False  # whether any page has been, so that its steps never show OCR it skipped
+    # The stages the sandbox has reported, so that its steps never show one it skipped as done.
+    reached: set[Stage] = field(default_factory=set)
     summary: Summary | None = None
     outputs: dict[OutputFormat, bytes] = field(default_factory=dict)
     refusal: RefusalEvent | None = None
@@ -96,8 +103,10 @@ class Conversion:
 class Conversions:
     """Every conversion the web app holds: at most `max_running` converting at once, and at most
     `max_waiting` waiting for a place. A conversion is forgotten `keep_for` seconds after it
-    ends, however it ends, or as soon as the visitor deletes it. Its pages are charged to its
-    client's allowance as soon as the sandbox has counted them, and given back if it fails."""
+    ends, however it ends, or as soon as the visitor deletes it. A conversion's pages are charged
+    to its client's allowance as soon as the sandbox has counted them, and given back if it fails.
+    While the outputs of ended conversions total `max_held_outputs` bytes or more, no file is
+    taken and none waiting starts: only those running may add their outputs on top."""
 
     def __init__(
         self,
@@ -107,6 +116,7 @@ class Conversions:
         *,
         max_running: int,
         max_waiting: int,
+        max_held_outputs: int,
         keep_for: float,
         clock: Clock,
     ) -> None:
@@ -115,6 +125,7 @@ class Conversions:
         self._statistics = statistics
         self._max_running = max_running
         self._max_waiting = max_waiting
+        self._max_held_outputs = max_held_outputs
         self._keep_for = keep_for
         self._clock = clock
         self._held: dict[str, Conversion] = {}
@@ -122,13 +133,14 @@ class Conversions:
         self._running: dict[str, asyncio.Task[None]] = {}
         self._stopping = False
 
-    def start(self, source: bytes, file_name: str, token: str, client_ip: str) -> str:
+    def start(self, source: bytes, file_name: str, token: str, client_ip: str, *, keep_images: bool = False) -> str:
         """Queue the source file for the browser holding `token`, at the client address `client_ip`,
-        to convert as soon as a place is free, and return the conversion's identifier: 128 random
-        bits, for its link.
+        to convert as soon as a place is free, keeping images if `keep_images`, and return the
+        conversion's identifier: 128 random bits, for its link.
 
-        Raises `AlreadyConverting` when that browser has a conversion waiting or running, and
-        `QueueFull` when no more may wait. Either way, nothing of the file is kept.
+        Raises `AlreadyConverting` when that browser has a conversion waiting or running,
+        `QueueFull` when no more may wait, and `HeldOutputsFull` when the outputs held reach their
+        cap. Whichever it raises, nothing of the file is kept.
         """
         self.forget_expired()
         for other, conversion in self._held.items():
@@ -137,8 +149,12 @@ class Conversions:
         # A cancelled conversion keeps its place until its sandbox has stopped.
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
             raise QueueFull()
+        if self._outputs_full():
+            raise HeldOutputsFull()
         identifier = secrets.token_urlsafe(16)
-        self._held[identifier] = Conversion(token, file_name, client_ip, queued_at=self._clock())
+        self._held[identifier] = Conversion(
+            token, file_name, client_ip, keep_images=keep_images, queued_at=self._clock()
+        )
         self._waiting[identifier] = source
         self._start_next()
         return identifier
@@ -174,16 +190,25 @@ class Conversions:
             self._running[identifier].cancel()
 
     def forget(self, identifier: str) -> None:
-        """Forget an ended conversion now, and its outputs with it, as when the visitor deletes them."""
+        """Forget an ended conversion now, and its outputs with it, as when the visitor deletes them.
+        One waiting for the outputs held to fall under their cap may then start."""
         if not self._held[identifier].ongoing:
             del self._held[identifier]
+            self._start_next()
 
     def forget_expired(self) -> None:
         """Forget every conversion that ended `keep_for` seconds ago or more, and, after midnight,
-        the client addresses of the day before."""
-        for identifier, conversion in list(self._held.items()):
-            if conversion.ended_at is not None and self.time_left(conversion) <= 0:
-                del self._held[identifier]
+        the client addresses of the day before. One waiting for the outputs held to fall under
+        their cap may then start."""
+        expired = [
+            identifier
+            for identifier, conversion in self._held.items()
+            if conversion.ended_at is not None and self.time_left(conversion) <= 0
+        ]
+        for identifier in expired:
+            del self._held[identifier]
+        if expired:
+            self._start_next()
         self._allowance.forget_past_days()
 
     async def forget_expired_every(self, seconds: float) -> None:
@@ -202,9 +227,18 @@ class Conversions:
             task.cancel()
         await asyncio.gather(*running, return_exceptions=True)
 
+    def _outputs_full(self) -> bool:
+        """Whether the outputs held total their cap or more. Only an ended conversion holds
+        outputs: one that finished, until it is forgotten."""
+        held_bytes = sum(len(output) for conversion in self._held.values() for output in conversion.outputs.values())
+        return held_bytes >= self._max_held_outputs
+
     def _start_next(self) -> None:
-        """Start the conversions first in the queue, while places are free."""
-        while self._waiting and len(self._running) < self._max_running and not self._stopping:
+        """Start the conversions first in the queue, while places are free and the outputs held are
+        under their cap."""
+        while (
+            self._waiting and len(self._running) < self._max_running and not self._stopping and not self._outputs_full()
+        ):
             identifier = next(iter(self._waiting))
             source = self._waiting.pop(identifier)
             conversion = self._held[identifier]
@@ -227,7 +261,7 @@ class Conversions:
         outcome: State = "failed"  # unless the sandbox says how it ended
         outputs: dict[OutputFormat, bytes] = {}
         try:
-            async with aclosing(self._sandbox.convert(source)) as sent:
+            async with aclosing(self._sandbox.convert(source, keep_images=conversion.keep_images)) as sent:
                 async for item in sent:
                     if isinstance(item, Ended):
                         conversion.timed_out = item.timed_out
@@ -253,8 +287,10 @@ class Conversions:
             case OpenedEvent():
                 self._charge(conversion, event)
             case ProgressEvent():
+                if event.stage == "images" and not conversion.keep_images:
+                    raise Malformed("pages kept as images when that was not asked for")
                 conversion.progress = event
-                conversion.read_with_ocr |= event.stage == "ocr"
+                conversion.reached.add(event.stage)
             case SummaryEvent():
                 conversion.summary = event.summary()
             case RefusalEvent():

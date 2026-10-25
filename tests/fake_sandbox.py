@@ -21,14 +21,14 @@ class FakeSandbox:
         """`engine` makes a fresh OCR engine for each conversion."""
         self._engine = engine
 
-    async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
+    async def convert(self, source: bytes, *, keep_images: bool = False) -> AsyncGenerator[bytes | Ended]:
         loop = asyncio.get_running_loop()
         lines: asyncio.Queue[bytes | None] = asyncio.Queue()
         stdout = io.BytesIO()
 
         def convert_in_thread() -> int:
             try:
-                return run(io.BytesIO(source), stdout, _Lines(loop, lines), ocr=self._engine())
+                return run(io.BytesIO(source), stdout, _Lines(loop, lines), ocr=self._engine(), keep_images=keep_images)
             finally:
                 loop.call_soon_threadsafe(lines.put_nowait, None)
 

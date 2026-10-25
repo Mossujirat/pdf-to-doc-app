@@ -2,12 +2,14 @@
 source file's bytes along and reads back what the sandbox sends (ADR 0004)."""
 
 import asyncio
+import os
 import sys
 from asyncio.subprocess import PIPE
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Protocol
 
+from pdf_to_doc.sandbox import KEEP_IMAGES_VARIABLE, keep_images_setting
 from pdf_to_doc.web.protocol import MAX_EVENT_LINE
 
 
@@ -30,10 +32,10 @@ class Ended:
 
 
 class Sandbox(Protocol):
-    def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
-        """Convert the source file: each event line from the sandbox's stderr as it comes,
-        then how it ended. Stopping early, as when the task reading it is cancelled,
-        stops the conversion."""
+    def convert(self, source: bytes, *, keep_images: bool = False) -> AsyncGenerator[bytes | Ended]:
+        """Convert the source file, keeping images if `keep_images`: each event line from the
+        sandbox's stderr as it comes, then how it ended. Stopping early, as when the task reading
+        it is cancelled, stops the conversion."""
         ...
 
 
@@ -41,9 +43,16 @@ class LocalSandbox:
     """The sandbox entry point in a process of its own, for development on a machine
     without Docker. It isolates nothing: the launcher's containers do that."""
 
-    async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
+    async def convert(self, source: bytes, *, keep_images: bool = False) -> AsyncGenerator[bytes | Ended]:
         process = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "pdf_to_doc.sandbox", stdin=PIPE, stdout=PIPE, stderr=PIPE, limit=MAX_EVENT_LINE
+            sys.executable,
+            "-m",
+            "pdf_to_doc.sandbox",
+            stdin=PIPE,
+            stdout=PIPE,
+            stderr=PIPE,
+            limit=MAX_EVENT_LINE,
+            env={**os.environ, KEEP_IMAGES_VARIABLE: keep_images_setting(keep_images)},
         )
         assert process.stdin is not None and process.stdout is not None and process.stderr is not None
         # Read alongside the events, or a full pipe would stall the sandbox before it ends.

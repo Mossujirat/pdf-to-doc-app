@@ -32,7 +32,7 @@ The service makes two promises, with equal weight:
 ## Operating Context
 
 **A conversion:**
-1. Drop or pick a file, and an invisible bot check runs.
+1. Choose whether scans are read with OCR, the default, or kept as images in the DOCX; then drop or pick a file, and an invisible bot check runs.
 2. The page shows the file's place in the queue, then its progress, such as "OCR หน้า 23/85".
 3. The result shows the summary, a button that copies the Markdown, and a DOCX download.
 4. The visitor deletes the result, or lets it expire.

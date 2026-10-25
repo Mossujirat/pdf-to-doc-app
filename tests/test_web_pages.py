@@ -20,7 +20,7 @@ def test_a_file_with_no_page_for_ocr_shows_ocr_skipped_not_done() -> None:
 
 def test_a_file_read_with_ocr_shows_ocr_done() -> None:
     conversion = Conversion(
-        "token", "สัญญา.pdf", None, state="running", opened=OPENED, progress=WRITING, read_with_ocr=True
+        "token", "สัญญา.pdf", None, state="running", opened=OPENED, progress=WRITING, reached={"ocr", "writing"}
     )
 
     assert 'data-step="ocr" data-at="done"' in pages.steps(conversion, None)

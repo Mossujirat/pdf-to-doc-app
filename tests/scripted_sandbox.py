@@ -12,7 +12,7 @@ class ScriptedSandbox:
         self._lines = lines
         self._ended = ended
 
-    async def convert(self, source: bytes) -> AsyncGenerator[bytes | Ended]:
+    async def convert(self, source: bytes, *, keep_images: bool = False) -> AsyncGenerator[bytes | Ended]:
         for line in self._lines:
             yield line
         if self._ended is not None:

@@ -2,6 +2,7 @@
 downloads out. A fake sandbox runs the real conversion function with a fake OCR engine."""
 
 import asyncio
+import re
 import threading
 from collections.abc import Iterator, MutableMapping
 from dataclasses import replace
@@ -14,9 +15,20 @@ import pytest
 from fake_ocr import FailingEngine, FakeEngine
 from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
+from held_sandbox import HeldSandbox
 from pdf_builder import Scan, grown_to, pdf
 from scripted_sandbox import ScriptedSandbox
-from web_browser import SETTINGS, browser, ended_state, send, upload, wait_for_state
+from web_browser import (
+    SETTINGS,
+    as_browser,
+    browser,
+    browser_token,
+    ended_state,
+    send,
+    shown_text,
+    upload,
+    wait_for_state,
+)
 from word_builder import Image, PageBreak, document, legacy_doc
 
 from pdf_to_doc.ocr import Language, PageImage, TextBox
@@ -74,6 +86,117 @@ def test_the_conversion_page_shows_the_ocr_page_being_read() -> None:
         assert ended_state(client, link) == "finished"
 
 
+@pytest.mark.parametrize(
+    ("keep_images", "headline", "markdown"),
+    [
+        pytest.param("no", "อ่านด้วย OCR 1 หน้า", "หน้าสแกนแรก", id="OCR"),
+        pytest.param("yes", "เก็บเป็นภาพ 1 หน้า", "[หน้าสแกน]", id="kept images"),
+        pytest.param(None, "อ่านด้วย OCR 1 หน้า", "หน้าสแกนแรก", id="a form from before the choice"),
+    ],
+)
+def test_the_choice_of_kept_images_goes_with_the_file(
+    client: TestClient, keep_images: str | None, headline: str, markdown: str
+) -> None:
+    link = upload(client, pdf(Scan(SCANS[0], dpi=50)), keep_images=keep_images)
+
+    assert ended_state(client, link) == "finished"
+    assert headline in client.get(link).text
+    assert markdown_reader.page_texts(client.get(f"{link}/markdown").text) == [markdown]
+
+
+def test_a_choice_the_form_does_not_offer_is_refused_as_not_an_upload(client: TestClient) -> None:
+    response = send(client, pdf(Scan(SCANS[0], dpi=50)), keep_images="both")
+
+    assert response.status_code == 400
+    assert "ไม่ได้รับไฟล์" in response.text
+
+
+OPENED = b'{"event": "opened", "source_type": "pdf", "pages": 2}'
+READING = b'{"event": "progress", "stage": "reading", "current": null, "total": null}'
+KEEPING_PAGES = b'{"event": "progress", "stage": "images", "current": 1, "total": 2}'
+
+
+def steps_of(state: dict[str, Any]) -> list[tuple[str, str]]:
+    """Each step the conversion's page lists, with where the conversion is at it."""
+    return re.findall(r'data-step="(\w+)" data-at="(\w+)"', state["steps"])
+
+
+def test_the_conversion_page_shows_pages_being_kept_as_images() -> None:
+    held = HeldSandbox(reports=(OPENED, READING, KEEPING_PAGES))
+    with browser(held) as client:
+        link = upload(client, pdf(["หน้าแรก"]), keep_images="yes")
+
+        state = wait_for_state(client, link, lambda state: state["text"] == "เก็บภาพหน้า 1/2")
+        assert steps_of(state) == [
+            ("queue", "done"),
+            ("open", "done"),
+            ("read", "done"),
+            ("images", "now"),
+            ("ocr", "later"),
+            ("write", "later"),
+        ]
+        assert "เก็บหน้าสแกนเป็นภาพ" in state["steps"] and "หน้า 1/2" in state["steps"]
+        assert '<progress class="step-meter" max="2" value="1">' in state["steps"]
+        held.started[0].end()
+
+
+def test_a_file_with_no_page_to_keep_shows_keeping_pages_as_images_as_not_needed() -> None:
+    held = HeldSandbox()  # it goes straight to its first OCR page
+    with browser(held) as client:
+        link = upload(client, pdf(["หน้าแรก"]), keep_images="yes")
+
+        state = wait_for_state(client, link, lambda state: state["text"] == "OCR หน้า 1/2")
+        assert ("images", "skipped") in steps_of(state)
+        assert "ไม่ต้องใช้" in state["steps"]
+        held.started[0].end()
+
+
+@pytest.mark.parametrize(
+    ("keep_images", "steps"),
+    [
+        pytest.param(None, ["queue", "open", "read", "ocr", "write"], id="OCR"),
+        pytest.param("yes", ["queue", "open", "read", "images", "ocr", "write"], id="kept images"),
+    ],
+)
+def test_keeping_pages_as_images_is_listed_only_when_images_are_kept(keep_images: str | None, steps: list[str]) -> None:
+    held = HeldSandbox()
+    with browser(held, replace(SETTINGS, max_running=1)) as client:
+        upload(as_browser(client, browser_token()), pdf(["หน้าแรก"]))
+        waiting = upload(as_browser(client, browser_token()), pdf(["หน้าแรก"]), keep_images=keep_images)
+
+        state = wait_for_state(client, waiting, lambda state: state["state"] == "waiting")
+        assert steps_of(state) == [(step, "now" if step == "queue" else "later") for step in steps]
+        held.started[0].end()
+
+
+def page_rows(page: str) -> list[list[str]]:
+    """The finished conversion's table, a row for each page, each cell as a visitor reads it."""
+    rows = page.split("<tbody>")[1].split("</tbody>")[0].split("</tr>")[:-1]
+    return [[shown_text(cell).strip() for cell in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row)] for row in rows]
+
+
+def test_the_finished_table_says_which_pages_were_kept_and_why_a_kept_pages_text_was_left_out() -> None:
+    summary = (
+        b'{"event": "summary", "pages": ['
+        b'{"number": 1, "kind": "text", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}, '
+        b'{"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": true, "placeholders": [], "uncertain": 0}, '
+        b'{"number": 3, "kind": "kept", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}, '
+        b'{"number": 4, "kind": "kept", "engine": null, "untrusted_text_layer": true, "placeholders": [], "uncertain": 0}]}'
+    )
+    with browser(ScriptedSandbox([summary], Ended(0, b"markdown 0\n"))) as client:
+        link = upload(client, pdf(["หน้าแรก"]), keep_images="yes")
+
+        assert ended_state(client, link) == "finished"
+        page = client.get(link).text
+    assert "เก็บเป็นภาพ 2 หน้า ได้แก่หน้า 3–4 (หน้า 4 ข้อความในไฟล์ไม่น่าเชื่อถือ จึงไม่ได้นำมาใช้)" in page
+    assert page_rows(page) == [
+        ["หน้า 1", "ข้อความในไฟล์", "–"],
+        ["หน้า 2", "อ่านด้วย OCR", "ข้อความในไฟล์ผิด จึงอ่านด้วย OCR"],
+        ["หน้า 3", "เก็บเป็นภาพ", "–"],
+        ["หน้า 4", "เก็บเป็นภาพ", "ข้อความในไฟล์ผิด จึงไม่ได้นำมาใช้"],
+    ]
+
+
 def test_a_docx_gives_markdown_only(client: TestClient) -> None:
     link = upload(client, document("หน้าแรก", Image(), PageBreak(), "หน้าที่สอง"), name="สัญญา.docx")
 
@@ -105,6 +228,15 @@ def test_the_local_sandbox_converts_in_a_process_of_its_own() -> None:
         assert ended_state(client, link) == "finished"
         assert markdown_reader.page_texts(client.get(f"{link}/markdown").text) == ["หน้าแรก", "หน้าที่สอง"]
         assert docx_reader.page_texts(client.get(f"{link}/docx").content) == ["หน้าแรก", "หน้าที่สอง"]
+
+
+def test_the_local_sandbox_keeps_images_when_chosen() -> None:
+    # Kept, the scan loads no OCR models in the subprocess either.
+    with browser(LocalSandbox()) as client:
+        link = upload(client, pdf(Scan(SCANS[0], dpi=50)), keep_images="yes")
+
+        assert ended_state(client, link) == "finished"
+        assert markdown_reader.page_texts(client.get(f"{link}/markdown").text) == ["[หน้าสแกน]"]
 
 
 # The size limit
@@ -292,6 +424,11 @@ SUMMARY = b'{"event": "summary", "pages": []}'
             [b'{"event": "summary", "pages": [], "images_lowered_to": 0}'],
             Ended(0, b"markdown 0\n"),
             id="a resolution of nothing",
+        ),
+        pytest.param(
+            [b'{"event": "progress", "stage": "images", "current": 1, "total": 1}', SUMMARY],
+            Ended(0, b"markdown 0\n"),
+            id="pages kept as images when that was not asked for",
         ),
     ],
 )

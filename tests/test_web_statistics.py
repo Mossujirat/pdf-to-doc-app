@@ -10,7 +10,7 @@ from fake_cloudflare import failing
 from fake_sandbox import FakeSandbox
 from fastapi.testclient import TestClient
 from held_sandbox import HeldSandbox
-from pdf_builder import pdf
+from pdf_builder import Scan, pdf
 from scripted_sandbox import ScriptedSandbox
 from web_browser import SETTINGS, as_browser, browser, browser_token, converted, ended_state, send, upload, wait_until
 from word_builder import legacy_doc
@@ -55,6 +55,17 @@ def test_conversions_are_counted_by_how_they_ended_with_their_pages_refusals_and
     assert since_start["bot_check_failures"] == {"failed": 1}
     assert since_start["peak_sandbox_memory"] == 1_300_000_000
     assert since_start["longest_sandbox_cpu_time"] == 1700.0
+
+
+def test_pages_kept_as_images_are_counted_as_a_kind_of_their_own() -> None:
+    clock = FakeClock()
+    statistics = Statistics(clock.wall)
+
+    with browser(FakeSandbox(), clock=clock, statistics=statistics) as client:
+        link = upload(client, pdf(["หน้าแรก"], Scan(["หน้าสแกน"], dpi=50)), keep_images="yes")
+        assert ended_state(client, link) == "finished"
+
+    assert counted(statistics)["since_start"]["pages"] == {"text": 1, "kept": 1}
 
 
 def test_how_long_conversions_ran_and_waited_and_the_longest_queue_are_counted() -> None:

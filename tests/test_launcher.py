@@ -16,7 +16,7 @@ from typing import TypeVar
 import markdown_reader
 import pytest
 from fake_docker import FakeDocker
-from pdf_builder import pdf
+from pdf_builder import Scan, pdf
 
 from pdf_to_doc.web.launcher import Launcher, LauncherSandbox, serve, serve_connection
 from pdf_to_doc.web.protocol import MAX_EVENT_LINE, read_parts
@@ -24,6 +24,7 @@ from pdf_to_doc.web.sandboxes import Ended, Usage
 
 T = TypeVar("T")
 SOURCE = pdf(["หน้าแรก"])
+SCAN = pdf(Scan(["หน้าสแกน"], dpi=50))
 MB = 1024 * 1024
 
 
@@ -41,11 +42,11 @@ class Converted:
     error: str | None  # the type of the error the web app's side raised, if it raised one
 
 
-async def converted(sandbox: LauncherSandbox, source: bytes) -> Converted:
+async def converted(sandbox: LauncherSandbox, source: bytes, *, keep_images: bool = False) -> Converted:
     lines: list[bytes] = []
     ended = None
     try:
-        async for item in sandbox.convert(source):
+        async for item in sandbox.convert(source, keep_images=keep_images):
             if isinstance(item, Ended):
                 ended = item
             else:
@@ -101,6 +102,38 @@ def test_a_source_file_comes_back_as_both_outputs_after_its_events() -> None:
     assert markdown_reader.page_texts(outputs["markdown"].decode("utf-8")) == ["หน้าแรก"]
     assert "docx" in outputs
     assert docker.alive == 0  # removed once it ended
+
+
+@pytest.mark.parametrize(
+    ("keep_images", "stage"),
+    [pytest.param(False, "ocr", id="read with OCR"), pytest.param(True, "images", id="kept images")],
+)
+def test_the_kept_images_setting_reaches_the_sandbox(
+    keep_images: bool, stage: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without the OCR models, so that a scan sent to OCR stops there rather than being read.
+    monkeypatch.setenv("PDF_TO_DOC_MODELS", str(tmp_path / "no-models-here"))
+
+    came = through_the_launcher(FakeDocker(), lambda sandbox: converted(sandbox, SCAN, keep_images=keep_images))
+
+    events = [json.loads(line) for line in came.lines]
+    assert [event["stage"] for event in events if event["event"] == "progress"][1] == stage
+
+
+def test_a_frame_with_a_setting_it_does_not_know_is_refused_before_any_sandbox_starts() -> None:
+    docker = FakeDocker()
+
+    async def send_a_run_of_another_kind(connect: Connect) -> bytes:
+        reader, writer = await connect()
+        writer.write(b"run-keeping-nothing %d\n" % len(SOURCE) + SOURCE)
+        answer = await reader.read()  # until the launcher closes the connection
+        writer.close()
+        return answer
+
+    answer = connected_to_the_launcher(docker, send_a_run_of_another_kind)
+
+    assert answer == b""
+    assert docker.started == 0
 
 
 def test_a_launcher_not_listening_yet_is_waited_for() -> None:

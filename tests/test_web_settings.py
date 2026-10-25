@@ -19,6 +19,7 @@ def test_without_the_environment_every_setting_keeps_its_default() -> None:
 def test_each_setting_in_the_environment_replaces_its_default() -> None:
     environment = {
         "PDF_TO_DOC_MAX_WAITING": "5",
+        "PDF_TO_DOC_MAX_HELD_OUTPUTS": "500000000",
         "PDF_TO_DOC_KEEP_FOR": "90.5",
         "PDF_TO_DOC_PRODUCTION": "true",
         "PDF_TO_DOC_SECURE_COOKIES": "0",
@@ -32,6 +33,7 @@ def test_each_setting_in_the_environment_replaces_its_default() -> None:
     assert settings == replace(
         Settings(),
         max_waiting=5,
+        max_held_outputs=500_000_000,
         keep_for=90.5,
         production=True,
         secure_cookies=False,
@@ -54,6 +56,8 @@ def test_an_empty_value_leaves_a_setting_unset() -> None:
         ("PDF_TO_DOC_PRODUCTION", "perhaps"),
         ("PDF_TO_DOC_MAX_RUNNING", "three"),
         ("PDF_TO_DOC_MAX_RUNNING", "³"),  # a digit to `isdigit`, but not to `int`
+        ("PDF_TO_DOC_MAX_HELD_OUTPUTS", "1GB"),
+        ("PDF_TO_DOC_MAX_HELD_OUTPUTS", "-1"),
         ("PDF_TO_DOC_KEEP_FOR", "ten minutes"),
         ("PDF_TO_DOC_KEEP_FOR", "inf"),
         ("PDF_TO_DOC_KEEP_FOR", "nan"),
@@ -68,6 +72,11 @@ def test_a_value_a_setting_cannot_take_stops_the_service_without_repeating_it(na
 
     assert name in str(refused.value)
     assert value not in str(refused.value)  # a value could be a secret
+
+
+def test_the_outputs_held_are_capped_at_1_gb_unless_told_otherwise() -> None:
+    # A GB of 1024 MB, as the output limit's 50 MB is 50 of 1024 * 1024 bytes.
+    assert from_environment(Settings, {}).max_held_outputs == 1024 * 1024 * 1024
 
 
 def test_the_launcher_takes_its_settings_from_the_environment() -> None:

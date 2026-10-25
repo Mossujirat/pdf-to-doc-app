@@ -243,6 +243,7 @@ The converter first reads each page as it does today: the text layer's rows, the
   - A new setting, `max_held_outputs`, in bytes, 1 GB by default, set through `PDF_TO_DOC_MAX_HELD_OUTPUTS`.
   - When the outputs held by ended conversions total the cap or more, a new upload gets the "คิวเต็ม" page until older outputs expire or are deleted.
   - Running conversions may add up to their own outputs on top, which is the headroom.
+  - While the cap is reached, conversions already waiting do not start either, so only the 3 running can add outputs, about 150 MB (decided with the user at ticket 06, 2026-10-25). Otherwise the 20 waiting could add up to 1 GB more.
   - The statistics count these refusals under a kind of their own.
 - **Statistics** count kept pages among pages by kind. The counter already counts by kind.
 - **The privacy page** needs no change. Outputs are still held in memory, and deleted within 10 minutes or when the visitor deletes them.
