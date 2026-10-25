@@ -31,7 +31,7 @@ from pdf_to_doc.web import pages
 from pdf_to_doc.web.allowance import Allowance, WallClock
 from pdf_to_doc.web.bot_check import CLOUDFLARE, TOKEN_FIELD, BotCheck
 from pdf_to_doc.web.client_ip import ClientIp
-from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, QueueFull
+from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, HeldOutputsFull, QueueFull
 from pdf_to_doc.web.launcher import LauncherSandbox
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Misconfigured, Settings, from_environment
@@ -99,6 +99,7 @@ def create_app(
         statistics,
         max_running=settings.max_running,
         max_waiting=settings.max_waiting,
+        max_held_outputs=settings.max_held_outputs,
         keep_for=settings.keep_for,
         clock=clock,
     )
@@ -206,6 +207,9 @@ def create_app(
             return refuse("one at a time", pages.already_converting(converting.identifier), 409)
         except QueueFull:
             return refuse("queue full", pages.queue_full(), 503)
+        except HeldOutputsFull:
+            # The visitor sees a full queue: either way, the service takes no more for a while.
+            return refuse("held outputs full", pages.queue_full(), 503)
         response = RedirectResponse(f"/conversions/{identifier}", status_code=303)
         response.set_cookie(
             COOKIE, token, max_age=_DAY, secure=settings.secure_cookies, httponly=True, samesite="strict"

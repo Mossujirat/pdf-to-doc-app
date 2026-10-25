@@ -46,6 +46,10 @@ class QueueFull(Exception):
     """Every place is taken, and as many conversions wait as may."""
 
 
+class HeldOutputsFull(Exception):
+    """The outputs that ended conversions hold in memory total their cap or more."""
+
+
 class AlreadyConverting(Exception):
     """The browser already has a conversion waiting or running: one file at a time."""
 
@@ -99,8 +103,10 @@ class Conversion:
 class Conversions:
     """Every conversion the web app holds: at most `max_running` converting at once, and at most
     `max_waiting` waiting for a place. A conversion is forgotten `keep_for` seconds after it
-    ends, however it ends, or as soon as the visitor deletes it. Its pages are charged to its
-    client's allowance as soon as the sandbox has counted them, and given back if it fails."""
+    ends, however it ends, or as soon as the visitor deletes it. A conversion's pages are charged
+    to its client's allowance as soon as the sandbox has counted them, and given back if it fails.
+    While the outputs of ended conversions total `max_held_outputs` bytes or more, no file is
+    taken and none waiting starts: only those running may add their outputs on top."""
 
     def __init__(
         self,
@@ -110,6 +116,7 @@ class Conversions:
         *,
         max_running: int,
         max_waiting: int,
+        max_held_outputs: int,
         keep_for: float,
         clock: Clock,
     ) -> None:
@@ -118,6 +125,7 @@ class Conversions:
         self._statistics = statistics
         self._max_running = max_running
         self._max_waiting = max_waiting
+        self._max_held_outputs = max_held_outputs
         self._keep_for = keep_for
         self._clock = clock
         self._held: dict[str, Conversion] = {}
@@ -130,8 +138,9 @@ class Conversions:
         to convert as soon as a place is free, keeping images if `keep_images`, and return the
         conversion's identifier: 128 random bits, for its link.
 
-        Raises `AlreadyConverting` when that browser has a conversion waiting or running, and
-        `QueueFull` when no more may wait. Either way, nothing of the file is kept.
+        Raises `AlreadyConverting` when that browser has a conversion waiting or running,
+        `QueueFull` when no more may wait, and `HeldOutputsFull` when the outputs held reach their
+        cap. Whichever it raises, nothing of the file is kept.
         """
         self.forget_expired()
         for other, conversion in self._held.items():
@@ -140,6 +149,8 @@ class Conversions:
         # A cancelled conversion keeps its place until its sandbox has stopped.
         if len(self._running) >= self._max_running and len(self._waiting) >= self._max_waiting:
             raise QueueFull()
+        if self._outputs_full():
+            raise HeldOutputsFull()
         identifier = secrets.token_urlsafe(16)
         self._held[identifier] = Conversion(
             token, file_name, client_ip, keep_images=keep_images, queued_at=self._clock()
@@ -179,16 +190,25 @@ class Conversions:
             self._running[identifier].cancel()
 
     def forget(self, identifier: str) -> None:
-        """Forget an ended conversion now, and its outputs with it, as when the visitor deletes them."""
+        """Forget an ended conversion now, and its outputs with it, as when the visitor deletes them.
+        One waiting for the outputs held to fall under their cap may then start."""
         if not self._held[identifier].ongoing:
             del self._held[identifier]
+            self._start_next()
 
     def forget_expired(self) -> None:
         """Forget every conversion that ended `keep_for` seconds ago or more, and, after midnight,
-        the client addresses of the day before."""
-        for identifier, conversion in list(self._held.items()):
-            if conversion.ended_at is not None and self.time_left(conversion) <= 0:
-                del self._held[identifier]
+        the client addresses of the day before. One waiting for the outputs held to fall under
+        their cap may then start."""
+        expired = [
+            identifier
+            for identifier, conversion in self._held.items()
+            if conversion.ended_at is not None and self.time_left(conversion) <= 0
+        ]
+        for identifier in expired:
+            del self._held[identifier]
+        if expired:
+            self._start_next()
         self._allowance.forget_past_days()
 
     async def forget_expired_every(self, seconds: float) -> None:
@@ -207,9 +227,18 @@ class Conversions:
             task.cancel()
         await asyncio.gather(*running, return_exceptions=True)
 
+    def _outputs_full(self) -> bool:
+        """Whether the outputs held total their cap or more. Only an ended conversion holds
+        outputs: one that finished, until it is forgotten."""
+        held_bytes = sum(len(output) for conversion in self._held.values() for output in conversion.outputs.values())
+        return held_bytes >= self._max_held_outputs
+
     def _start_next(self) -> None:
-        """Start the conversions first in the queue, while places are free."""
-        while self._waiting and len(self._running) < self._max_running and not self._stopping:
+        """Start the conversions first in the queue, while places are free and the outputs held are
+        under their cap."""
+        while (
+            self._waiting and len(self._running) < self._max_running and not self._stopping and not self._outputs_full()
+        ):
             identifier = next(iter(self._waiting))
             source = self._waiting.pop(identifier)
             conversion = self._held[identifier]

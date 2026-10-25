@@ -1,14 +1,18 @@
-"""The queue: at most 3 conversions convert at once and 20 wait their turn, each browser
-converts one file at a time, and a visitor can cancel. A held sandbox lets each test
-decide when a conversion ends."""
+"""The queue: at most 3 conversions convert at once and 20 wait their turn, no file is taken
+while the outputs held reach their cap, each browser converts one file at a time, and a visitor
+can cancel. A held sandbox lets each test decide when a conversion ends."""
 
-from collections.abc import Iterator
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, replace
 
 import pytest
+from fake_clock import FakeClock
 from fastapi.testclient import TestClient
 from held_sandbox import HeldSandbox
+from scripted_sandbox import ScriptedSandbox
 from web_browser import (
+    SETTINGS,
     as_browser,
     browser,
     browser_token,
@@ -19,6 +23,9 @@ from web_browser import (
     wait_for_state,
     wait_until,
 )
+
+from pdf_to_doc.web.sandboxes import Ended
+from pdf_to_doc.web.statistics import Statistics
 
 
 @pytest.fixture
@@ -95,6 +102,81 @@ def test_the_24th_upload_is_refused_as_queue_full_and_not_kept(client: TestClien
     upload(as_browser(client, browser_token()), source(25))
     started(held, 24)
     assert held.started[23].source == source(25)  # the refused file had not been queued after the others
+
+
+# The cap on the outputs held
+
+OUTPUTS = 600  # bytes of Markdown that each conversion in `large_outputs` gives back
+SUMMARY = b'{"event": "summary", "pages": []}'
+
+
+def large_outputs() -> ScriptedSandbox:
+    """A sandbox whose every conversion finishes with `OUTPUTS` bytes of Markdown."""
+    return ScriptedSandbox([SUMMARY], Ended(0, b"markdown %d\n" % OUTPUTS + bytes(OUTPUTS)))
+
+
+def finished_from_new_browsers(client: TestClient, count: int) -> list[Sent]:
+    """One file from each of `count` new browsers, each converted to the end."""
+    sent = send_from_new_browsers(client, count)
+    for each in sent:
+        wait_for_state(as_browser(client, each.token), each.link, lambda state: state["state"] == "finished")
+    return sent
+
+
+def test_once_the_outputs_held_reach_their_cap_an_upload_is_refused_as_queue_full_until_some_are_deleted() -> None:
+    statistics = Statistics(FakeClock().wall)
+    with browser(large_outputs(), replace(SETTINGS, max_held_outputs=2 * OUTPUTS), statistics=statistics) as client:
+        first, _ = finished_from_new_browsers(client, 2)
+
+        refused = send(as_browser(client, browser_token()), source(3))
+
+        assert refused.status_code == 503
+        assert "คิวเต็ม" in refused.text
+        as_browser(client, first.token).post(f"{first.link}/delete")
+        upload(as_browser(client, browser_token()), source(4))
+    since_start = statistics.report()["since_start"]
+    assert since_start["refusals"] == {"held outputs full": 1}  # apart from a full queue
+    assert since_start["conversions"] == {"finished": 3}  # the refused file was never converted
+
+
+def freed_by_deleting(client: TestClient, clock: FakeClock, finished: Sent) -> None:
+    as_browser(client, finished.token).post(f"{finished.link}/delete")
+
+
+def freed_by_expiring(client: TestClient, clock: FakeClock, finished: Sent) -> None:
+    clock.advance(10 * 60)
+
+
+@pytest.mark.parametrize("free", [freed_by_deleting, freed_by_expiring], ids=["deleted", "expired"])
+def test_while_the_outputs_held_reach_their_cap_a_waiting_conversion_does_not_start(
+    free: Callable[[TestClient, FakeClock, Sent], None],
+) -> None:
+    # Only the running conversions may add their outputs on top of the cap (the user's choice, 2026-10-25).
+    clock, held = FakeClock(), HeldSandbox()
+    with browser(held, replace(SETTINGS, max_running=1, max_held_outputs=1), clock) as client:
+        first, waiting = send_from_new_browsers(client, 2)
+        started(held, 1)
+        held.started[0].end()
+        wait_for_state(as_browser(client, first.token), first.link, lambda state: state["state"] == "finished")
+
+        time.sleep(0.5)  # time enough for the waiting one to start, if it could
+        assert len(held.started) == 1
+        assert state(client, waiting)["state"] == "waiting"
+
+        free(client, clock, first)
+
+        wait_for_state(as_browser(client, waiting.token), waiting.link, lambda state: state["state"] == "running")
+
+
+def test_once_the_outputs_held_expire_uploads_are_taken_again() -> None:
+    clock = FakeClock()
+    with browser(large_outputs(), replace(SETTINGS, max_held_outputs=OUTPUTS), clock) as client:
+        finished_from_new_browsers(client, 1)
+        assert send(as_browser(client, browser_token()), source(2)).status_code == 503
+
+        clock.advance(10 * 60)
+
+        upload(as_browser(client, browser_token()), source(3))
 
 
 # One file at a time

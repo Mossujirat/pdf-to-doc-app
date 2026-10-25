@@ -28,6 +28,10 @@ class Misconfigured(Exception):
 class Settings:
     max_running: int = 3  # conversions converting at once
     max_waiting: int = 20  # conversions waiting for one of those places
+    # Bytes the outputs of ended conversions may hold in memory, 1 GB. At or over it, an upload is
+    # refused as when the queue is full, and none waiting starts: only those running may add their
+    # outputs on top.
+    max_held_outputs: int = 1024 * 1024 * 1024
     keep_for: float = 10 * 60  # seconds a conversion and its outputs are kept after it ends (ADR 0001)
     pages_per_day: int = 500  # for each client address, Bangkok's day
     # Where a client's address comes from: the header the trusted proxy (Tailscale's container)
