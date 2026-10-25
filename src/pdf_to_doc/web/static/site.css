@@ -39,7 +39,7 @@
   --danger: #a8231a;
   --font: "Prompt", system-ui, sans-serif;
   --gutter: clamp(1rem, 3vw, 2rem);
-  --ease: var(--ease); /* a quick ease-out, for every transition */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1); /* a quick ease-out, for every transition */
   color-scheme: light;
 }
 
