@@ -568,6 +568,38 @@ def test_labels_set_apart_from_their_values_are_read_row_by_row(rows: list[Piece
     assert_read_row_by_row(rows)
 
 
+# A row set out in columns is a line of its own, as on a text page: its parts are set
+# apart by a gap wider than two font sizes.
+
+
+SET_OUT_IN_COLUMNS = [
+    "a table without rules or numbers",
+    "values at a tab stop",
+    "long labels and short values",
+    "a form with two fields on each line",
+]
+
+
+@pytest.mark.parametrize("layout", SET_OUT_IN_COLUMNS)
+def test_rows_set_out_in_columns_on_an_ocr_page_stay_lines_of_their_own(layout: str) -> None:
+    rows = LABELS_AND_VALUES[layout]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert page.split("\n\n") == [" ".join(text for _, text in row) for row in rows]
+
+
+def test_a_body_line_the_detector_cut_at_an_ordinary_space_stays_in_its_paragraph() -> None:
+    rows: list[Pieces] = [
+        [(72, "ผู้รับทุนตกลงดำเนินงาน"), (210, "ตามแผนที่กำหนดไว้ในสัญญา")],
+        [(72, "และส่งรายงานทุกหกเดือนจนกว่าจะสิ้นสุดโครงการ")],
+    ]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert page == "ผู้รับทุนตกลงดำเนินงาน ตามแผนที่กำหนดไว้ในสัญญาและส่งรายงานทุกหกเดือนจนกว่าจะสิ้นสุดโครงการ"
+
+
 def test_holes_a_diagonal_watermark_leaves_in_lines_are_not_a_gutter() -> None:
     # The watermark wipes out each line a little further along than the line above, so
     # the text after each hole starts somewhere else, unlike a column's lines.

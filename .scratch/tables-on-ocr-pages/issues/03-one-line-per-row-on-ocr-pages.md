@@ -12,14 +12,14 @@ Today such rows run together into one paragraph, and on a cover sheet a label wa
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Branch:** `feat/ocr-tables`
 
 **The rule**
-- [ ] An OCR row is set out in columns (`in_columns`) when two neighbouring boxes on its line are set apart by a gap wider than two font sizes. That is the rule text pages follow when they rejoin pieces of a line.
-- [ ] Such a row is never joined into a paragraph, and is never taken for a list item or a bold heading, as on text pages.
-- [ ] **Body text is never flagged.** During grilling, 381 OCR rows were measured. Only these rows were flagged:
+- [x] An OCR row is set out in columns (`in_columns`) when two neighbouring boxes on its line are set apart by a gap wider than two font sizes. That is the rule text pages follow when they rejoin pieces of a line.
+- [x] Such a row is never joined into a paragraph, and is never taken for a list item or a bold heading, as on text pages.
+- [x] **Body text is never flagged.** During grilling, 381 OCR rows were measured. Only these rows were flagged:
   - table rows;
   - label–value pairs;
   - tab-stop lists;
@@ -27,18 +27,39 @@ Today such rows run together into one paragraph, and on a cover sheet a label wa
   - junk.
 
 **Check what changed**
-- [ ] Run the harness on `corpus/synthetic` and `corpus/degraded`, with and without the change. List every page whose output changes, with a line on why, in Comments.
+- [x] Run the harness on `corpus/synthetic` and `corpus/degraded`, with and without the change. List every page whose output changes, with a line on why, in Comments.
   - Expected: the two-column cover sheet improves (CER 0.0194 to 0.0039 when grilled).
   - On one sideways page, a "1" misread as "-" now shows, marked uncertain. Before, it was hidden as a list bullet.
-- [ ] Pages set in two columns still read column by column (ticket 18 of the converter).
+- [x] Pages set in two columns still read column by column (ticket 18 of the converter).
 
 **Tests**
-- [ ] Fast tests with `FakeEngine`:
+- [x] Fast tests with `FakeEngine`:
   - a label–value list on an OCR page gives one line per pair;
   - the rows of a table with no rules come out one line each;
   - a body line with ordinary spaces stays in its paragraph;
   - a line the detector boxed in two at a wide gap stays a line of its own.
-- [ ] Checked by breaking the code on purpose: the tests fail without the flag.
+- [x] Checked by breaking the code on purpose: the tests fail without the flag.
 - [ ] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
 
 ## Comments
+
+**2026-10-26, implemented on branch `feat/ocr-tables`**
+
+- **What changed:** `ocr._row` sets `in_columns` when two neighbouring boxes on a printed line are more than `layout.COLUMN_GAP` (2) font sizes apart. That is the constant text pages use, now shared.
+- **Pages that changed with real PaddleOCR.** Every other page read as before, and so did all five pages of `corpus/degraded`.
+
+  | Page | CER before | CER now | Why |
+  | --- | --- | --- | --- |
+  | `two-column-scans` page 3, the cover sheet | 0.0194 | 0.0039 | each label–value pair is now a line of its own, where a label had been glued to the next value |
+  | `sideways-scans` page 1 | 0.0084 | 0.0168, uncertain 3 → 4 | the price schedule's rows are now one per line |
+
+  - **Why the sideways page's CER rose:** OCR reads the first row's "1" as "-". That row used to be taken for a bulleted list item, so the "-" was dropped and the "1" was missing with no warning. Now the "-" stays, marked uncertain, so a reader is told to check.
+  - **Also on that page:** a junk "Q" stands on a line of its own, which ticket 07 takes up.
+- **Tests in `test_ocr_pages.py`:**
+  - four layouts set out in columns each give one paragraph per row: a table with no rules, values at a tab stop, long labels with short values, and a form;
+  - a body line that the detector cut at an ordinary space stays in its paragraph.
+  - The two-column tests are unchanged and pass.
+- **Checked by breaking the code on purpose:**
+  - never setting the flag fails the four layout tests;
+  - setting it at every gap fails the body-line test.
+- **Run:** pytest, mypy, `pytest -m ocr` and the harness. The checks in the Linux container follow.

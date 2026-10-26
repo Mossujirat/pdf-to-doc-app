@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import pymupdf
 
-from pdf_to_doc.layout import PageRows, Row
+from pdf_to_doc.layout import COLUMN_GAP, PageRows, Row
 from pdf_to_doc.thai import DIGITS
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
@@ -418,8 +418,12 @@ def _printed_lines(boxes: tuple[TextBox, ...]) -> list[list[TextBox]]:
 
 
 def _row(line: list[TextBox], scale: float, size: float) -> Row:
+    """The printed line as a row. Boxes set apart by a gap wider than a text page's columns
+    set the row out in columns, so it stays a line of its own: a table's row, or a label and
+    its value. The detector cuts body text at ordinary spaces, never that wide."""
     centre = median(_centre(box) for box in line) * scale
     half = _ROW_HEIGHT_PER_FONT_SIZE * size / 2
+    gaps = [(after.box[0] - before.box[2]) * scale for before, after in zip(line, line[1:])]
     return Row(
         text=" ".join(box.text.strip() for box in line),
         x0=line[0].box[0] * scale,
@@ -427,6 +431,7 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
         x1=line[-1].box[2] * scale,
         y1=centre + half,
         size=size,
+        in_columns=any(gap > COLUMN_GAP * size for gap in gaps),
         pieces=tuple(Piece(box.text, box.confidence) for box in line),
     )
 

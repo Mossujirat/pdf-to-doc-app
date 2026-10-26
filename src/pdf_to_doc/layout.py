@@ -64,9 +64,10 @@ _SIGNATURE_MAX_HEIGHT = 0.2
 _SAME_IMAGE_SIZE = 0.2
 _SAME_IMAGE_PLACE = 36.0
 # Lines whose baselines differ by less than this share of the font size are on one
-# row; a gap wider than this many character widths sets the row out in columns.
+# row; a gap wider than this many character widths sets the row out in columns, on
+# text pages and OCR pages alike.
 _BASELINE_TOLERANCE = 0.3
-_COLUMN_GAP = 2.0
+COLUMN_GAP = 2.0
 # A gap between rows this share of the font size wider than the document's usual
 # line spacing ends a paragraph. The usual spacing counts for at most the cap: in a
 # short document most gaps may be between paragraphs. (Double-spaced text, rare in
@@ -341,7 +342,7 @@ def _join_on_baselines(rows: tuple[Row, ...]) -> tuple[Row, ...]:
                 y0=min(previous.y0, row.y0),
                 y1=max(previous.y1, row.y1),
                 bold=previous.bold and row.bold,
-                in_columns=previous.in_columns or row.x0 - previous.x1 > _COLUMN_GAP * row.size,
+                in_columns=previous.in_columns or row.x0 - previous.x1 > COLUMN_GAP * row.size,
                 pieces=_pieces(previous) + _pieces(row) if previous.pieces or row.pieces else (),
             )
         else:
