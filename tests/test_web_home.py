@@ -75,6 +75,15 @@ def test_the_home_page_explains_what_keeping_scans_as_images_does() -> None:
     assert "เก็บหน้าสแกนเป็นภาพ" in placeholders and "เก็บหน้าสแกนเป็นภาพ" in outputs
 
 
+def test_the_home_page_says_ruled_tables_on_ocr_pages_become_tables_but_their_headings_do_not() -> None:
+    with browser(ScriptedSandbox([], None)) as client:
+        page = client.get("/").text
+    structure = inside_row(page, "เก็บโครงสร้าง และไม่เดาสิ่งที่อ่านไม่ได้")
+
+    assert "ตารางที่มีเส้นตารางใน PDF ยังเป็นตาราง รวมทั้งในหน้าที่อ่านด้วย OCR" in structure
+    assert "หน้าที่อ่านด้วย OCR ยังไม่แยกหัวข้อ " in structure
+
+
 def test_the_home_page_loads_nothing_from_another_site_but_the_bot_checks_script() -> None:
     with browser(ScriptedSandbox([], None)) as client:
         page = client.get("/").text

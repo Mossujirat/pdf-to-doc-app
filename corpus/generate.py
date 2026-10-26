@@ -54,6 +54,30 @@ class SyntheticDocument:
     remap: dict[str, str] | None = None
 
 
+# A coarse ruled table, as some budgets are drawn: several printed lines share one cell.
+# Items stacked beside their amounts are sub-rows; items beside one total keep their
+# line breaks; a wrapped description is one sentence.
+COARSE_TABLE = Grid(
+    rows=(
+        ("หมวดรายจ่าย", "รายการ", "จำนวนเงิน"),
+        ("ค่าดำเนินงาน", "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร\nค่าไปรษณีย์", "12,000\n3,500\n1,200"),
+        ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900"),
+        ("ค่าเดินทาง", "ค่าเช่ารถและค่าน้ำมันเชื้อเพลิง\nสำหรับการลงพื้นที่", "15,000"),
+    ),
+    widths=(110, 210, 100),
+)
+COARSE_TABLE_REFERENCE = (
+    "<table>\n"
+    "<tr><td>หมวดรายจ่าย</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n"
+    '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>\n'
+    "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
+    "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
+    "<tr><td>ค่าครุภัณฑ์</td><td>เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์</td><td>53,900</td></tr>\n"
+    "<tr><td>ค่าเดินทาง</td><td>ค่าเช่ารถและค่าน้ำมันเชื้อเพลิงสำหรับการลงพื้นที่</td><td>15,000</td></tr>\n"
+    "</table>"
+)
+
+
 DOCUMENTS = (
     SyntheticDocument(
         name="thai-justified",
@@ -247,37 +271,13 @@ DOCUMENTS = (
             ),
         ),
     ),
-    # A coarse ruled table, as some budgets are drawn: several printed lines share one cell.
-    # Items stacked beside their amounts are sub-rows; items beside one total keep their
-    # line breaks; a wrapped description is one sentence.
     SyntheticDocument(
         name="coarse-table",
         font_file=SARABUN,
         pages=(
             SyntheticPage(
-                lines=[
-                    "งบประมาณโครงการแยกตามหมวดรายจ่าย",
-                    Grid(
-                        rows=(
-                            ("หมวดรายจ่าย", "รายการ", "จำนวนเงิน"),
-                            ("ค่าดำเนินงาน", "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร\nค่าไปรษณีย์", "12,000\n3,500\n1,200"),
-                            ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900"),
-                            ("ค่าเดินทาง", "ค่าเช่ารถและค่าน้ำมันเชื้อเพลิง\nสำหรับการลงพื้นที่", "15,000"),
-                        ),
-                        widths=(110, 210, 100),
-                    ),
-                ],
-                reference=(
-                    "งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n"
-                    "<table>\n"
-                    "<tr><td>หมวดรายจ่าย</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n"
-                    '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>\n'
-                    "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
-                    "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
-                    "<tr><td>ค่าครุภัณฑ์</td><td>เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์</td><td>53,900</td></tr>\n"
-                    "<tr><td>ค่าเดินทาง</td><td>ค่าเช่ารถและค่าน้ำมันเชื้อเพลิงสำหรับการลงพื้นที่</td><td>15,000</td></tr>\n"
-                    "</table>"
-                ),
+                lines=["งบประมาณโครงการแยกตามหมวดรายจ่าย", COARSE_TABLE],
+                reference=f"งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n{COARSE_TABLE_REFERENCE}",
             ),
         ),
     ),
@@ -515,7 +515,7 @@ PRICES = (
     ("3", "ค่าเดินทางไปประชุม", "5 ครั้ง", "2,500.00", "12,500.00"),
 )
 # A price schedule as wide as a landscape sheet, and what a reader sees on it.
-PRICE_SCHEDULE: list[Line] = [
+PRICE_SCHEDULE: list[str | Grid] = [
     "ตารางราคา (Price Schedule)",
     Grid(rows=PRICES, widths=(60, 230, 100, 130, 130)),
     "รวมทั้งสิ้น 138,500.00 บาท",
@@ -538,6 +538,82 @@ SIDEWAYS_DOCUMENTS = (
         pages=(
             SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=7, sideways=90), reference=PRICE_SCHEDULE_REFERENCE),
             SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=8, sideways=270), reference=PRICE_SCHEDULE_REFERENCE),
+        ),
+    ),
+)
+
+# Ruled tables as contracts and their attachments hold them, for tables on OCR pages.
+# Wrapped text fills its cell before it wraps, as Word wraps it.
+PAYMENT_SCHEDULE = Grid(
+    rows=(
+        ("งวดที่", "รายละเอียดงานที่ส่งมอบ", "จำนวนเงิน (บาท)"),
+        ("๑", "ส่งแผนการดำเนินงานและรายงาน\nการทบทวนวรรณกรรมที่เกี่ยวข้อง", Cell("150,000", align="right")),
+        ("๒", "ส่งรายงานความก้าวหน้าพร้อมผล\nการทดลองเบื้องต้นของต้นแบบ", Cell("250,000", align="right")),
+        ("๓", "ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือ\nการใช้งานระบบ", Cell("100,000", align="right")),
+    ),
+    widths=(60, 230, 130),
+)
+PAYMENT_SCHEDULE_REFERENCE = (
+    "| งวดที่ | รายละเอียดงานที่ส่งมอบ | จำนวนเงิน (บาท) |\n"
+    "| --- | --- | --- |\n"
+    "| ๑ | ส่งแผนการดำเนินงานและรายงานการทบทวนวรรณกรรมที่เกี่ยวข้อง | 150,000 |\n"
+    "| ๒ | ส่งรายงานความก้าวหน้าพร้อมผลการทดลองเบื้องต้นของต้นแบบ | 250,000 |\n"
+    "| ๓ | ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือการใช้งานระบบ | 100,000 |"
+)
+BUDGET = Grid(
+    rows=(
+        (Cell("รายการ", rowspan=2), Cell("งบประมาณ (บาท)", colspan=2)),
+        ("ปีที่ 1", "ปีที่ 2"),
+        ("ค่าตอบแทนผู้วิจัย", Cell("240,000", align="right"), Cell("240,000", align="right")),
+        ("ค่าวัสดุและอุปกรณ์", Cell("45,000", align="right"), Cell("30,000", align="right")),
+        ("ค่าเดินทาง", Cell("12,000", align="right"), Cell("-", align="right")),
+    ),
+    widths=(170, 110, 110),
+)
+BUDGET_REFERENCE = (
+    "<table>\n"
+    '<tr><td rowspan="2">รายการ</td><td colspan="2">งบประมาณ (บาท)</td></tr>\n'
+    "<tr><td>ปีที่ 1</td><td>ปีที่ 2</td></tr>\n"
+    "<tr><td>ค่าตอบแทนผู้วิจัย</td><td>240,000</td><td>240,000</td></tr>\n"
+    "<tr><td>ค่าวัสดุและอุปกรณ์</td><td>45,000</td><td>30,000</td></tr>\n"
+    "<tr><td>ค่าเดินทาง</td><td>12,000</td><td>-</td></tr>\n"
+    "</table>"
+)
+DATES = Grid(
+    rows=(("วันลงนามในสัญญา", "วันเริ่มดำเนินงาน", "วันสิ้นสุดโครงการ"), ("1 มีนาคม 2568", "15 มีนาคม 2568", "14 มีนาคม 2569")),
+    widths=(140, 140, 140),
+)
+DATES_REFERENCE = (
+    "| วันลงนามในสัญญา | วันเริ่มดำเนินงาน | วันสิ้นสุดโครงการ |\n"
+    "| --- | --- | --- |\n"
+    "| 1 มีนาคม 2568 | 15 มีนาคม 2568 | 14 มีนาคม 2569 |"
+)
+# A page for each of them, with text around it, and what a reader sees on it.
+RULED_TABLE_PAGES: list[tuple[list[str | Grid], str]] = [
+    (
+        ["ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้", PAYMENT_SCHEDULE, "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"],
+        f"ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้\n\n{PAYMENT_SCHEDULE_REFERENCE}\n\nทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม",
+    ),
+    (
+        ["งบประมาณโครงการแยกตามปีงบประมาณ", BUDGET, "ผู้รับทุนต้องใช้เงินตามหมวดที่ได้รับอนุมัติเท่านั้น"],
+        f"งบประมาณโครงการแยกตามปีงบประมาณ\n\n{BUDGET_REFERENCE}\n\nผู้รับทุนต้องใช้เงินตามหมวดที่ได้รับอนุมัติเท่านั้น",
+    ),
+    (
+        ["ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้", DATES],
+        f"ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้\n\n{DATES_REFERENCE}",
+    ),
+    (
+        ["งบประมาณโครงการแยกตามหมวดรายจ่าย", COARSE_TABLE],
+        f"งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n{COARSE_TABLE_REFERENCE}",
+    ),
+]
+RULED_TABLE_DOCUMENTS = (
+    SyntheticDocument(
+        name="ruled-table-scans",
+        font_file=SARABUN,
+        pages=tuple(
+            SyntheticPage(lines=scanned(lines, seed=21 + number), reference=reference)
+            for number, (lines, reference) in enumerate(RULED_TABLE_PAGES)
         ),
     ),
 )
@@ -670,6 +746,7 @@ ALL_DOCUMENTS = (
     + ROTATED_DOCUMENTS
     + SIDEWAYS_DOCUMENTS
     + TWO_COLUMN_DOCUMENTS
+    + RULED_TABLE_DOCUMENTS
 )
 
 

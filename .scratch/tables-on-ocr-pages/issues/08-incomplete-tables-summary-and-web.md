@@ -61,3 +61,10 @@
 - [ ] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
 
 ## Comments
+
+**2026-10-26, from ticket 04 (ruled tables on scans)**
+
+- **Two kinds of grid make no table today, and are read as lines with no label.** This ticket decides whether either is an incomplete table:
+  - a grid of one row, such as a boxed header row alone. The user chose rows for ticket 04 and left the rest to this ticket. `test_a_ruled_row_with_no_ruled_rows_under_it_is_read_as_lines` pins it.
+  - a grid whose rules close off a space that is no rectangle, where part of a rule is missing (`grids._grid` returns None). `test_rules_that_leave_a_space_no_cell_could_be_make_no_table` pins it.
+- **Not caught:** on scans of 110 dpi and below, lost pieces of rule give false spans. The cells are still rectangles, so the grid is taken as whole; ticket 04's Comments have the numbers.

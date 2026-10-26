@@ -14,6 +14,8 @@ from pdf_to_doc.quality import evaluate, reference_file_name, score_page
 # OCR pages are read with real PaddleOCR. Their gate comes with the OCR baseline
 # (ticket 17); until then, a page this far off means OCR has stopped working.
 OCR_PAGE_MAX_CER = 0.05
+# The share of the cells of tables on OCR pages that must be in place: 74 of 87 were (ticket 04).
+OCR_CELLS_IN_PLACE = 0.8
 
 
 def files(folder: Path) -> dict[str, bytes]:
@@ -71,6 +73,8 @@ def test_paddleocr_reads_the_scanned_pages_of_the_committed_corpus() -> None:
     assert {page.engine for page in report.pages} == {"PaddleOCR"}
     assert all(page.score.cer <= OCR_PAGE_MAX_CER for page in report.pages)
     assert report.broken.total == 0
+    # Ruled tables come out as tables; the cells out of place are misread, as a word that lost its tone mark.
+    assert report.cells_right >= OCR_CELLS_IN_PLACE * report.cells
 
 
 @pytest.mark.ocr

@@ -33,3 +33,8 @@
 - [ ] Run pytest, mypy, the harness, and the checks in the Linux container.
 
 ## Comments
+
+**2026-10-26, from ticket 04 (ruled tables on scans)**
+
+- **Until this ticket, misread words in OCR tables go unmarked.** Before ticket 04, a table's text on an OCR page came out in rows, whose pieces marked it, and the summary counted it. Now it goes into cells, and `layout.CellLine` holds the text alone, with no pieces. So a misread word in a cell is neither marked nor counted. The branch must not be merged without this ticket.
+- **Where the pieces are:** `ocr._cell_line` builds a cell's printed line from the engine's boxes, which carry each box's text and confidence, as `ocr._row` builds a row's `pieces`.

@@ -10,7 +10,8 @@ import cv2
 import numpy as np
 import pymupdf
 
-from pdf_to_doc.layout import COLUMN_GAP, PageRows, Row
+from pdf_to_doc.grids import Grid, GridCell, ruled_grids
+from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedTable, RawCell, Row
 from pdf_to_doc.thai import DIGITS
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
@@ -31,6 +32,9 @@ _SOFTENING = 1.5
 # was a fifth taller than the page's usual line, in the same font. So box heights
 # cannot tell font sizes apart, and every line of a page gets the same size.
 _BOX_HEIGHT_PER_FONT_SIZE = 1.5
+# A detector's box also reaches about this share of the font size past each end of its text:
+# PaddleOCR's boxes in the synthetic scans' table cells reached 3 to 7 points past text 16 points tall.
+_BOX_PADDING = 0.3
 # Boxes whose centres are closer than this share of a box height sit on one printed line.
 _SAME_LINE = 0.5
 # A row of a text layer is about this many times as tall as its font size.
@@ -213,6 +217,9 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
 
     A page set in columns gives each column's rows in turn, top to bottom (see
     `_reading_parts`); a text-layer row goes with the column it lies in.
+
+    A ruled table on the image (see `grids`) takes the boxes whose centres lie in its
+    cells; the boxes outside every cell are the page's rows.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
@@ -220,10 +227,17 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     layer = [(row, _turned_row(row, image.turn, text_layer)) for row in text_layer.rows]
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
+    texts = [box for box in read if box.text.strip()]
+    grids = ruled_grids(_pixels(image), median(map(_height, texts))) if texts else ()
+    in_cells, read = _in_cells(texts, grids)
     parts = _reading_parts(read, tuple(_LayerRow.of(row, on_image, scale) for row, on_image in kept))
     lines_by_part = [_printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
     lines = [line for part_lines in lines_by_part for line in part_lines]
-    size = median(_line_height(line) for line in lines) * scale / _BOX_HEIGHT_PER_FONT_SIZE if lines else 0.0
+    lines_in_cells = {cell: _printed_lines(tuple(boxes_in_cell)) for cell, boxes_in_cell in in_cells.items()}
+    cell_lines = [line for printed in lines_in_cells.values() for line in printed]
+    line_heights = [_line_height(line) for line in [*lines, *cell_lines]]
+    size = median(line_heights) * scale / _BOX_HEIGHT_PER_FONT_SIZE if line_heights else 0.0
+    tables = tuple(_table(grid, lines_in_cells, scale, size) for grid in grids)
     rows: list[Row] = []
     for part, part_lines in zip(parts, lines_by_part):
         part_rows = [
@@ -235,7 +249,70 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         if len(parts) > 1 and part_rows:
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
-    return PageRows(rows=tuple(rows), width=width, height=height, kind="ocr")
+    return PageRows(rows=tuple(rows), width=width, height=height, tables=tables, kind="ocr")
+
+
+def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridCell, list[TextBox]], tuple[TextBox, ...]]:
+    """The boxes in each cell of the grids, and the boxes outside every cell. A box goes to the
+    cell that holds its centre: a box reaches over the rules around its text only by the
+    detector's padding, and no box crossed a rule through its middle on the test pages."""
+    in_cells: dict[GridCell, list[TextBox]] = {}
+    outside: list[TextBox] = []
+    for box in boxes:
+        x, y = (box.box[0] + box.box[2]) / 2, _centre(box)
+        home = next(
+            (
+                cell
+                for grid in grids
+                for cell in grid.cells
+                if cell.box[0] <= x <= cell.box[2] and cell.box[1] <= y <= cell.box[3]
+            ),
+            None,
+        )
+        if home:
+            in_cells.setdefault(home, []).append(box)
+        else:
+            outside.append(box)
+    return in_cells, tuple(outside)
+
+
+def _table(grid: Grid, lines_in_cells: dict[GridCell, list[list[TextBox]]], scale: float, size: float) -> PlacedTable:
+    """The grid as a table on the page, in points, each cell holding its printed lines. A place
+    in the grid that no cell covers is an empty cell, so the columns stay aligned."""
+    starts = {(cell.row, cell.column): cell for cell in grid.cells}
+    covered = {
+        (cell.row + down, cell.column + across)
+        for cell in grid.cells
+        for down in range(cell.rowspan)
+        for across in range(cell.colspan)
+    }
+    rows = []
+    for row in range(grid.rows):
+        cells = []
+        for column in range(grid.columns):
+            if (row, column) in starts:
+                cell = starts[(row, column)]
+                lines = tuple(_cell_line(line, scale, size) for line in lines_in_cells.get(cell, []))
+                x0, y0, x1, y1 = (edge * scale for edge in cell.box)
+                cells.append(RawCell(lines, cell.rowspan, cell.colspan, (x0, y0, x1, y1)))
+            elif (row, column) not in covered:
+                cells.append(RawCell(lines=()))
+        rows.append(tuple(cells))
+    return PlacedTable(top=grid.box[1] * scale, bottom=grid.box[3] * scale, rows=tuple(rows))
+
+
+def _cell_line(line: list[TextBox], scale: float, size: float) -> CellLine:
+    """A printed line in a cell, and where its text sits, in points: within its boxes, by the
+    detector's padding, as a cell's line on a text page is measured by its characters."""
+    x0, x1 = line[0].box[0] * scale, max(box.box[2] for box in line) * scale
+    padding = min(_BOX_PADDING * size, (x1 - x0) / 2)
+    return CellLine(
+        text=" ".join(box.text.strip() for box in line),
+        x0=x0 + padding,
+        x1=x1 - padding,
+        centre=median(_centre(box) for box in line) * scale,
+        size=size,
+    )
 
 
 @dataclass(frozen=True)

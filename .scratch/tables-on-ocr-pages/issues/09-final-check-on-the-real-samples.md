@@ -45,3 +45,9 @@
 - [ ] **Comments:** record the results here as counts only, with no text or content from the samples.
 
 ## Comments
+
+**2026-10-26, from ticket 04 (ruled tables on scans)**
+
+- **Check each scan's resolution where it has a table.** The grid holds on synthetic scans at 150 dpi and more. At 110 dpi and below, thin rules scan lighter than the ink threshold (grey 160): cells merge into false spans, and their text reads in a worse order than with no table at all. The user chose to keep the threshold, as the samples' scans are 300 dpi. If a sample's table scan is that coarse, show the user what it does.
+- **Shaded headers:** the threshold was kept partly because a lighter one lost a table whose header was shaded 30% grey. Check that shaded header rows on the samples keep their cells.
+- **Stray mark boxes** ("ญ", "ะ") land in cells as an extra line until ticket 07 drops them.

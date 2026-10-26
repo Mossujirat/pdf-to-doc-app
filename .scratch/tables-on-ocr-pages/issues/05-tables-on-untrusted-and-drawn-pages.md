@@ -40,3 +40,11 @@ Tables also keep working beside the other things OCR pages hold:
 - [ ] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
 
 ## Comments
+
+**2026-10-26, from ticket 04 (ruled tables on scans)**
+
+- **The grid already runs on every OCR page,** as the user chose: `ocr._ocr_page` finds it on whatever image it reads, softened or not. Nothing about these pages was tested in ticket 04.
+  - A pixel darker than grey 160 is ink. Softened by 1.5 px, a 0.5-pt rule should still peak darker than that, by estimate, but this was not measured.
+- **Already in place, untested:** a table's boxes are taken out before the page is cut into columns, as `_in_cells` runs before `_reading_parts`. This ticket needs the test and the check by breaking it.
+- **Not yet:** a text-layer row over a scan stays a row even when it lies inside a grid (`_LayerRow`).
+- **To reuse:** `RULED_TABLE_PAGES` in `generate.py` holds the four tables' pages and reference text; `FakeEngine` reads a `Grid` where `pdf_builder` draws it, on a `Drawn` page too.
