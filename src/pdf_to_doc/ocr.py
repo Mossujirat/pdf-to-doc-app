@@ -418,9 +418,10 @@ def _printed_lines(boxes: tuple[TextBox, ...]) -> list[list[TextBox]]:
 
 
 def _row(line: list[TextBox], scale: float, size: float) -> Row:
-    """The printed line as a row. Boxes set apart by a gap wider than a text page's columns
-    set the row out in columns, so it stays a line of its own: a table's row, or a label and
-    its value. The detector cuts body text at ordinary spaces, never that wide."""
+    """The printed line as a row. Boxes set apart by a gap as wide as a text page's tab stops
+    set its parts apart (`in_columns`), so it stays a line of its own: a table's row, or a label
+    and its value. On the corpus's scans, only such rows, signature lines and junk had a gap
+    that wide; the detector cuts body text at ordinary spaces."""
     centre = median(_centre(box) for box in line) * scale
     half = _ROW_HEIGHT_PER_FONT_SIZE * size / 2
     gaps = [(after.box[0] - before.box[2]) * scale for before, after in zip(line, line[1:])]

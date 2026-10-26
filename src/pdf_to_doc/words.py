@@ -20,7 +20,8 @@ def thai_words_in(text: str) -> list[str]:
 
 
 def first_word(text: str) -> str:
-    """The text's first word: Thai as the word list's tokenizer cuts it, other text up to a space."""
+    """The text's first word, as the word list's tokenizer cuts it: Thai by the dictionary, and
+    other text at spaces and punctuation, so "(ก) ค่าวัสดุ" starts with "("."""
     return next(iter(word_tokenize(text.strip(), engine="newmm", keep_whitespace=False)), "")
 
 

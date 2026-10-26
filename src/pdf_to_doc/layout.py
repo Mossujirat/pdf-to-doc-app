@@ -75,7 +75,8 @@ COLUMN_GAP = 2.0
 _PARAGRAPH_GAP = 0.4
 _LINE_GAP_CAP = 0.75
 # Items stacked in two cells of a row are on the same sub-row when the middles of their lines
-# are less than this share of the font size apart, about a third of a line.
+# are less than this share of the font size apart. Lines of one sub-row share a baseline, and
+# the next sub-row is a whole line lower, 1.4 font sizes on the corpus's tables.
 _SAME_SUB_ROW = 0.4
 _THAI_MARK = re.compile(MARK)
 
@@ -243,14 +244,14 @@ def _with_sub_rows(rows: tuple[tuple[RawCell, ...], ...]) -> list[list[RawCell]]
     splits = [_sub_rows(row) for row in rows]
     counts = [count for count, _ in splits]
     split_rows: list[list[RawCell]] = []
-    for number, (row, (count, stacked)) in enumerate(zip(rows, splits)):
+    for row_index, (row, (count, lined_up)) in enumerate(zip(rows, splits)):
         parts: list[list[RawCell]] = [[] for _ in range(count)]
-        for index, cell in enumerate(row):
-            if index in stacked:
+        for cell_index, cell in enumerate(row):
+            if cell_index in lined_up:
                 for part, line in zip(parts, cell.lines):
                     part.append(replace(cell, lines=(line,)))
             else:
-                parts[0].append(replace(cell, rowspan=sum(counts[number : number + cell.rowspan])))
+                parts[0].append(replace(cell, rowspan=sum(counts[row_index : row_index + cell.rowspan])))
         split_rows += parts
     return split_rows
 
@@ -259,17 +260,17 @@ def _sub_rows(row: tuple[RawCell, ...]) -> tuple[int, set[int]]:
     """How many sub-rows the row splits into, and which of its cells hold them: two or more cells
     that each stack as many items, more than one, on lines that line up across them. A cell whose
     lines wrap holds a sentence, not items. (1, no cells) when the row does not split."""
-    stacked = [
-        index
-        for index, cell in enumerate(row)
+    itemised = [
+        cell_index
+        for cell_index, cell in enumerate(row)
         if cell.rowspan == 1
         and len(cell.lines) > 1
         and not any(_wraps(line, following, cell) for line, following in zip(cell.lines, cell.lines[1:]))
     ]
-    for index in stacked:
-        lined_up = {other for other in stacked if _lines_up(row[index], row[other])}
+    for cell_index in itemised:
+        lined_up = {other for other in itemised if _lines_up(row[cell_index], row[other])}
         if len(lined_up) > 1:
-            return len(row[index].lines), lined_up
+            return len(row[cell_index].lines), lined_up
     return 1, set()
 
 
@@ -293,14 +294,14 @@ def _cell_text(cell: RawCell) -> str:
 
 
 def _wraps(line: CellLine, following: CellLine, cell: RawCell) -> bool:
-    """Whether the line wraps into the next, as Word wraps a line: the next line's first word
-    would not have fitted in the room left after it. The room ends where the cell's text would,
-    as far in from its right edge as the text starts from its left."""
-    if cell.box is None:
-        return True
+    """Whether the line wraps into the next, as Word wraps a line: the line and the next line's
+    first word would not have fitted across the cell together. Judged by widths, so it holds
+    for text set flush left, flush right or centred. The cell's padding is the least room its
+    text leaves at either edge, at most half a font size, as short centred lines leave more."""
+    assert cell.box, "a cell that holds lines has a box"
     left, _, right, _ = cell.box
-    room = right - (min(each.x0 for each in cell.lines) - left) - line.x1
-    return room < _first_word_width(following)
+    padding = min(min(each.x0 for each in cell.lines) - left, right - max(each.x1 for each in cell.lines), line.size / 2)
+    return line.x1 - line.x0 + _first_word_width(following) > right - left - 2 * max(padding, 0.0)
 
 
 def _first_word_width(line: CellLine) -> float:

@@ -203,7 +203,7 @@ def _place_table(table: Any, words: list[_Word], taken: set[int]) -> PlacedTable
                 for r in range(row_index, row_index + rowspan)
                 for c in range(column_index, column_index + colspan)
             )
-            cells.append(RawCell(_cell_lines(words_in[box_index]), rowspan, colspan, tuple(box)))
+            cells.append(RawCell(lines=_cell_lines(words_in[box_index]), rowspan=rowspan, colspan=colspan, box=tuple(box)))
         rows.append(tuple(cells))
     return PlacedTable(top=table.bbox[1], bottom=table.bbox[3], rows=tuple(rows))
 

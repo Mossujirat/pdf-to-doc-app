@@ -568,11 +568,11 @@ def test_labels_set_apart_from_their_values_are_read_row_by_row(rows: list[Piece
     assert_read_row_by_row(rows)
 
 
-# A row set out in columns is a line of its own, as on a text page: its parts are set
-# apart by a gap wider than two font sizes.
+# A row whose parts are set apart by a gap wider than two font sizes, as at a tab stop, is
+# a line of its own, as on a text page.
 
 
-SET_OUT_IN_COLUMNS = [
+PARTS_SET_APART = [
     "a table without rules or numbers",
     "values at a tab stop",
     "long labels and short values",
@@ -580,8 +580,8 @@ SET_OUT_IN_COLUMNS = [
 ]
 
 
-@pytest.mark.parametrize("layout", SET_OUT_IN_COLUMNS)
-def test_rows_set_out_in_columns_on_an_ocr_page_stay_lines_of_their_own(layout: str) -> None:
+@pytest.mark.parametrize("layout", PARTS_SET_APART)
+def test_rows_whose_parts_are_set_apart_on_an_ocr_page_stay_lines_of_their_own(layout: str) -> None:
     rows = LABELS_AND_VALUES[layout]
 
     [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))

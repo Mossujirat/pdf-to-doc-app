@@ -1,5 +1,8 @@
 """Ruled tables on text pages come out as tables, with Thai text in each cell intact."""
 
+from typing import Literal
+
+import pytest
 from markdown_reader import page_texts
 from pdf_builder import Cell, Grid, Line, Spaced, Styled, pdf
 
@@ -79,6 +82,35 @@ def test_stacked_items_beside_their_amounts_become_sub_rows() -> None:
         "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
         "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
         "</table>"
+    ]
+
+
+def test_amounts_set_flush_right_beside_stacked_items_become_sub_rows_too() -> None:
+    grid = Grid(
+        rows=(("หมวด", "รายการ", "จำนวนเงิน"), ("ค่าดำเนินงาน", STACKED_ITEMS, Cell("12,000\n3,500\n1,200", align="right"))),
+        widths=(110, 210, 100),
+    )
+
+    [page] = markdown_pages([grid])
+
+    assert '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>' in page
+    assert "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>" in page
+
+
+@pytest.mark.parametrize("align", ["left", "right", "centre"])
+def test_short_items_keep_their_breaks_and_a_wrapped_sentence_joins_however_the_cell_is_aligned(
+    align: Literal["left", "right", "centre"],
+) -> None:
+    grid = Grid(
+        rows=(
+            ("รายการ", "รายละเอียด"),
+            (Cell("เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", align=align), Cell("ส่งรายงานความก้าวหน้า\nทุกหกเดือน", align=align)),
+        ),
+        widths=(210, 170),
+    )
+
+    assert markdown_pages([grid]) == [
+        "| รายการ | รายละเอียด |\n| --- | --- |\n| เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์ | ส่งรายงานความก้าวหน้าทุกหกเดือน |"
     ]
 
 

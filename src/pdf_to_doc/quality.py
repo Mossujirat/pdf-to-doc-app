@@ -3,7 +3,7 @@
 import html
 import re
 import unicodedata
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from rapidfuzz.distance import Editop, Indel, Levenshtein, Opcode
 
 from pdf_to_doc.conversion import convert
 from pdf_to_doc.markdown import split_pages
-from pdf_to_doc.model import PageKind
+from pdf_to_doc.model import PageKind, TableCell
 from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.thai import MARK, THAI_LETTER, is_thai
 
@@ -170,8 +170,10 @@ _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _INLINE_TAG = re.compile(r"</?(?:mark|b|strong|i|em|u|s|span|sup|sub|a|font)\b[^<>]*>", re.IGNORECASE)
 # Other tags, such as table cells, separate their contents.
 _TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9]*\b[^<>]*>")
+# The row of dashes under a GFM table's header.
+_SEPARATOR_ROW = r"\|?[ \t:-]*-{3,}[ \t:|-]*$"
 # Headings, quotes, list bullets and table separator rows.
-_LINE_MARKUP = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\|?[ \t:-]*-{3,}[ \t:|-]*$)", re.MULTILINE)
+_LINE_MARKUP = re.compile(rf"^[ \t]*(?:#{{1,6}}[ \t]+|>[ \t]?|[-*+][ \t]+|{_SEPARATOR_ROW})", re.MULTILINE)
 _EMPHASIS = re.compile(r"\*\*|__")
 _TABLE_PIPE = re.compile(r"\|")
 _WHITESPACE = re.compile(r"\s+")
@@ -221,7 +223,7 @@ def _visible_and_marked(markdown: str) -> tuple[str, list[bool]]:
 # A table as the text of the cell that starts at each row and column.
 Cells = dict[tuple[int, int], str]
 _GFM_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$")
-_GFM_SEPARATOR = re.compile(r"^[ \t]*\|?[ \t:|-]*-{3,}[ \t:|-]*$")
+_GFM_SEPARATOR = re.compile(rf"^[ \t]*{_SEPARATOR_ROW}")
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 _LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 
@@ -229,15 +231,22 @@ _LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 def _cells_in_place(output: str, reference: str) -> tuple[int, int]:
     """How many cells the reference's tables hold, and how many of them the output holds in the
     same place with the same text. Each reference table is compared with the output's table that
-    shares most of its cells' text; a table the output lacks has none of its cells in place."""
+    shares most of its cells' text. Empty cells and dashes say nothing about which table it is, so
+    a table that shares no other text with the reference's is not its match; a table the output
+    lacks has none of its cells in place."""
     found = _tables(output)
-    cells = right = 0
+    count = right = 0
     for table in _tables(reference):
-        texts = set(table.values())
-        match = max(found, key=lambda candidate: len(texts & set(candidate.values())), default={})
-        cells += len(table)
-        right += sum(1 for place, text in table.items() if match.get(place) == text)
-    return cells, right
+        texts = {text for text in table.values() if any(char.isalnum() for char in text)}
+
+        def shared(candidate: Cells) -> int:
+            return len(texts & set(candidate.values()))
+
+        match = max(found, key=shared, default={})
+        count += len(table)
+        if shared(match):
+            right += sum(1 for place, text in table.items() if match.get(place) == text)
+    return count, right
 
 
 def _tables(markdown: str) -> list[Cells]:
@@ -264,7 +273,7 @@ def _gfm_tables(markdown: str) -> list[Cells]:
             found.append(
                 _placed(
                     [
-                        [(html.unescape(cell.replace("\\|", "|")), 1, 1) for cell in _UNESCAPED_PIPE.split(row.strip())[1:-1]]
+                        [TableCell(html.unescape(text.replace("\\|", "|"))) for text in _UNESCAPED_PIPE.split(row.strip())[1:-1]]
                         for row in rows
                     ]
                 )
@@ -279,8 +288,8 @@ class _HtmlTables(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.tables: list[Cells] = []
-        self._rows: list[list[tuple[str, int, int]]] | None = None
-        self._cell: tuple[list[str], int, int] | None = None  # its text so far, rowspan, colspan
+        self._rows: list[list[TableCell]] | None = None
+        self._cell: TableCell | None = None  # the cell being read, its text so far
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "table":
@@ -289,14 +298,13 @@ class _HtmlTables(HTMLParser):
             self._rows.append([])
         elif tag in ("td", "th") and self._rows:
             spans = dict(attrs)
-            self._cell = ([], int(spans.get("rowspan") or 1), int(spans.get("colspan") or 1))
-        elif tag == "br" and self._cell:
-            self._cell[0].append(" ")
+            self._cell = TableCell("", int(spans.get("rowspan") or 1), int(spans.get("colspan") or 1))
+        elif tag == "br":
+            self.handle_data(" ")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("td", "th") and self._cell and self._rows:
-            text, rowspan, colspan = self._cell
-            self._rows[-1].append(("".join(text), rowspan, colspan))
+            self._rows[-1].append(self._cell)
             self._cell = None
         elif tag == "table" and self._rows is not None:
             self.tables.append(_placed(self._rows))
@@ -304,22 +312,25 @@ class _HtmlTables(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self._cell:
-            self._cell[0].append(data)
+            self._cell = replace(self._cell, text=self._cell.text + data)
 
 
-def _placed(rows: list[list[tuple[str, int, int]]]) -> Cells:
+def _placed(rows: list[list[TableCell]]) -> Cells:
     """Each cell's text at the row and column it starts at, past the positions merged cells above or before it cover."""
-    cells: Cells = {}
+    placed: Cells = {}
     covered: set[tuple[int, int]] = set()
     for row_index, row in enumerate(rows):
         column = 0
-        for text, rowspan, colspan in row:
+        for cell in row:
             while (row_index, column) in covered:
                 column += 1
-            cells[(row_index, column)] = _WHITESPACE.sub(" ", unicodedata.normalize("NFC", _LINE_BREAK.sub(" ", text))).strip()
-            covered.update((row_index + down, column + across) for down in range(rowspan) for across in range(colspan))
-            column += colspan
-    return cells
+            text = unicodedata.normalize("NFC", _LINE_BREAK.sub(" ", cell.text))
+            placed[(row_index, column)] = _WHITESPACE.sub(" ", text).strip()
+            covered.update(
+                (row_index + down, column + across) for down in range(cell.rowspan) for across in range(cell.colspan)
+            )
+            column += cell.colspan
+    return placed
 
 
 @dataclass(frozen=True)

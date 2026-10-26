@@ -218,6 +218,13 @@ def test_each_reference_table_is_compared_with_the_output_table_that_holds_its_t
     assert (score.cells_right, score.cells) == (6, 6)
 
 
+def test_a_table_that_shares_only_empty_cells_and_dashes_is_not_the_matching_one() -> None:
+    reference = "| รายการ | ปีที่ ๑ | ปีที่ ๒ |\n| --- | --- | --- |\n| ค่าวัสดุ | - |  |"
+    unrelated = "| ชื่อ | บทบาท | หน่วยงาน |\n| --- | --- | --- |\n| นายสมชาย | - |  |"
+
+    assert score_page(output=unrelated, reference=reference).cells_right == 0
+
+
 def test_a_page_without_tables_has_no_cells() -> None:
     score = score_page(output="สัญญาให้ทุนโครงการ", reference="สัญญาให้ทุนโครงการ")
 

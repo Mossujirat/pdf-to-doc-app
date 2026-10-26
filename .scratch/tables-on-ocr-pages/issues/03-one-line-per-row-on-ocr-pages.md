@@ -39,7 +39,7 @@ Today such rows run together into one paragraph, and on a cover sheet a label wa
   - a body line with ordinary spaces stays in its paragraph;
   - a line the detector boxed in two at a wide gap stays a line of its own.
 - [x] Checked by breaking the code on purpose: the tests fail without the flag.
-- [ ] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
+- [x] Run pytest, mypy, `pytest -m ocr`, the harness, and the checks in the Linux container.
 
 ## Comments
 
@@ -62,4 +62,12 @@ Today such rows run together into one paragraph, and on a cover sheet a label wa
 - **Checked by breaking the code on purpose:**
   - never setting the flag fails the four layout tests;
   - setting it at every gap fails the body-line test.
-- **Run:** pytest, mypy, `pytest -m ocr` and the harness. The checks in the Linux container follow.
+- **Run:** pytest, mypy, `pytest -m ocr` and the harness, on Windows and in the Linux container.
+  - pytest: 574 passed and 1 skipped on Windows (a Linux-only test), and 575 passed on Linux.
+  - `pytest -m ocr`: 17 passed on each.
+  - The harness gave the same CERs on both.
+
+**2026-10-26, after code review (two axes, tickets 01–03 together)**
+
+- **Spec:** implemented as asked.
+- **Standards:** `GLOSSARY.md` says a table's columns, and labels set apart from their values, are not columns. The new docstring and test names had said "set out in columns", so they now say parts "set apart" by a gap as wide as a tab stop's. The docstring also now gives the evidence: only such rows, signature lines and junk had a gap that wide on the corpus's scans. The flag keeps its old name, `in_columns`, as ticket 18 left it.

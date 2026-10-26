@@ -77,6 +77,7 @@ class Cell:
     colspan: int = 1
     rowspan: int = 1
     boxed: bool = True  # False draws the text with no box around it
+    align: Literal["left", "right", "centre"] = "left"  # where each line sits in the cell
 
 
 @dataclass(frozen=True)
@@ -469,8 +470,10 @@ def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path, invisi
         if cell.boxed:
             page.draw_rect(rect * page.derotation_matrix, color=(0, 0, 0), width=0.5)
         for line_index, text in enumerate(cell.text.splitlines()):
-            x = rect.x0 + 4
-            for piece in text.split("\t"):
+            pieces = text.split("\t")
+            width = sum(_width(piece, font_file, FONT_SIZE) for piece in pieces) + TAB_GAP * (len(pieces) - 1)
+            x = {"left": rect.x0 + 4, "right": rect.x1 - 4 - width, "centre": (rect.x0 + rect.x1 - width) / 2}[cell.align]
+            for piece in pieces:
                 baseline = rect.y0 + 3 + FONT_SIZE + line_index * LINE_HEIGHT
                 _draw(page, x, baseline, piece, font_file, FONT_SIZE, invisible)
                 x += _width(piece, font_file, FONT_SIZE) + TAB_GAP
