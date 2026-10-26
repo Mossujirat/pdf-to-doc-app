@@ -1,7 +1,8 @@
 """Reads a PDF page by page: a text page from its text layer, an OCR page with the OCR engine.
 
 A page whose text layer is there but cannot be trusted is also an OCR page. With images
-kept, a scan is kept as an image of the page instead, and not read at all.
+kept, a scan is kept as an image of the page instead, and not read at all. An OCR page
+that is not a scan is rendered from the PDF, crisp, and softened before it is read.
 """
 
 from collections.abc import Callable
@@ -13,7 +14,7 @@ import pymupdf
 
 from pdf_to_doc.layout import EDGE_BAND, PageRows, Row, body_text_share, page_blocks
 from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
-from pdf_to_doc.ocr import OcrEngine, read_page, render
+from pdf_to_doc.ocr import OcrEngine, read_page, render, softened
 from pdf_to_doc.pdf_images import kept_page
 from pdf_to_doc.pdf_text import kept_pictures, text_rows
 from pdf_to_doc.progress import Progress
@@ -56,6 +57,13 @@ def read_pdf(
     # A scan's text layer is checked too, as the text laid over it is kept.
     untrusted = {index for index, page_rows in enumerate(rows) if not trusted(page_rows)}
     kinds = [_kind(page, rows[index], index in untrusted, keep_images) for index, page in enumerate(pages)]
+    # The OCR pages that are not scans, judged by the text layer before an untrusted one is
+    # dropped. With images kept, every scan is kept, so every OCR page is one of them.
+    crisp = {
+        index
+        for index, kind in enumerate(kinds)
+        if kind == "ocr" and (keep_images or not _is_scan(pages[index], rows[index]))
+    }
     for index in untrusted:
         # An untrusted text layer passes on nothing, not even its stamps, whether its page is
         # read with OCR or kept.
@@ -80,7 +88,8 @@ def read_pdf(
         progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         if engine is None:
             engine = ocr()
-        rows[index] = read_page(engine, render(pages[index]), rows[index])
+        image = render(pages[index])
+        rows[index] = read_page(engine, softened(image) if index in crisp else image, rows[index])
         engines[index] = engine.name
     return Document(
         pages=tuple(
@@ -98,19 +107,23 @@ def read_pdf(
 
 
 def _kind(page: pymupdf.Page, rows: PageRows, untrusted: bool, keep_images: bool) -> PageKind:
-    """How the page is read. With images kept, a scan is not read at all: judged by the text a
-    reader sees on it, it would be read with OCR, and what it shows outside that text lies mostly
-    in its images. So a scan made searchable is kept too, and so is a scan whose text layer cannot
-    be trusted. Otherwise a page is read from its text layer, unless that cannot be trusted, or
-    covers little of the body while the body shows more outside it; then it is read with OCR."""
-    if keep_images:
-        shown = _shown(page, rows)
-        inked = _ink_needing_ocr(page, shown)
-        if inked is not None and _is_scan(inked, shown):
-            return "kept"
+    """How the page is read. With images kept, a scan (see `_is_scan`) is not read at all.
+    Otherwise a page is read from its text layer, unless that cannot be trusted, or covers
+    little of the body while the body shows more outside it; then it is read with OCR."""
+    if keep_images and _is_scan(page, rows):
+        return "kept"
     if untrusted:
         return "ocr"
     return "text" if _ink_needing_ocr(page, rows) is None else "ocr"
+
+
+def _is_scan(page: pymupdf.Page, rows: PageRows) -> bool:
+    """Whether the page is a scan: judged by the text a reader sees on it, it would be read with
+    OCR, and what it shows outside that text lies mostly in its images. So a scan made searchable
+    is one too, and so is a scan whose text layer cannot be trusted."""
+    shown = _shown(page, rows)
+    inked = _ink_needing_ocr(page, shown)
+    return inked is not None and _in_images(inked, shown)
 
 
 def _ink_needing_ocr(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_] | None:
@@ -177,7 +190,7 @@ def _ink_beyond_text(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_
     return inked
 
 
-def _is_scan(inked: npt.NDArray[np.bool_], rows: PageRows) -> bool:
+def _in_images(inked: npt.NDArray[np.bool_], rows: PageRows) -> bool:
     """Whether what the body shows outside the text, as `_ink_beyond_text` found it, lies mostly in
     the page's images: a picture of a page, unlike text drawn as shapes. A page that shows nothing
     but a picture, such as a logo alone, counts as one too: its image is all there is to keep."""

@@ -3,13 +3,16 @@
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pytest
 from fake_ocr import FakeEngine, Sideways, Unsure
+from generate import CRISP_PAGE
 from markdown_reader import page_texts
-from pdf_builder import LINE_HEIGHT, TOP, Rotated, Scan, Styled, pdf
+from pdf_builder import LINE_HEIGHT, TOP, Drawn, Rotated, Scan, Styled, pdf, remapped
 
 from pdf_to_doc import ConversionResult, convert
 from pdf_to_doc.cli import main
+from pdf_to_doc.ocr import PageImage
 
 
 def markdown_pages(result: ConversionResult) -> list[str]:
@@ -106,6 +109,46 @@ def test_lines_of_a_scan_stay_one_paragraph_whatever_the_height_of_their_boxes()
     result = convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine)
 
     assert markdown_pages(result) == ["ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติและจะรายงานผลทุกหกเดือน"]
+
+
+# An OCR page that is not a scan is rendered from the PDF, crisp: it is softened before it
+# is read, or PaddleOCR's detector drops some of its lines (ticket 33). A scan is soft already.
+# Softened, the steepest step between neighbouring pixels measured 68 grey levels; a 300-dpi
+# scan steps 255, and the corpus's 200-dpi scans 172.
+
+
+def steepest_step(image: PageImage) -> int:
+    """The largest step in grey between two pixels side by side: a crisp edge goes from paper to ink at once."""
+    pixels = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, 3).astype(int)
+    return int(np.abs(np.diff(pixels, axis=1)).max())
+
+
+@pytest.mark.parametrize("keep_images", [False, True], ids=["images read", "images kept"])
+@pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
+def test_an_ocr_page_that_is_not_a_scan_is_softened_before_it_is_read(drawn: bool, keep_images: bool) -> None:
+    engine = FakeEngine(CRISP_PAGE)
+    source = pdf(Drawn(CRISP_PAGE)) if drawn else remapped(pdf(CRISP_PAGE), {SARA_AA: SARA_AM})
+
+    result = convert(source, ocr=engine, keep_images=keep_images)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert steepest_step(engine.images[0]) < 100
+
+
+@pytest.mark.parametrize(
+    "hidden",
+    [None, "over", "under"],
+    ids=["a scan", "a searchable scan whose hidden text is wrong", "a scan over wrong text it hides"],
+)
+def test_a_scan_is_read_as_sharp_as_it_was_scanned(hidden: Literal["over", "under"] | None) -> None:
+    engine = FakeEngine(CRISP_PAGE)
+    scan = pdf(Scan(CRISP_PAGE, dpi=300, searchable=hidden))
+
+    result = convert(remapped(scan, {SARA_AA: SARA_AM}) if hidden else scan, ocr=engine)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert result.summary.pages[0].untrusted_text_layer == bool(hidden)
+    assert steepest_step(engine.images[0]) > 150
 
 
 # What the user sees

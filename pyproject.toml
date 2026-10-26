@@ -12,6 +12,7 @@ dependencies = [
     "fastapi==0.142.4",
     "httpx==0.28.1",
     "numpy==2.3.5",
+    "opencv-contrib-python==4.10.0.84",
     "paddleocr==3.7.0",
     "paddlepaddle==3.2.2",
     "pydantic==2.14.1",

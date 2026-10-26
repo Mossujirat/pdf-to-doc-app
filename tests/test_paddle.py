@@ -1,10 +1,11 @@
-"""The PaddleOCR engine on simulated scans; these tests need the models (`pdf-to-doc-models`)."""
+"""The PaddleOCR engine on simulated scans and other OCR pages; these tests need the models (`pdf-to-doc-models`)."""
 
 from typing import Literal
 
 import pytest
+from generate import CRISP_PAGE
 from markdown_reader import page_texts
-from pdf_builder import Grid, Line, Scan, pdf
+from pdf_builder import Drawn, Grid, Line, Scan, pdf, remapped
 
 from pdf_to_doc import convert
 from pdf_to_doc.quality import score_page
@@ -41,6 +42,24 @@ TIMELINE: list[Line] = [
         widths=(200, 110, 110, 110, 120),
     ),
 ]
+
+
+SARA_AA = chr(0x0E32)
+SARA_AM = chr(0x0E33)
+
+
+@pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
+def test_every_line_of_an_ocr_page_that_is_not_a_scan_is_read(drawn: bool) -> None:
+    # Read as rendered from the PDF, crisp, this page lost its fifth line: the detector found it, then dropped it.
+    source = pdf(Drawn(CRISP_PAGE)) if drawn else remapped(pdf(CRISP_PAGE), {SARA_AA: SARA_AM})
+
+    result = convert(source)
+
+    [text] = page_texts(result.output.decode("utf-8"))
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    score = score_page(text, "".join(CRISP_PAGE))
+    assert score.broken.missing_text == 0
+    assert score.cer < 0.02
 
 
 @pytest.mark.parametrize("turn", [90, 270])

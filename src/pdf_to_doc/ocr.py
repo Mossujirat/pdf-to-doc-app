@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from statistics import median
 from typing import Literal, Protocol
 
+import cv2
 import numpy as np
 import pymupdf
 
@@ -18,6 +19,13 @@ Language = Literal["th", "en"]
 LANGUAGES: tuple[Language, ...] = ("th", "en")
 # Pages are rendered at this resolution; the detector scales its own input down.
 DPI = 300
+# A page rendered from the PDF is crisp, unlike a scan. PaddleOCR's detector shrinks a
+# page to 1280 pixels on its longest side, about a third of a 300-dpi A4 page, without
+# smoothing it first; the thin strokes where upper marks join a line then break up, the
+# line scores under the detector's threshold, and is dropped. Blurred first by this much,
+# in pixels, every line of such pages was read; 1.0 still lost lines, and 2.0 lost them
+# again on pages with tables.
+_SOFTENING = 1.5
 # A detector draws a box about this many times as tall as the font size. Marks
 # above and below the letters make a box taller: on real scans, one line in five
 # was a fifth taller than the page's usual line, in the same font. So box heights
@@ -112,6 +120,11 @@ def render(page: pymupdf.Page) -> PageImage:
     zoom = DPI / 72
     pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), colorspace=pymupdf.csRGB, alpha=False)
     return PageImage(pix.width, pix.height, DPI, pix.samples)
+
+
+def softened(image: PageImage) -> PageImage:
+    """The image blurred a little, as a scan is: for a page rendered from the PDF, which is crisp."""
+    return _image(cv2.GaussianBlur(_pixels(image), (0, 0), _SOFTENING), image.dpi, image.turn)
 
 
 def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows) -> PageRows:

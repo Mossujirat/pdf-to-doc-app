@@ -19,6 +19,7 @@ from pdf_builder import (
     SARABUN,
     TOP,
     Cell,
+    Drawn,
     Grid,
     Line,
     Picture,
@@ -40,7 +41,7 @@ DEGRADED = Path(__file__).parent / "degraded"
 
 @dataclass(frozen=True)
 class SyntheticPage:
-    lines: Sequence[Line] | Scan | Rotated
+    lines: Sequence[Line] | Scan | Rotated | Drawn
     reference: str
 
 
@@ -334,6 +335,9 @@ CLAUSES = [
     "หากผู้รับทุนไม่สามารถดำเนินการได้ตามกำหนดเวลา",
     "ให้แจ้งผู้ให้ทุนเป็นหนังสือก่อนครบกำหนดอย่างน้อยสามสิบวัน",
 ]
+# The clauses and a line with marks over its first and last words. An OCR page that is
+# not a scan is rendered from the PDF, crisp; read crisp, this page lost its fifth line.
+CRISP_PAGE = [*CLAUSES, "ผู้รับทุนต้องส่งงานตามกำหนดเวลาในตารางนี้", *CLAUSES[:2]]
 
 TEXT_LAYER_DOCUMENTS = (
     # A legacy Windows Thai font: marks over tall consonants and below the line
@@ -357,12 +361,21 @@ TEXT_LAYER_DOCUMENTS = (
         },
     ),
     # A font whose ToUnicode map reports sara aa as sara am: "การ" reads "กำร".
-    # The page looks right, so it is read with OCR.
+    # The pages look right, so they are read with OCR.
     SyntheticDocument(
         name="wrong-unicode-map",
         font_file=SARABUN,
-        pages=(SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),),
+        pages=(
+            SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),
+            SyntheticPage(lines=CRISP_PAGE, reference="".join(CRISP_PAGE)),
+        ),
         remap={chr(0x0E32): chr(0x0E33)},
+    ),
+    # Text drawn as shapes, with no text layer, as some PDF printers write it: read with OCR.
+    SyntheticDocument(
+        name="text-drawn-as-shapes",
+        font_file=SARABUN,
+        pages=(SyntheticPage(lines=Drawn(CRISP_PAGE), reference="".join(CRISP_PAGE)),),
     ),
 )
 
