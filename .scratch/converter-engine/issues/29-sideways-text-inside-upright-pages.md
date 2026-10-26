@@ -19,3 +19,10 @@
 - Whether to read each tall crop both ways and keep the better reading, and what that costs on pages with many tall boxes.
 - Where the headers' text goes once read: into the table's header row, which needs ticket 14, or as a line before the table.
 - Whether the text-layer case belongs here, or waits until a sample shows it.
+
+## Comments
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- **Ticket 14 finds a ruled table's grid in the page image,** and places each OCR box in the cell that holds its centre. A sideways header, once read right, would therefore land in its header cell with no extra work, as long as the header sits in a ruled cell.
+- Until then, its junk reading lands in that cell, marked uncertain.

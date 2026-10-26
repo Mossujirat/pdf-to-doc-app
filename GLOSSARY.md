@@ -44,6 +44,10 @@ _Avoid_: low-quality text, error
 A short bracketed label that stands in for content the converter deliberately does not transcribe, such as an image, a signature or handwriting.
 _Avoid_: tag, alt text
 
+**Incomplete table**:
+A table on an OCR page whose text the converter could not place in its cells with certainty, so the output gives it row by row, each printed line on its own, after a label saying the table may be incomplete. Its text is transcribed, so it is not a placeholder, and the summary counts it apart from them.
+_Avoid_: broken table, partial table
+
 **Reference text**:
 The known-correct text of a test page, against which outputs are judged for broken text.
 _Avoid_: ground truth, expected output

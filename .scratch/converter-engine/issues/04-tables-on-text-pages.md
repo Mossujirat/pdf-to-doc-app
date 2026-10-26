@@ -75,3 +75,12 @@
   - The same characters as the ticket 03 output: none lost, none duplicated.
   - 16 ruled tables.
   - 7.8 s for 110 pages.
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- **The coarse grid will be handled for text pages too.** That is the grid where printed sub-rows share one ruled cell. The user decided that ticket 14's rule for a cell holding several printed lines applies to every table, text pages included:
+  - lines that line up across two or more cells become sub-rows;
+  - otherwise a line that fills its cell carries on into the next;
+  - a short line ends its item, and the break is kept inside the cell.
+- **Why:** joining every line by the Thai line rules glues stacked items into one word ("ค่าวัสดุสำนักงานค่าถ่ายเอกสาร"), and parts their amounts from them.
+- **The `tables` corpus fixture changes.** Its cell "ส่งรายงานความก้าว / หน้าฉบับที่หนึ่ง" breaks mid-word in a cell that is not full. Ticket 14 rebuilds it to wrap the way Word does.

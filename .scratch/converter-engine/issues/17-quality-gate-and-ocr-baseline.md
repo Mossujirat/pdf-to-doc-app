@@ -38,3 +38,8 @@ It then checks the text-page gate, records the OCR baseline, and the user sets t
 
 - The web service launches before this gate, once ticket 11 is done. The gate still measures the converter, but no longer decides whether it goes behind a web page.
 - Hosting is settled (ADR 0004, ADR 0005). Accurate mode is off on the web at launch, so the GPU question above waits until Accurate mode is brought to the web.
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- **Table structure:** the harness's CER cannot see it, because table markup is stripped before pages are compared. Ticket 14 adds a measure of how many cells land in the right place, on pages whose reference holds tables. The gate can use it.
+- **A lost line:** OCR pages that are not scans lost whole lines silently, as ticket 33 records. A baseline taken before ticket 33 would count those pages' missing text as OCR error.

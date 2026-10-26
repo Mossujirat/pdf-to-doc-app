@@ -35,3 +35,11 @@
 **Tests**
 - [ ] These tests are excluded from CI and run on demand.
 - [ ] Fast tests feed recorded Typhoon outputs through the fake engine to cover the table, figure and page-number handling.
+
+## Comments
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- **Default mode will not rebuild unruled tables.** It gives them one line per row, and gives ruled tables their grid from the page image. PaddleOCR's table models were measured and rejected: too much memory for the sandbox, and unreliable on unruled tables. The user chose Accurate mode as the way to get unruled tables' structure, so Typhoon's HTML tables carry more weight here.
+- **Uncertain text in table cells** is added by ticket 14: cells are marked, and the summary counts them, through the same accessor as paragraphs. Typhoon's tables can use it for this mode's rule on uncertain text.
+- **Ticket 14 finds ruled grids where OCR pages are read, through the `OcrEngine` interface.** It needs the engine's text boxes. Typhoon gives none, so in this mode the tables come from Typhoon's HTML alone.
