@@ -92,6 +92,12 @@ uv run python corpus/generate.py                              # regenerate corpu
 It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
 - A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
+- `coarse-table` holds a ruled table whose cells hold several printed lines, as some budgets are drawn:
+  - items stacked beside their amounts, which are sub-rows;
+  - items beside one total, which keep their line breaks;
+  - a wrapped description, which is one sentence.
+
+  Text in a table cell wraps as Word wraps it: the first line fills the cell, and the next word would not fit after it.
 - A page can draw its text as shapes, with no text layer, as some PDF printers write it: `text-drawn-as-shapes`. It holds the same clauses as the second page of `wrong-unicode-map`, with a line marked over its first and last words. Both are OCR pages that are not scans, which the converter renders from the PDF and softens before reading; read crisp, they lose their fifth line.
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.

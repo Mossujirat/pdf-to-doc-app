@@ -6,42 +6,42 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Branch:** `feat/ocr-tables`
 
 **The rule**
-- [ ] **Sub-rows.** A ruled row splits into sub-rows when two or more of its cells hold the same number of lines, more than one, and those lines line up: their centres lie within about a third of a line height.
+- [x] **Sub-rows.** A ruled row splits into sub-rows when two or more of its cells hold the same number of lines, more than one, and those lines line up: their centres lie within about a third of a line height.
   - The row's other cells span the sub-rows, as merged cells.
-- [ ] **Otherwise, within a cell:**
+- [x] **Otherwise, within a cell:**
   - a line that fills its cell carries on into the next line, joined by the Thai line rules;
   - a short line ends its item, and the line break is kept.
 
   "Fills" follows the same idea as a line that stops short in a paragraph. Its threshold is the implementer's.
-- [ ] **Two cells that both wrap to the same number of full lines** are wrapped sentences. They are not split into sub-rows.
-- [ ] **Every character still comes out exactly once,** as ticket 04 of the converter requires.
+- [x] **Two cells that both wrap to the same number of full lines** are wrapped sentences. They are not split into sub-rows.
+- [x] **Every character still comes out exactly once,** as ticket 04 of the converter requires.
 
 **Outputs**
-- [ ] The document model's cell text may hold line breaks.
-- [ ] **Markdown:** a break inside a cell is `<br>`, in GFM and HTML tables alike. `|` is still escaped.
-- [ ] **DOCX:** a break inside a cell is a line break in the cell's paragraph, with the Thai font settings unchanged. Check once in real Word that the break shows and the Thai renders right.
+- [x] The document model's cell text may hold line breaks.
+- [x] **Markdown:** a break inside a cell is `<br>`, in GFM and HTML tables alike. `|` is still escaped.
+- [x] **DOCX:** a break inside a cell is a line break in the cell's paragraph, with the Thai font settings unchanged. Check once in real Word that the break shows and the Thai renders right.
 
 **Corpus**
-- [ ] **The `tables` document is rebuilt.** Its cell "ส่งรายงานความก้าว / หน้าฉบับที่หนึ่ง" breaks mid-word in a cell that is not full. It must fill its cell before it wraps, as Word wraps it. Update its reference and regenerate the corpus.
-- [ ] **A new synthetic text-page document**, with reference text, holds a coarse ruled table:
+- [x] **The `tables` document is rebuilt.** Its cell "ส่งรายงานความก้าว / หน้าฉบับที่หนึ่ง" breaks mid-word in a cell that is not full. It must fill its cell before it wraps, as Word wraps it. Update its reference and regenerate the corpus.
+- [x] **A new synthetic text-page document**, with reference text, holds a coarse ruled table:
   - stacked items beside their amounts, which become sub-rows;
   - a cell listing short items beside a single total, which keeps its breaks;
   - a wrapped description, which joins.
-- [ ] The text-page gate holds: zero broken text on text pages.
+- [x] The text-page gate holds: zero broken text on text pages.
 
 **Tests**
-- [ ] Fast tests through the conversion function, reading the Markdown tables and the DOCX back:
+- [x] Fast tests through the conversion function, reading the Markdown tables and the DOCX back:
   - sub-rows that line up;
   - stacked short items keep their breaks;
   - a wrapped sentence is joined;
   - two cells wrapping to the same number of full lines are not split;
   - merged cells around sub-rows.
-- [ ] Checked by breaking the code on purpose. Each part has a test that fails without it:
+- [x] Checked by breaking the code on purpose. Each part has a test that fails without it:
   - the sub-row split;
   - the line-up test;
   - "fills its cell";
@@ -49,3 +49,38 @@
 - [ ] Run pytest, mypy, the harness, and the checks in the Linux container.
 
 ## Comments
+
+**2026-10-26, implemented on branch `feat/ocr-tables`**
+
+- **"Fills its cell" is Word's own rule.** A line wraps into the next when the next line's first word would not have fitted in the room left after it.
+  - **The room** ends as far in from the cell's right edge as the text starts from its left.
+  - **The first word** is cut by the word list's tokenizer for Thai, and up to a space otherwise. Its width is its share of the line's letters, with marks above and below left out.
+  - **Why not a fixed gap:** in a cell set flush left, a long Thai word can stop a wrapped line several letters short of the edge. A fixed gap would have kept such a break inside a sentence.
+  - **When the estimate errs,** it errs toward keeping a break, which is harmless. Joining two items into one word is what the rule must avoid.
+- **Sub-rows**
+  - Only cells with no merge down, whose lines are all items (none wraps), take part.
+  - Lines line up when their middles are within 0.4 of the font size.
+  - The row's other cells, and cells above that reach into the row, get their row span stretched over the new sub-rows.
+- **The data:** a table cell's printed lines now carry where they sit (`layout.CellLine`), and each cell carries its ruled box, so the same rule will serve OCR pages (ticket 04).
+- **Outputs:**
+  - The model's cell text holds `\n` for a kept break.
+  - Markdown writes it as `<br>`.
+  - python-docx turns it into a line break in the cell's paragraph by itself.
+- **Real Word,** the `coarse-table` page opened through COM and exported:
+  - the sub-rows are merged under one category;
+  - the two items stand on two lines in one cell;
+  - the wrapped description is one sentence, which Word wraps to its own column width;
+  - the Thai renders right.
+- **Corpus:**
+  - `tables` now wraps "ส่งรายงานความก้าวหน้าฉบับ / ที่หนึ่ง" in its 200-pt cell, as Word would.
+  - The new `coarse-table` holds 16 cells, all in place, with CER 0.
+  - Text pages hold 46/46 cells in place in total.
+- **Tests:**
+  - `test_tables.py`: the wrapped-cell test now wraps as Word does, and five tests are new: sub-rows, short items beside one total, two wrapped sentences side by side, items that do not line up, and a merged cell above a row of sub-rows.
+  - `test_docx_output.py` reads the merged sub-rows and a kept break back from the DOCX.
+- **Checked by breaking the code on purpose.** Every mechanism has a test that fails without it:
+  - no sub-row split: 3 tests fail;
+  - lines need not line up: 1;
+  - every line wraps: 5;
+  - no line wraps: 2.
+- **Run:** pytest (569), mypy and the harness. The checks in the Linux container run with ticket 03.

@@ -211,7 +211,8 @@ DOCUMENTS = (
                     Grid(
                         rows=(
                             ("งวดที่", "กำหนดส่งงาน", "จำนวนเงิน"),
-                            ("๑", "ส่งรายงานความก้าว\nหน้าฉบับที่หนึ่ง", "50,000"),
+                            # Wrapped as Word wraps it: the next word would not fit on the first line.
+                            ("๑", "ส่งรายงานความก้าวหน้าฉบับ\nที่หนึ่ง", "50,000"),
                             ("๒", "ส่งรายงานฉบับสมบูรณ์", "75,000"),
                         ),
                         widths=(70, 200, 100),
@@ -242,6 +243,40 @@ DOCUMENTS = (
                     "<tr><td>ค่าวัสดุ</td><td>-</td><td>30,000</td></tr>\n"
                     "</table>\n\n"
                     "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"
+                ),
+            ),
+        ),
+    ),
+    # A coarse ruled table, as some budgets are drawn: several printed lines share one cell.
+    # Items stacked beside their amounts are sub-rows; items beside one total keep their
+    # line breaks; a wrapped description is one sentence.
+    SyntheticDocument(
+        name="coarse-table",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    "งบประมาณโครงการแยกตามหมวดรายจ่าย",
+                    Grid(
+                        rows=(
+                            ("หมวดรายจ่าย", "รายการ", "จำนวนเงิน"),
+                            ("ค่าดำเนินงาน", "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร\nค่าไปรษณีย์", "12,000\n3,500\n1,200"),
+                            ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900"),
+                            ("ค่าเดินทาง", "ค่าเช่ารถและค่าน้ำมันเชื้อเพลิง\nสำหรับการลงพื้นที่", "15,000"),
+                        ),
+                        widths=(110, 210, 100),
+                    ),
+                ],
+                reference=(
+                    "งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n"
+                    "<table>\n"
+                    "<tr><td>หมวดรายจ่าย</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n"
+                    '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>\n'
+                    "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
+                    "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
+                    "<tr><td>ค่าครุภัณฑ์</td><td>เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์</td><td>53,900</td></tr>\n"
+                    "<tr><td>ค่าเดินทาง</td><td>ค่าเช่ารถและค่าน้ำมันเชื้อเพลิงสำหรับการลงพื้นที่</td><td>15,000</td></tr>\n"
+                    "</table>"
                 ),
             ),
         ),

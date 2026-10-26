@@ -19,6 +19,11 @@ def thai_words_in(text: str) -> list[str]:
     return [word for word in word_tokenize(text, engine="newmm", keep_whitespace=False) if _is_thai_word(word)]
 
 
+def first_word(text: str) -> str:
+    """The text's first word: Thai as the word list's tokenizer cuts it, other text up to a space."""
+    return next(iter(word_tokenize(text.strip(), engine="newmm", keep_whitespace=False)), "")
+
+
 def in_word_list(word: str) -> bool:
     words = pythainlp_word_list()
     return word in words or word.strip(_NOT_WORDS) in words

@@ -5,7 +5,7 @@ from typing import Any
 
 import pymupdf
 
-from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedImage, PlacedTable, RawCell, Row
+from pdf_to_doc.layout import EDGE_BAND, CellLine, PageRows, PlacedImage, PlacedTable, RawCell, Row
 from pdf_to_doc.pdf_images import placed_images
 from pdf_to_doc.thai import is_thai
 
@@ -203,7 +203,7 @@ def _place_table(table: Any, words: list[_Word], taken: set[int]) -> PlacedTable
                 for r in range(row_index, row_index + rowspan)
                 for c in range(column_index, column_index + colspan)
             )
-            cells.append(RawCell(lines=_cell_lines(words_in[box_index]), rowspan=rowspan, colspan=colspan))
+            cells.append(RawCell(_cell_lines(words_in[box_index]), rowspan, colspan, tuple(box)))
         rows.append(tuple(cells))
     return PlacedTable(top=table.bbox[1], bottom=table.bbox[3], rows=tuple(rows))
 
@@ -221,8 +221,8 @@ def _span(grid: list[float], start: float, end: float) -> int:
     return max(1, sum(1 for line in grid if start + _GRID_TOLERANCE < line < end + _GRID_TOLERANCE))
 
 
-def _cell_lines(words: list[_Word]) -> tuple[str, ...]:
-    """A cell's printed lines, top to bottom.
+def _cell_lines(words: list[_Word]) -> tuple[CellLine, ...]:
+    """A cell's printed lines, top to bottom, and where each sits.
 
     Words keep their own characters together, in the order they were printed.
     Words that a wide gap set apart, as a tab stop does, are joined with a space.
@@ -233,7 +233,7 @@ def _cell_lines(words: list[_Word]) -> tuple[str, ...]:
             lines[-1].append(word)
         else:
             lines.append([word])
-    texts = []
+    cell_lines = []
     for line in lines:
         text = ""
         for word in sorted(line, key=lambda word: word.start):
@@ -241,8 +241,18 @@ def _cell_lines(words: list[_Word]) -> tuple[str, ...]:
             if text and not text[-1].isspace() and not piece[:1].isspace():
                 text += " "
             text += piece
-        texts.append(text)
-    return tuple(texts)
+        printed = [char for word in line for char in word.chars]
+        chars = [char for char in printed if not char.text.isspace()] or printed
+        cell_lines.append(
+            CellLine(
+                text,
+                x0=min(char.box[0] for char in chars),
+                x1=max(char.box[2] for char in chars),
+                centre=(min(char.box[1] for char in chars) + max(char.box[3] for char in chars)) / 2,
+                size=max(char.size for char in chars),
+            )
+        )
+    return tuple(cell_lines)
 
 
 def _is_bold(span: dict[str, Any]) -> bool:

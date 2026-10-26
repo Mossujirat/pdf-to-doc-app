@@ -17,8 +17,9 @@ from pdf_to_doc.model import (
     Table,
     TableCell,
 )
-from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
+from pdf_to_doc.thai import DIGITS, MARK, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 from pdf_to_doc.uncertain import Piece, uncertain_spans
+from pdf_to_doc.words import first_word
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
 EDGE_BAND = 0.10
@@ -72,6 +73,10 @@ _COLUMN_GAP = 2.0
 # office documents, therefore splits into one paragraph per line.)
 _PARAGRAPH_GAP = 0.4
 _LINE_GAP_CAP = 0.75
+# Items stacked in two cells of a row are on the same sub-row when the middles of their lines
+# are less than this share of the font size apart, about a third of a line.
+_SAME_SUB_ROW = 0.4
+_THAI_MARK = re.compile(MARK)
 
 
 @dataclass(frozen=True)
@@ -95,12 +100,24 @@ class Row:
 
 
 @dataclass(frozen=True)
+class CellLine:
+    """One printed line of a table cell, and where it sits on the page."""
+
+    text: str
+    x0: float
+    x1: float
+    centre: float  # half way down the line
+    size: float
+
+
+@dataclass(frozen=True)
 class RawCell:
     """A table cell as printed: its lines of text, before they are joined and repaired."""
 
-    lines: tuple[str, ...]
+    lines: tuple[CellLine, ...]
     rowspan: int = 1
     colspan: int = 1
+    box: tuple[float, float, float, float] | None = None  # its ruled edges (x0, y0, x1, y1)
 
 
 @dataclass(frozen=True)
@@ -209,13 +226,87 @@ def _next_to(image: PlacedImage, row: Row) -> bool:
 
 
 def _table(placed: PlacedTable) -> Table:
-    """Join each cell's printed lines with the Thai line rules, and repair them."""
+    """The table as a reader takes it: items stacked in a row's cells that line up across them
+    are sub-rows, and each cell's printed lines are joined into its items."""
     return Table(
         rows=tuple(
-            tuple(TableCell(repair(join_lines(list(cell.lines))), cell.rowspan, cell.colspan) for cell in row)
-            for row in placed.rows
+            tuple(TableCell(_cell_text(cell), cell.rowspan, cell.colspan) for cell in row)
+            for row in _with_sub_rows(placed.rows)
         )
     )
+
+
+def _with_sub_rows(rows: tuple[tuple[RawCell, ...], ...]) -> list[list[RawCell]]:
+    """The rows, each row whose cells stack items that line up across them split into a sub-row
+    per item. The row's other cells, and the cells above that reach into it, span its sub-rows."""
+    splits = [_sub_rows(row) for row in rows]
+    counts = [count for count, _ in splits]
+    split_rows: list[list[RawCell]] = []
+    for number, (row, (count, stacked)) in enumerate(zip(rows, splits)):
+        parts: list[list[RawCell]] = [[] for _ in range(count)]
+        for index, cell in enumerate(row):
+            if index in stacked:
+                for part, line in zip(parts, cell.lines):
+                    part.append(replace(cell, lines=(line,)))
+            else:
+                parts[0].append(replace(cell, rowspan=sum(counts[number : number + cell.rowspan])))
+        split_rows += parts
+    return split_rows
+
+
+def _sub_rows(row: tuple[RawCell, ...]) -> tuple[int, set[int]]:
+    """How many sub-rows the row splits into, and which of its cells hold them: two or more cells
+    that each stack as many items, more than one, on lines that line up across them. A cell whose
+    lines wrap holds a sentence, not items. (1, no cells) when the row does not split."""
+    stacked = [
+        index
+        for index, cell in enumerate(row)
+        if cell.rowspan == 1
+        and len(cell.lines) > 1
+        and not any(_wraps(line, following, cell) for line, following in zip(cell.lines, cell.lines[1:]))
+    ]
+    for index in stacked:
+        lined_up = {other for other in stacked if _lines_up(row[index], row[other])}
+        if len(lined_up) > 1:
+            return len(row[index].lines), lined_up
+    return 1, set()
+
+
+def _lines_up(cell: RawCell, other: RawCell) -> bool:
+    return len(cell.lines) == len(other.lines) and all(
+        abs(line.centre - beside.centre) <= _SAME_SUB_ROW * max(line.size, beside.size)
+        for line, beside in zip(cell.lines, other.lines)
+    )
+
+
+def _cell_text(cell: RawCell) -> str:
+    """The cell's printed lines as a reader takes them: a line that wraps joins the next by the
+    Thai line rules, and a line that ends short of its cell ends an item, which keeps its break."""
+    items: list[list[str]] = []
+    for previous, line in zip((None, *cell.lines), cell.lines):
+        if previous and _wraps(previous, line, cell):
+            items[-1].append(line.text)
+        else:
+            items.append([line.text])
+    return "\n".join(text for text in (repair(join_lines(item)) for item in items) if text)
+
+
+def _wraps(line: CellLine, following: CellLine, cell: RawCell) -> bool:
+    """Whether the line wraps into the next, as Word wraps a line: the next line's first word
+    would not have fitted in the room left after it. The room ends where the cell's text would,
+    as far in from its right edge as the text starts from its left."""
+    if cell.box is None:
+        return True
+    left, _, right, _ = cell.box
+    room = right - (min(each.x0 for each in cell.lines) - left) - line.x1
+    return room < _first_word_width(following)
+
+
+def _first_word_width(line: CellLine) -> float:
+    """How wide the line's first word is, by its share of the line's letters. Marks above and
+    below the letters take no room."""
+    letters = len(_THAI_MARK.sub("", line.text.strip()))
+    return (line.x1 - line.x0) * len(_THAI_MARK.sub("", first_word(line.text))) / letters if letters else 0.0
 
 
 def _heading_levels(groups: list[list[Row]], body_size: float) -> dict[float, int]:

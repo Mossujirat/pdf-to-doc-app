@@ -41,10 +41,11 @@ def _marked(text: str, uncertain: tuple[Span, ...]) -> str:
 
 
 def _gfm_table(table: Table) -> str:
-    """A GitHub-flavoured Markdown table; the first row is the header."""
+    """A GitHub-flavoured Markdown table; the first row is the header. A line break kept
+    inside a cell is a <br>, as a GFM row cannot hold one."""
     lines = []
     for index, row in enumerate(table.rows):
-        lines.append("| " + " | ".join(cell.text.replace("|", "\\|") for cell in row) + " |")
+        lines.append("| " + " | ".join(cell.text.replace("|", "\\|").replace("\n", "<br>") for cell in row) + " |")
         if index == 0:
             lines.append("| " + " | ".join("---" for _ in row) + " |")
     return "\n".join(lines)
@@ -61,7 +62,8 @@ def _html_table(table: Table) -> str:
                 spans += f' rowspan="{cell.rowspan}"'
             if cell.colspan > 1:
                 spans += f' colspan="{cell.colspan}"'
-            cells.append(f"<td{spans}>{html.escape(cell.text, quote=False)}</td>")
+            text = html.escape(cell.text, quote=False).replace("\n", "<br>")
+            cells.append(f"<td{spans}>{text}</td>")
         lines.append("<tr>" + "".join(cells) + "</tr>")
     lines.append("</table>")
     return "\n".join(lines)
