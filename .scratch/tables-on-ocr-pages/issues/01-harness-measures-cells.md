@@ -6,28 +6,28 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Branch:** `feat/ocr-tables`
 
 **The measure**
-- [ ] The tables are read from the reference and the output alike:
+- [x] The tables are read from the reference and the output alike:
   - GFM pipe tables and HTML tables;
   - merged cells expanded by their `rowspan` and `colspan`;
   - `<mark>` dropped;
   - a `<br>` in a cell treated the same on both sides.
-- [ ] A reference cell counts as right when the output's matching table has a cell at the same row and column holding the same text.
+- [x] A reference cell counts as right when the output's matching table has a cell at the same row and column holding the same text.
   - Text is compared after NFC and collapsing whitespace. NFKC is never applied.
   - Each reference table is matched to the output table that shares most of its text.
   - A missing table counts all its cells as missed.
-- [ ] Reported per page and in total, in the readable table and in the JSON report:
+- [x] Reported per page and in total, in the readable table and in the JSON report:
   - for example, "38/44";
   - "-" on a page whose reference holds no table.
-- [ ] Today's measures (CER, broken text, uncertain text, unmarked edits) and the gate on text pages are unchanged.
-- [ ] `corpus/README.md` explains the new column.
+- [x] Today's measures (CER, broken text, uncertain text, unmarked edits) and the gate on text pages are unchanged.
+- [x] `corpus/README.md` explains the new column.
 
 **Tests**
-- [ ] Harness tests cover:
+- [x] Harness tests cover:
   - a table that is all right;
   - a cell moved to the wrong row;
   - merged cells;
@@ -35,6 +35,38 @@
   - a missing table;
   - a page with no table;
   - `<mark>` inside a cell.
-- [ ] Run pytest, mypy and the harness on `corpus/synthetic`. Record the cells column for the existing table pages in Comments.
+- [x] Run pytest, mypy and the harness on `corpus/synthetic`. Record the cells column for the existing table pages in Comments.
 
 ## Comments
+
+**2026-10-26, implemented on branch `feat/ocr-tables`**
+
+- **Where:** `score_page` counts the cells along with its other measures, so each page's `PageScore` holds `cells` and `cells_right`. `Report` sums them, and the command adds a `cells` column and two JSON fields to each page and to each total.
+- **Matching:** a reference table is matched with the output table that shares the most cell texts with it.
+- **Line breaks:** a `<br>` inside a cell reads as a space, so a cell that kept its break matches a reference that kept it, and a cell that glued its lines does not.
+- **Tests:** `test_score_page.py` has nine more tests:
+  - a table all right;
+  - amounts swapped between rows, with CER still 0;
+  - a table flattened into a paragraph, again with CER 0;
+  - merged cells, 5 of 7 in place without the merges;
+  - a table the output lacks;
+  - an extra table in the output before the matching one;
+  - a page with no table;
+  - `<mark>` and an escaped `|` inside cells;
+  - a kept `<br>` against a glued one.
+
+  `test_evaluate.py` checks the column, `-` on a page with no table, the total and the JSON fields.
+- **Checked by breaking the code on purpose:**
+  - without the skip past merged cells, the merged-cell test fails;
+  - matching the first table instead of the one that shares most text failed nothing at first. The test with an extra table was added for it.
+- **The corpus today:**
+
+  | Page | Kind | Cells |
+  | --- | --- | --- |
+  | `tables` page 1 | text | 19/19 |
+  | `word-structure` page 2 | text | 7/7 |
+  | `rotated-text-pages` page 1 | text | 4/4 |
+  | `sideways-scans` page 1 | OCR | 0/20 |
+  | `sideways-scans` page 2 | OCR | 0/20 |
+
+  In total, 30/70: 30/30 on text pages, and 0/40 on OCR pages, which get no tables until ticket 04.

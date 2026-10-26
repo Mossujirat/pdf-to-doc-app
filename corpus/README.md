@@ -65,6 +65,11 @@ The harness then reports, per page and in total:
 - **Page kind**: text page or OCR page.
 - **OCR engine**: the engine that read an OCR page, `-` for a text page.
 - **Uncertain text**: how many stretches the output marks as uncertain text, as its summary counts them.
+- **Cells**: on a page whose reference text holds tables, how many of their cells the output holds in the same place, out of all of them, such as `38/44`, and `cells_right` and `cells` in the JSON report; `-` on a page whose reference holds no table.
+  - The comparison above ignores table structure, so a table flattened into paragraphs scores the same CER as one kept whole. This measure does not.
+  - A cell is in place when the output's matching table has a cell at the same row and column, with merged cells spread over the positions they cover, holding the same text after NFC and with its spaces collapsed.
+  - Each reference table is matched with the output table that shares most of its cells' text. A table the output lacks has none of its cells in place.
+  - `<mark>` is dropped, and a `<br>` inside a cell counts as a space on both sides.
 - **Unmarked**: the share of edits that fall outside uncertain text, where a reader is not told to check. An edit counts as marked when the output character it changes or deletes is inside a `<mark>`, or, for text the output lacks, when a marked character stands next to the gap. The JSON report also gives each page's `unmarked_edits` and `marked_characters`, which show how much correct text is marked too.
 
 Totals are given for all pages, and separately for text pages and for OCR pages. `--max-cer` and `--max-broken` apply to text pages only: the quality gate is zero broken text on text pages. OCR pages are measured, and their gate comes with the OCR baseline.
