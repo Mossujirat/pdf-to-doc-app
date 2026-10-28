@@ -28,7 +28,27 @@ class Unsure:
     confidence: float = 0.5
 
 
-Line = str | Styled | Grid | Unsure
+@dataclass(frozen=True)
+class Boxed:
+    """A box the engine draws on its own, from `x` and from `top` to `bottom`, in points: a copy of
+    a line's upper marks, which PaddleOCR boxes apart from the line and reads as junk such as "ญ"
+    (see `marks_over`), or short text such as a dash or a footnote's number. It takes up no line
+    of its own."""
+
+    text: str
+    x: float
+    top: float
+    bottom: float
+    confidence: float = 0.5
+
+
+def marks_over(baseline: float, x: float, text: str = "ญ ญ") -> Boxed:
+    """A box of the upper marks of the line on `baseline`, from `x`, where PaddleOCR boxes them on
+    the synthetic scans: a third as tall as the line's box, from a little over its top."""
+    return Boxed(text, x, baseline - 1.25 * FONT_SIZE, baseline - 0.8 * FONT_SIZE)
+
+
+Line = str | Styled | Grid | Unsure | Boxed
 
 
 @dataclass(frozen=True)
@@ -132,6 +152,10 @@ def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float
     boxes = []
     baseline: float = TOP
     for entry in lines:
+        if isinstance(entry, Boxed):
+            right = entry.x + FONT_SIZE / 2 * len(entry.text)
+            boxes.append((entry.text, (entry.x * scale, entry.top * scale, right * scale, entry.bottom * scale), entry.confidence))
+            continue
         line, confidence = (entry.line, entry.confidence) if isinstance(entry, Unsure) else (entry, CONFIDENT)
         if isinstance(line, Grid):
             grid = laid_out_grid(line, line.y if line.y is not None else baseline)

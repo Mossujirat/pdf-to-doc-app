@@ -2,6 +2,7 @@
 an engine reads into rows that page layout treats like rows of a text layer."""
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from statistics import median
 from typing import Literal, Protocol
@@ -12,7 +13,7 @@ import pymupdf
 
 from pdf_to_doc.grids import Grid, GridCell, ruled_grids
 from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedTable, RawCell, Row
-from pdf_to_doc.thai import DIGITS
+from pdf_to_doc.thai import DIGITS, UPPER_MARK
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
 
@@ -35,6 +36,15 @@ _BOX_HEIGHT_PER_FONT_SIZE = 1.5
 # A detector's box also reaches about this share of the font size past each end of its text:
 # PaddleOCR's boxes in the synthetic scans' table cells reached 3 to 7 points past text 16 points tall.
 _BOX_PADDING = 0.3
+# A box less tall than this share of the page's usual box can be a copy of a line's marks, boxed
+# apart from the line (see `_without_stray_marks`). On the synthetic table pages, such copies were
+# 0.45 of the usual box at most.
+_STRAY_MARKS = 0.5
+# Where such a copy lies along its line is judged by its share of the line's characters, give or
+# take this many: marks take no room, so that share is off by a mark or two, and every copy on the
+# synthetic table pages lay within 3 characters of an upper vowel or tone mark of its line's.
+_MARKS_NEAR = 3
+_UPPER_MARK = re.compile(UPPER_MARK)
 # Boxes whose centres are closer than this share of a box height sit on one printed line.
 _SAME_LINE = 0.5
 # A row of a text layer is about this many times as tall as its font size.
@@ -220,7 +230,9 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
 
     A ruled table on the image (see `grids`) takes the boxes whose centres lie in its
     cells, and the text-layer rows too, such as a note typed in a cell of a scanned table;
-    the boxes and rows outside every cell are the page's rows.
+    the boxes and rows outside every cell are the page's rows. Copies of a line's upper marks,
+    boxed apart from it, are dropped (see `_without_stray_marks`), a cell's apart from the
+    rest, so that none is taken across a rule.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
@@ -229,9 +241,13 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
-    grids = ruled_grids(_pixels(image), median(map(_height, texts))) if texts else ()
+    unit = median(map(_height, texts)) if texts else 0.0
+    grids = ruled_grids(_pixels(image), unit) if texts else ()
     layer_rows = [_LayerRow.of(row, on_image, scale) for row, on_image in kept]
     in_cells, outside = _in_cells([*texts, *layer_rows], grids)
+    # A cell's boxes are looked at apart from the rest, so no copy is taken across a rule.
+    in_cells = {cell: _without_stray_marks(boxes_in_cell, unit) for cell, boxes_in_cell in in_cells.items()}
+    outside = tuple(_without_stray_marks(outside, unit))
     read = tuple(box for box in outside if not isinstance(box, _LayerRow))
     parts = _reading_parts(read, tuple(box for box in outside if isinstance(box, _LayerRow)))
     lines_by_part = [_printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
@@ -259,6 +275,27 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
     return PageRows(rows=tuple(rows), width=width, height=height, tables=tables, kind="ocr")
+
+
+def _without_stray_marks(boxes: Sequence[TextBox], unit: float) -> list[TextBox]:
+    """The boxes without the copies of a line's upper marks that the detector boxed apart from the
+    line, and read as junk such as "ญ": the line's own reading already holds them. A box is such a
+    copy only when it is short, and sits over the top half of another box, which spans it across the
+    page and whose text holds upper vowels or tone marks where it lies. Short text of its own, such
+    as a "-" or a footnote's number, has no such box around it, or sits lower."""
+    return [box for box in boxes if not any(_copies_marks_of(under, box, unit) for under in boxes)]
+
+
+def _copies_marks_of(under: TextBox, box: TextBox, unit: float) -> bool:
+    """Whether the box is a copy of the upper marks of the box under it, as `_without_stray_marks` tells them."""
+    if _height(box) >= _STRAY_MARKS * unit:
+        return False
+    spanned = under.box[0] <= box.box[0] and box.box[2] <= under.box[2]
+    over_its_top = under.box[1] < box.box[3] and _centre(box) < _centre(under)
+    if not (spanned and over_its_top):
+        return False
+    at = round(((box.box[0] + box.box[2]) / 2 - under.box[0]) / _width(under) * len(under.text))
+    return bool(_UPPER_MARK.search(under.text[max(0, at - _MARKS_NEAR) : at + _MARKS_NEAR + 1]))
 
 
 def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridCell, list[TextBox]], tuple[TextBox, ...]]:

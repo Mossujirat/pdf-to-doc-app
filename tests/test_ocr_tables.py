@@ -8,7 +8,7 @@ import pytest
 from docx.table import Table
 from docx_reader import Cell as WordCell
 from docx_reader import cells, read_docx, runs
-from fake_ocr import Askew, FakeEngine, Sideways, Unsure
+from fake_ocr import Askew, FakeEngine, Sideways, Boxed, Unsure, marks_over
 from fake_ocr import Line as ReadLine
 from generate import (
     BUDGET,
@@ -25,7 +25,7 @@ from generate import (
     scanned,
 )
 from markdown_reader import page_texts
-from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, Cell, Drawn, Grid, Line, Picture, Scan, Styled, pdf, remapped
+from pdf_builder import FONT_SIZE, LEFT, LINE_HEIGHT, TOP, Cell, Drawn, Grid, Line, Picture, Scan, Styled, pdf, remapped
 from test_ocr_pages import THAI_LEFT, THAI_RIGHT, two_columns
 
 from pdf_to_doc import convert
@@ -416,3 +416,39 @@ def test_each_item_kept_on_a_line_of_its_own_is_marked_apart() -> None:
 
     assert "| <mark>2568</mark> | <mark>เครื่องพิมพ์</mark><br><mark>เครื่องสแกน</mark> |" in result.output.decode("utf-8")
     assert [page.uncertain for page in result.summary.pages] == [5]
+
+
+# Boxed mark boxes in cells: a copy of a line's upper marks goes, but never across a rule
+
+
+def test_a_copy_of_upper_marks_boxed_apart_in_a_cell_is_dropped() -> None:
+    # The cell's text line sits 3 points into its cell, under the row's top rule: TOP + 31. The scan
+    # is not askew, so that its rules lie where the engine's boxes say.
+    lines: list[str | Grid] = [schedule("ส่งรายงานความก้าวหน้าทุกหกเดือน")]
+
+    pages = converted(pdf(Scan(lines, dpi=200, noise=6, seed=1)), FakeEngine([*lines, marks_over(TOP + 31, x=156)]))
+
+    assert pages == ["| งวดที่ | งาน |\n| --- | --- |\n| ๑ | ส่งรายงานความก้าวหน้าทุกหกเดือน |"]
+
+
+def test_a_short_dash_alone_in_a_cell_stays() -> None:
+    # Half way up the letters of the empty cell's line, whose baseline is TOP + 31.
+    lines: list[str | Grid] = [schedule("")]
+
+    pages = markdown_pages(lines, [*lines, Boxed("-", 156, TOP + 21, TOP + 27, confidence=0.99)])
+
+    assert pages == ["| งวดที่ | งาน |\n| --- | --- |\n| ๑ | - |"]
+
+
+def test_a_dash_at_the_foot_of_a_cell_is_never_taken_for_the_marks_of_the_line_in_the_cell_below() -> None:
+    # The rows' rules lie at TOP + 12, + 40 and + 68. The line in the cell below, marked "ผู้", is
+    # boxed from 4 points over its rule, as PaddleOCR boxes a marked line; the dash at the foot of
+    # the cell above lies over the top of that box, over the marks, but across the rule.
+    scanned_grid = Grid(rows=(("รายการ", "หมายเหตุ"), ("", ""), ("ค่าตอบแทนผู้วิจัย", "ตรวจแล้ว")), widths=(200, 200))
+    read_grid = Grid(rows=(("รายการ", "หมายเหตุ"), ("", ""), ("", "ตรวจแล้ว")), widths=(200, 200))
+    marked_line = Boxed("ค่าตอบแทนผู้วิจัย", LEFT - 1, TOP + 36, TOP + 65, confidence=0.99)
+    dash = Boxed("-", 136, TOP + 32, TOP + 38, confidence=0.99)
+
+    pages = converted(pdf(Scan([scanned_grid], dpi=200, noise=6, seed=1)), FakeEngine([read_grid, marked_line, dash]))
+
+    assert pages == ["| รายการ | หมายเหตุ |\n| --- | --- |\n| - |  |\n| ค่าตอบแทนผู้วิจัย | ตรวจแล้ว |"]
