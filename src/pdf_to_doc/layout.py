@@ -110,6 +110,8 @@ class CellLine:
     x1: float
     centre: float  # half way down the line
     size: float
+    # What the line was read from, as a row's pieces: empty on a text page, whose text layer holds it.
+    pieces: tuple[Piece, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -258,13 +260,15 @@ def _next_to(image: PlacedImage, row: Row) -> bool:
 
 def _table(placed: PlacedTable) -> Table:
     """The table as a reader takes it: items stacked in a row's cells that line up across them
-    are sub-rows, and each cell's printed lines are joined into its items."""
-    return Table(
-        rows=tuple(
-            tuple(TableCell(_cell_text(cell), cell.rowspan, cell.colspan) for cell in row)
-            for row in _with_sub_rows(placed.rows)
-        )
-    )
+    are sub-rows, and each cell's printed lines are joined into its items. What OCR read in a
+    cell can be uncertain, as in a paragraph."""
+    return Table(rows=tuple(tuple(_table_cell(cell) for cell in row) for row in _with_sub_rows(placed.rows)))
+
+
+def _table_cell(cell: RawCell) -> TableCell:
+    text = _cell_text(cell)
+    uncertain = uncertain_spans(text, [piece for line in cell.lines for piece in line.pieces])
+    return TableCell(text, cell.rowspan, cell.colspan, uncertain)
 
 
 def _with_sub_rows(rows: tuple[tuple[RawCell, ...], ...]) -> list[list[RawCell]]:

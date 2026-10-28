@@ -21,9 +21,10 @@ DETECTOR_PADDING = 0.3
 
 @dataclass(frozen=True)
 class Unsure:
-    """A line the engine reads with low confidence, as a real one reads a smudge or handwriting."""
+    """A line the engine reads with low confidence, as a real one reads a smudge or handwriting;
+    or a table whose every cell it reads so."""
 
-    line: str | Styled
+    line: str | Styled | Grid
     confidence: float = 0.5
 
 
@@ -131,15 +132,15 @@ def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float
     boxes = []
     baseline: float = TOP
     for entry in lines:
-        if isinstance(entry, Grid):
-            grid = laid_out_grid(entry, entry.y if entry.y is not None else baseline)
+        line, confidence = (entry.line, entry.confidence) if isinstance(entry, Unsure) else (entry, CONFIDENT)
+        if isinstance(line, Grid):
+            grid = laid_out_grid(line, line.y if line.y is not None else baseline)
             padding = DETECTOR_PADDING * FONT_SIZE
             for text in (text for cell in grid.cells for text in cell.texts):
                 box = _box(text.x - padding, text.x + text.width + padding, text.baseline, FONT_SIZE, scale)
-                boxes.append((text.text, box, CONFIDENT))
+                boxes.append((text.text, box, confidence))
             baseline = grid.next_baseline
             continue
-        line, confidence = (entry.line, entry.confidence) if isinstance(entry, Unsure) else (entry, CONFIDENT)
         styled = line if isinstance(line, Styled) else Styled(line)
         baseline = styled.y if styled.y is not None else baseline
         if styled.text:

@@ -2,8 +2,9 @@
 
 import html
 import re
+from collections.abc import Callable
 
-from pdf_to_doc.model import Block, Document, Heading, ListItem, Paragraph, Span, Table, stretches
+from pdf_to_doc.model import Block, Document, Heading, ListItem, Paragraph, Span, Table, TableCell, stretches, uncertain_text
 from pdf_to_doc.summary import Summary
 
 
@@ -27,17 +28,19 @@ def _render_block(block: Block) -> str:
     if isinstance(block, Heading):
         return f"{'#' * block.level} {block.text}"
     if isinstance(block, ListItem):
-        return f"{'  ' * block.level}- {_marked(block.text, block.uncertain)}"
+        return f"{'  ' * block.level}- {_marked(block.text, uncertain_text(block))}"
     if isinstance(block, Table):
         return _html_table(block) if block.has_merged_cells else _gfm_table(block)
     if isinstance(block, Paragraph):
-        return _marked(block.text, block.uncertain)
+        return _marked(block.text, uncertain_text(block))
     return block.text
 
 
-def _marked(text: str, uncertain: tuple[Span, ...]) -> str:
-    """The text with each stretch of uncertain text wrapped in a <mark> element."""
-    return "".join(f"<mark>{piece}</mark>" if marked else piece for marked, piece in stretches(text, uncertain))
+def _marked(text: str, uncertain: tuple[Span, ...], escaped: Callable[[str], str] = lambda text: text) -> str:
+    """The text, escaped as where it goes needs, with each stretch of uncertain text wrapped in a <mark> element."""
+    return "".join(
+        f"<mark>{escaped(piece)}</mark>" if marked else escaped(piece) for marked, piece in stretches(text, uncertain)
+    )
 
 
 def _gfm_table(table: Table) -> str:
@@ -45,7 +48,7 @@ def _gfm_table(table: Table) -> str:
     inside a cell is a <br>, as a GFM row cannot hold one."""
     lines = []
     for index, row in enumerate(table.rows):
-        lines.append("| " + " | ".join(cell.text.replace("|", "\\|").replace("\n", "<br>") for cell in row) + " |")
+        lines.append("| " + " | ".join(_cell(cell, lambda text: text.replace("|", "\\|")) for cell in row) + " |")
         if index == 0:
             lines.append("| " + " | ".join("---" for _ in row) + " |")
     return "\n".join(lines)
@@ -62,11 +65,17 @@ def _html_table(table: Table) -> str:
                 spans += f' rowspan="{cell.rowspan}"'
             if cell.colspan > 1:
                 spans += f' colspan="{cell.colspan}"'
-            text = html.escape(cell.text, quote=False).replace("\n", "<br>")
+            text = _cell(cell, lambda text: html.escape(text, quote=False))
             cells.append(f"<td{spans}>{text}</td>")
         lines.append("<tr>" + "".join(cells) + "</tr>")
     lines.append("</table>")
     return "\n".join(lines)
+
+
+def _cell(cell: TableCell, escaped: Callable[[str], str]) -> str:
+    """A cell's text, escaped as its table needs, with its uncertain text in <mark> elements and
+    a <br> where it keeps a line break."""
+    return _marked(cell.text, uncertain_text(cell), escaped).replace("\n", "<br>")
 
 
 _PAGE_MARKER = re.compile(r"^<!-- page (\d+) -->$", re.MULTILINE)

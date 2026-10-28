@@ -190,7 +190,7 @@ def _add_table(word: WordDocument, table: Table) -> WordTable:
         if cell.rowspan > 1 or cell.colspan > 1:
             last_row = min(row + cell.rowspan, len(table.rows)) - 1
             target = target.merge(word_table.cell(last_row, column + cell.colspan - 1))
-        _add_text(target.paragraphs[0], cell.text)
+        _add_text(target.paragraphs[0], cell.text, uncertain=uncertain_text(cell))
     return word_table
 
 

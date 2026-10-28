@@ -36,9 +36,10 @@ class ListItem:
 
 @dataclass(frozen=True)
 class TableCell:
-    text: str
+    text: str  # a line break where the cell keeps one
     rowspan: int = 1
     colspan: int = 1
+    uncertain: tuple[Span, ...] = ()  # uncertain text, in order
 
 
 @dataclass(frozen=True)
@@ -99,10 +100,10 @@ class Placeholder:
 Block = Paragraph | Heading | ListItem | Table | Placeholder
 
 
-def uncertain_text(block: Block) -> tuple[Span, ...]:
-    """The block's uncertain text. Only paragraphs and list items hold any: OCR pages give
-    no headings, and no tables until scanned tables are read."""
-    return block.uncertain if isinstance(block, (Paragraph, ListItem)) else ()
+def uncertain_text(part: Block | TableCell) -> tuple[Span, ...]:
+    """The uncertain text of a block, or of a table's cell. Only paragraphs, list items and cells
+    hold any: OCR pages give no headings, and a table's text is in its cells."""
+    return part.uncertain if isinstance(part, (Paragraph, ListItem, TableCell)) else ()
 
 
 def stretches(text: str, uncertain: tuple[Span, ...]) -> list[tuple[bool, str]]:

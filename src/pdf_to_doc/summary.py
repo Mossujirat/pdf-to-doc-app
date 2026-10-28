@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import get_args
 
 from pdf_to_doc.intake import MAX_OUTPUTS
-from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind, uncertain_text
+from pdf_to_doc.model import Block, Document, PageKind, Placeholder, PlaceholderKind, Table, TableCell, uncertain_text
 
 _MB = 1024 * 1024
 
@@ -95,9 +95,14 @@ def summarize(document: Document) -> Summary:
                 page.untrusted_text_layer,
                 # A kept page's placeholder is counted as the page kind it stands for.
                 tuple(block.kind for block in page.blocks if isinstance(block, Placeholder) and block.kind != "scan"),
-                sum(len(uncertain_text(block)) for block in page.blocks),
+                sum(len(uncertain_text(part)) for block in page.blocks for part in _parts(block)),
             )
             for page in document.pages
         ),
         images_lowered_to=document.images_lowered_to,
     )
+
+
+def _parts(block: Block) -> list[Block | TableCell]:
+    """What of the block can hold uncertain text: a table's cells, or the block itself."""
+    return [cell for row in block.rows for cell in row] if isinstance(block, Table) else [block]

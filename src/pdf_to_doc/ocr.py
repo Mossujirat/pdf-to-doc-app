@@ -323,6 +323,8 @@ def _cell_line(line: list[TextBox], scale: float, size: float) -> CellLine:
         x1=x1 - padding,
         centre=median(_centre(box) for box in line) * scale,
         size=size,
+        # A text-layer row's text is exact, and never uncertain.
+        pieces=tuple(Piece(box.text) if isinstance(box, _LayerRow) else Piece(box.text, box.confidence) for box in line),
     )
 
 

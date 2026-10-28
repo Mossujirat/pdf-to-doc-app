@@ -7,8 +7,8 @@ from typing import Literal
 import pytest
 from docx.table import Table
 from docx_reader import Cell as WordCell
-from docx_reader import cells, read_docx
-from fake_ocr import Askew, FakeEngine, Sideways
+from docx_reader import cells, read_docx, runs
+from fake_ocr import Askew, FakeEngine, Sideways, Unsure
 from fake_ocr import Line as ReadLine
 from generate import (
     BUDGET,
@@ -319,3 +319,100 @@ def test_a_ruled_header_box_repeated_at_the_top_of_scans_is_page_furniture() -> 
     result = converted(pdf(*(scanned(page, seed=1) for page in pages)), FakeEngine(*pages))
 
     assert result == ["เนื้อหาหน้าแรกของสัญญา", "เนื้อหาหน้าที่สองของสัญญา"]
+
+
+# Uncertain text in cells: marked and counted as it is in paragraphs
+
+
+def schedule(task: str) -> Grid:
+    return Grid(rows=(("งวดที่", "งาน"), ("๑", task)), widths=(80, 300))
+
+
+def test_a_word_misread_in_a_cell_is_marked() -> None:
+    # The engine reads "เดือน" as "เคือน", which no word list holds.
+    pages = markdown_pages([schedule("ส่งรายงานทุกหกเดือน")], [schedule("ส่งรายงานทุกหกเคือน")])
+
+    assert pages == ["| งวดที่ | งาน |\n| --- | --- |\n| ๑ | ส่งรายงานทุกหก<mark>เคือน</mark> |"]
+
+
+def test_neighbouring_misread_words_in_a_merged_table_are_marked_as_one() -> None:
+    # "เดือน ศูนย์" read as two words that are not words, in a table with a merged cell.
+    def merged(task: str) -> Grid:
+        return Grid(rows=((Cell("งวดที่", rowspan=2), "งาน"), (task,), ("๑", "50,000")), widths=(80, 300))
+
+    pages = markdown_pages([merged("ส่งรายงานทุกหกเดือน ศูนย์ตรวจรับแล้ว")], [merged("ส่งรายงานทุกหกเคือน ศนย์ตรวจรับแล้ว")])
+
+    assert pages == [
+        "<table>\n"
+        '<tr><td rowspan="2">งวดที่</td><td>งาน</td></tr>\n'
+        "<tr><td>ส่งรายงานทุกหก<mark>เคือน ศนย์</mark>ตรวจรับแล้ว</td></tr>\n"
+        "<tr><td>๑</td><td>50,000</td></tr>\n"
+        "</table>"
+    ]
+
+
+def test_a_mark_in_a_cell_keeps_its_bars_escaped_and_its_line_breaks() -> None:
+    # Two short items, the first misread, beside a code with a bar in it.
+    pages = markdown_pages(
+        [Grid(rows=(("รหัส", "รายการ"), ("A|B", "รายงานรายเดือน\nเครื่องพิมพ์")), widths=(100, 300))],
+        [Grid(rows=(("รหัส", "รายการ"), ("A|B", "รายงานรายเคือน\nเครื่องพิมพ์")), widths=(100, 300))],
+    )
+
+    assert pages == ["| รหัส | รายการ |\n| --- | --- |\n" + r"| A\|B | รายงานราย<mark>เคือน</mark><br>เครื่องพิมพ์ |"]
+
+
+def test_cells_the_engine_reads_with_low_confidence_are_marked_whole() -> None:
+    # As handwriting in a table's cells is read.
+    grid = Grid(rows=(("ปีที่", "งบประมาณ"), ("2568", "50,000")), widths=(150, 150))
+
+    pages = markdown_pages([grid], [Unsure(grid)])
+
+    assert pages == [
+        "| <mark>ปีที่</mark> | <mark>งบประมาณ</mark> |\n| --- | --- |\n| <mark>2568</mark> | <mark>50,000</mark> |"
+    ]
+
+
+def test_the_summary_counts_uncertain_text_in_cells() -> None:
+    lines: list[Styled | Grid] = [schedule("ส่งรายงานทุกหกเดือน"), Styled("ผู้รับทุนต้องส่งรายงานตามกำหนด", y=TOP + 3 * LINE_HEIGHT)]
+    read: list[Styled | Grid] = [schedule("ส่งรายงานทุกหกเคือน"), Styled("ผู้รับทุนต้องส่งรายงานตามกำหนค", y=TOP + 3 * LINE_HEIGHT)]
+
+    result = convert(pdf(scanned(lines, seed=1)), ocr=FakeEngine(read))
+
+    assert [page.uncertain for page in result.summary.pages] == [2]
+    assert "ข้อความที่ไม่แน่ใจ 2 จุด ในหน้า 1" in result.output.decode("utf-8").split("<!-- page 1 -->")[0]
+
+
+def test_uncertain_text_in_a_cell_is_highlighted_yellow_in_the_word_table() -> None:
+    result = convert(pdf(scanned([schedule("ส่งรายงานทุกหกเดือน")], seed=1)), to="docx", ocr=FakeEngine([schedule("ส่งรายงานทุกหกเคือน")]))
+
+    [[table]] = read_docx(result.output).pages
+    assert isinstance(table, Table)
+    shown = runs(table.cell(1, 1).paragraphs[0])
+    assert "".join(run.text for run in shown) == "ส่งรายงานทุกหกเคือน"
+    assert [run.text for run in shown if run.highlight] == ["เคือน"]
+    assert {run.highlight for run in shown} == {None, "yellow"}
+    # The highlighted word is set in the same Thai font as the rest.
+    assert {(run.thai_font, run.thai_size, run.complex_script) for run in shown} == {("TH Sarabun New", 16, True)}
+
+
+def test_a_note_typed_in_a_cell_is_never_marked() -> None:
+    # A surname the word list does not hold, typed over the scan: the text layer holds it exactly.
+    grid = Grid(rows=(("งวดที่", "ผู้ตรวจรับ"), ("๑", "")), widths=(80, 300))
+    note = Styled("นายสมชาย ชุติมณฑน์", x=156, y=TOP + 31)
+    misread_note = Styled("นายสมชาย ชุติมณฑบ์", x=156, y=TOP + 31)
+    body = ["ผู้รับทุนตกลงดำเนินงานตามแผนที่กำหนดไว้ในสัญญาฉบับนี้"] * 6
+    lines: list[str | Grid] = [grid, "", *body]
+
+    pages = converted(pdf(scanned(lines, overlay=[note], seed=1)), FakeEngine([*lines, misread_note]))
+
+    assert pages[0].startswith("| งวดที่ | ผู้ตรวจรับ |\n| --- | --- |\n| ๑ | นายสมชาย ชุติมณฑน์ |")
+
+
+def test_each_item_kept_on_a_line_of_its_own_is_marked_apart() -> None:
+    # Two short items read with low confidence: two stretches, not one across the line break.
+    grid = Grid(rows=(("ปี", "รายการ"), ("2568", "เครื่องพิมพ์\nเครื่องสแกน")), widths=(100, 300))
+
+    result = convert(pdf(scanned([grid], seed=1)), ocr=FakeEngine([Unsure(grid)]))
+
+    assert "| <mark>2568</mark> | <mark>เครื่องพิมพ์</mark><br><mark>เครื่องสแกน</mark> |" in result.output.decode("utf-8")
+    assert [page.uncertain for page in result.summary.pages] == [5]
