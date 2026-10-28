@@ -205,7 +205,8 @@ def _place_table(table: Any, words: list[_Word], taken: set[int]) -> PlacedTable
             )
             cells.append(RawCell(lines=_cell_lines(words_in[box_index]), rowspan=rowspan, colspan=colspan, box=tuple(box)))
         rows.append(tuple(cells))
-    return PlacedTable(top=table.bbox[1], bottom=table.bbox[3], rows=tuple(rows))
+    x0, top, x1, bottom = table.bbox
+    return PlacedTable(x0=x0, top=top, x1=x1, bottom=bottom, rows=tuple(rows))
 
 
 def _grid_lines(edges: list[float]) -> list[float]:

@@ -14,7 +14,7 @@ from pdf_to_doc.quality import evaluate, reference_file_name, score_page
 # OCR pages are read with real PaddleOCR. Their gate comes with the OCR baseline
 # (ticket 17); until then, a page this far off means OCR has stopped working.
 OCR_PAGE_MAX_CER = 0.05
-# The share of the cells of tables on OCR pages that must be in place: 74 of 87 were (ticket 04).
+# The share of the cells of tables on OCR pages that must be in place: 152 of 181 were (ticket 05).
 OCR_CELLS_IN_PLACE = 0.8
 
 

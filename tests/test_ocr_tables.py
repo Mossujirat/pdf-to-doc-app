@@ -17,6 +17,7 @@ from generate import (
     COARSE_TABLE_REFERENCE,
     DATES,
     DATES_REFERENCE,
+    KAR_AS_KAM,
     PAYMENT_SCHEDULE,
     PAYMENT_SCHEDULE_REFERENCE,
     PRICE_SCHEDULE,
@@ -24,7 +25,8 @@ from generate import (
     scanned,
 )
 from markdown_reader import page_texts
-from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, Cell, Grid, Line, Picture, Scan, Styled, pdf
+from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, Cell, Drawn, Grid, Line, Picture, Scan, Styled, pdf, remapped
+from test_ocr_pages import THAI_LEFT, THAI_RIGHT, two_columns
 
 from pdf_to_doc import convert
 
@@ -130,6 +132,109 @@ def test_a_table_printed_sideways_comes_out_as_a_table_once_the_page_is_turned(t
     pages = converted(pdf(scanned(PRICE_SCHEDULE, seed=1, sideways=turn)), FakeEngine(Sideways(PRICE_SCHEDULE, turn)))
 
     assert pages == [PRICE_SCHEDULE_REFERENCE]
+
+
+# OCR pages that are not scans: rendered from the PDF, whose rules are in the image too
+
+@pytest.mark.parametrize("keep_images", [False, True], ids=["images read", "images kept"])
+@pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
+def test_a_ruled_table_on_an_ocr_page_that_is_not_a_scan_becomes_a_table(drawn: bool, keep_images: bool) -> None:
+    # Kept images keep scans only: these pages are still read.
+    lines: list[str | Grid] = ["ผู้ให้ทุนจะจ่ายเงินเป็นสามงวด", PAYMENT_SCHEDULE, "งบประมาณแยกตามปี", BUDGET]
+    source = pdf(Drawn(lines)) if drawn else remapped(pdf(lines), KAR_AS_KAM)
+
+    result = convert(source, ocr=FakeEngine(lines), keep_images=keep_images)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert page_texts(result.output.decode("utf-8")) == [
+        f"ผู้ให้ทุนจะจ่ายเงินเป็นสามงวด\n\n{PAYMENT_SCHEDULE_REFERENCE}\n\nงบประมาณแยกตามปี\n\n{BUDGET_REFERENCE}"
+    ]
+
+
+def test_a_scanned_table_kept_as_an_image_is_not_read() -> None:
+    lines: list[str | Grid] = ["ผู้ให้ทุนจะจ่ายเงินเป็นสามงวด", PAYMENT_SCHEDULE]
+    engine = FakeEngine(lines)
+
+    result = convert(pdf(scanned(lines, seed=1)), ocr=engine, keep_images=True)
+
+    assert page_texts(result.output.decode("utf-8")) == ["[หน้าสแกน]"]
+    assert engine.images == []
+
+
+def test_a_note_typed_over_a_scanned_table_lands_in_the_cell_it_sits_in() -> None:
+    grid = Grid(rows=(("งวดที่", "จำนวนเงิน", "หมายเหตุ"), ("๑", "50,000", ""), ("๒", "75,000", "")), widths=(80, 120, 200))
+    # In the first row's empty note cell; the engine reads the note too, with a letter lost.
+    note, misread_note = Styled("แก้ไขตามบันทึกแล้ว", x=276, y=TOP + 53), Styled("แกไขตามบันทึกแล้ว", x=276, y=TOP + 53)
+    lines: list[str | Grid] = ["ผู้ให้ทุนจะจ่ายเงินเป็นงวด", grid]
+
+    pages = converted(pdf(Scan(lines, overlay=[note], dpi=200, angle=0.4, noise=6, seed=1)), FakeEngine([*lines, misread_note]))
+
+    assert pages == [
+        "ผู้ให้ทุนจะจ่ายเงินเป็นงวด\n\n"
+        "| งวดที่ | จำนวนเงิน | หมายเหตุ |\n"
+        "| --- | --- | --- |\n"
+        "| ๑ | 50,000 | แก้ไขตามบันทึกแล้ว |\n"
+        "| ๒ | 75,000 |  |"
+    ]
+
+
+def test_a_table_right_under_two_columns_does_not_stop_them_being_read_one_after_the_other() -> None:
+    # The table starts a line under the columns and reaches across their gutter: taken for text,
+    # its cells would close the gutter, and the page would be read across.
+    table = Grid(
+        rows=(("หมวด", "รายละเอียดค่าใช้จ่ายของโครงการ"), ("ค่าตอบแทน", "ค่าตอบแทนผู้วิจัยและผู้ช่วยวิจัย")),
+        widths=(150, 306),
+        y=TOP + 5 * LINE_HEIGHT,
+    )
+    lines: list[str | Styled | Grid] = [*two_columns(THAI_LEFT, THAI_RIGHT, y=TOP), table]
+
+    [page] = markdown_pages(lines, lines)
+
+    assert page == "\n\n".join(
+        [
+            "".join(THAI_LEFT),
+            "".join(THAI_RIGHT),
+            "| หมวด | รายละเอียดค่าใช้จ่ายของโครงการ |\n| --- | --- |\n| ค่าตอบแทน | ค่าตอบแทนผู้วิจัยและผู้ช่วยวิจัย |",
+        ]
+    )
+
+
+def test_a_table_in_a_column_stays_whole_and_the_columns_are_read_one_after_the_other() -> None:
+    # The left column holds a table; the right column runs on beside it. The table's own short
+    # cells, taken for text, would part the left column in three, and the page would be read across.
+    above, below = THAI_LEFT[:2], THAI_LEFT[2:]
+    right = [*THAI_RIGHT, *THAI_LEFT[:4]]
+    table = Grid(rows=(("ปี", "งบประมาณ"), ("2568", "50,000")), widths=(90, 110), y=TOP + 3 * LINE_HEIGHT)
+    lines: list[str | Styled | Grid] = [
+        *(Styled(text, size=12, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(above)),
+        table,
+        *(Styled(text, size=12, y=TOP + (6 + number) * LINE_HEIGHT) for number, text in enumerate(below)),
+        *(Styled(text, size=12, x=300, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(right)),
+    ]
+
+    [page] = markdown_pages(lines, lines)
+
+    assert page == "\n\n".join(["".join(above), "| ปี | งบประมาณ |\n| --- | --- |\n| 2568 | 50,000 |", "".join(below), "".join(right)])
+
+
+def test_a_table_in_the_right_column_is_read_in_that_column_where_it_sits() -> None:
+    # The left column's second paragraph starts below the table's top, but beside it.
+    table = Grid(rows=(("ปี", "งบประมาณ"), ("2568", "50,000")), widths=(90, 110), x=300, y=TOP + 3 * LINE_HEIGHT)
+    left = [THAI_LEFT[:2], THAI_LEFT[2:]]
+    above, below = THAI_RIGHT[:2], [*THAI_RIGHT[2:], *THAI_LEFT[:3]]
+    lines: list[str | Styled | Grid] = [
+        *(Styled(text, size=12, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(left[0])),
+        *(Styled(text, size=12, y=TOP + (3 + number) * LINE_HEIGHT) for number, text in enumerate(left[1])),
+        *(Styled(text, size=12, x=300, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(above)),
+        table,
+        *(Styled(text, size=12, x=300, y=TOP + (6 + number) * LINE_HEIGHT) for number, text in enumerate(below)),
+    ]
+
+    [page] = markdown_pages(lines, lines)
+
+    assert page == "\n\n".join(
+        ["".join(left[0]), "".join(left[1]), "".join(above), "| ปี | งบประมาณ |\n| --- | --- |\n| 2568 | 50,000 |", "".join(below)]
+    )
 
 
 # Rules that do not make a table

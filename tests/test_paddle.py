@@ -3,7 +3,7 @@
 from typing import Literal
 
 import pytest
-from generate import CRISP_PAGE, RULED_TABLE_PAGES
+from generate import CRISP_PAGE, KAR_AS_KAM, RULED_TABLE_PAGES
 from markdown_reader import page_texts
 from pdf_builder import Drawn, Grid, Line, Scan, pdf, remapped
 
@@ -44,14 +44,10 @@ TIMELINE: list[Line] = [
 ]
 
 
-SARA_AA = chr(0x0E32)
-SARA_AM = chr(0x0E33)
-
-
 @pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
 def test_every_line_of_an_ocr_page_that_is_not_a_scan_is_read(drawn: bool) -> None:
     # Read as rendered from the PDF, crisp, this page lost its fifth line: the detector found it, then dropped it.
-    source = pdf(Drawn(CRISP_PAGE)) if drawn else remapped(pdf(CRISP_PAGE), {SARA_AA: SARA_AM})
+    source = pdf(Drawn(CRISP_PAGE)) if drawn else remapped(pdf(CRISP_PAGE), KAR_AS_KAM)
 
     result = convert(source)
 
@@ -94,6 +90,22 @@ def test_a_ruled_table_on_a_scan_comes_out_as_a_table(lines: list[str | Grid], r
     [page] = page_texts(result.output.decode("utf-8"))
     score = score_page(page, reference)
     assert score.cells_right >= ENOUGH_CELLS * score.cells
+    assert score.cer < 0.05
+
+
+@pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
+def test_a_ruled_table_on_an_ocr_page_that_is_not_a_scan_comes_out_as_a_table_with_every_line(drawn: bool) -> None:
+    # The payment schedule: its cells' misreads, such as a Thai digit read as a letter, are many
+    # on so small a table, so its shape is checked, and its text against the reference.
+    lines, reference = RULED_TABLE_PAGES[0]
+    result = convert(pdf(Drawn(lines)) if drawn else remapped(pdf(lines), KAR_AS_KAM))
+
+    [page] = page_texts(result.output.decode("utf-8"))
+    assert [summary.kind for summary in result.summary.pages] == ["ocr"]
+    rows = [line for line in page.splitlines() if line.startswith("| ") and not line.startswith("| ---")]
+    assert [row.count(" | ") + 1 for row in rows] == [3, 3, 3, 3]
+    score = score_page(page, reference)
+    assert score.broken.missing_text == 0
     assert score.cer < 0.05
 
 

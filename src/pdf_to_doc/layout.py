@@ -130,7 +130,9 @@ class PlacedTable:
     positions its spans reach in the rows and columns after it.
     """
 
+    x0: float
     top: float
+    x1: float
     bottom: float
     rows: tuple[tuple[RawCell, ...], ...]
 
@@ -175,17 +177,44 @@ def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
 
 
 def _in_reading_order(groups: list[list[Row]], page: PageRows, levels: dict[float, int]) -> tuple[Block, ...]:
-    """The page's blocks, with each table and image placed before the first text that starts below it."""
-    placed: list[tuple[float, Block]] = [(table.top, _table(table)) for table in page.tables]
-    placed += [(image.top, placeholder) for image in page.images if (placeholder := _placeholder(image, page))]
-    pending = sorted(placed, key=lambda item: item[0])
+    """The page's blocks, with each image placed before the first text that starts below it, and
+    each table in the text of its own column (see `_table_place`)."""
+    placed: list[tuple[int, float, Block]] = [(_table_place(table, groups), table.top, _table(table)) for table in page.tables]
+    placed += [
+        (_place(image.top, groups), image.top, placeholder)
+        for image in page.images
+        if (placeholder := _placeholder(image, page))
+    ]
+    placed.sort(key=lambda item: item[:2])
     blocks: list[Block] = []
-    for group in groups:
-        while pending and pending[0][0] <= group[0].y0:
-            blocks.append(pending.pop(0)[1])
+    for index, group in enumerate(groups):
+        while placed and placed[0][0] <= index:
+            blocks.append(placed.pop(0)[2])
         blocks.append(_block(group, levels))
-    blocks.extend(block for _, block in pending)
+    blocks.extend(block for *_, block in placed)
     return tuple(blocks)
+
+
+def _place(top: float, groups: list[list[Row]]) -> int:
+    """Where something whose top is at `top` goes among the groups: before the first that starts below it."""
+    return next((index for index, group in enumerate(groups) if top <= group[0].y0), len(groups))
+
+
+def _table_place(table: PlacedTable, groups: list[list[Row]]) -> int:
+    """Where the table goes among the groups, which are in reading order, a column at a time on a page
+    set in columns: before the first that starts below its top and lies under it, or else after the
+    last above it that does, so that it is read in its own column. A table under no text is placed
+    by its top alone."""
+    under = [index for index, group in enumerate(groups) if any(_across(table, row) for row in group)]
+    below = [index for index in under if table.top <= groups[index][0].y0]
+    if below:
+        return below[0]
+    return under[-1] + 1 if under else _place(table.top, groups)
+
+
+def _across(table: PlacedTable, row: Row) -> bool:
+    """Whether the row and the table overlap across the page, one above the other."""
+    return table.x0 < row.x1 and row.x0 < table.x1
 
 
 def _behind_text(image: PlacedImage, rows: tuple[Row, ...]) -> bool:
@@ -461,9 +490,10 @@ def _group_rows(page: PageRows, line_gap: float) -> list[list[Row]]:
     right_edge = page.width - min((row.x0 for row in rows), default=0.0)
     groups: list[list[Row]] = []
     for row in rows:
-        # A paragraph never runs across a table that starts between two of its rows.
+        # A paragraph never runs across a table that starts between two of its rows, under them;
+        # beside a table in the next column, it carries on.
         table_between = bool(groups) and any(
-            groups[-1][-1].y0 < table.top <= row.y0 for table in page.tables
+            groups[-1][-1].y0 < table.top <= row.y0 and _across(table, row) for table in page.tables
         )
         if groups and not table_between and _continues(groups[-1], row, page, right_edge, line_gap):
             groups[-1].append(row)

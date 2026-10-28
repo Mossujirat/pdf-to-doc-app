@@ -373,6 +373,9 @@ CLAUSES = [
 # The clauses and a line with marks over its first and last words. An OCR page that is
 # not a scan is rendered from the PDF, crisp; read crisp, this page lost its fifth line.
 CRISP_PAGE = [*CLAUSES, "ผู้รับทุนต้องส่งงานตามกำหนดเวลาในตารางนี้", *CLAUSES[:2]]
+# A font whose ToUnicode map reports sara aa as sara am, so that "การ" reads "กำร": the
+# page looks right, but its text layer cannot be trusted, so it is read with OCR.
+KAR_AS_KAM = {chr(0x0E32): chr(0x0E33)}
 
 TEXT_LAYER_DOCUMENTS = (
     # A legacy Windows Thai font: marks over tall consonants and below the line
@@ -395,8 +398,6 @@ TEXT_LAYER_DOCUMENTS = (
             chr(0x0E0D): chr(0xF70F),  # yo ying without its lower part
         },
     ),
-    # A font whose ToUnicode map reports sara aa as sara am: "การ" reads "กำร".
-    # The pages look right, so they are read with OCR.
     SyntheticDocument(
         name="wrong-unicode-map",
         font_file=SARABUN,
@@ -404,7 +405,7 @@ TEXT_LAYER_DOCUMENTS = (
             SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),
             SyntheticPage(lines=CRISP_PAGE, reference="".join(CRISP_PAGE)),
         ),
-        remap={chr(0x0E32): chr(0x0E33)},
+        remap=KAR_AS_KAM,
     ),
     # Text drawn as shapes, with no text layer, as some PDF printers write it: read with OCR.
     SyntheticDocument(
@@ -615,6 +616,18 @@ RULED_TABLE_DOCUMENTS = (
             SyntheticPage(lines=scanned(lines, seed=21 + number), reference=reference)
             for number, (lines, reference) in enumerate(RULED_TABLE_PAGES)
         ),
+    ),
+    # The same pages on OCR pages that are not scans: rendered from the PDF, rules and all.
+    SyntheticDocument(
+        name="ruled-tables-wrong-unicode-map",
+        font_file=SARABUN,
+        pages=tuple(SyntheticPage(lines=lines, reference=reference) for lines, reference in RULED_TABLE_PAGES),
+        remap=KAR_AS_KAM,
+    ),
+    SyntheticDocument(
+        name="ruled-tables-drawn-as-shapes",
+        font_file=SARABUN,
+        pages=tuple(SyntheticPage(lines=Drawn(lines), reference=reference) for lines, reference in RULED_TABLE_PAGES),
     ),
 )
 

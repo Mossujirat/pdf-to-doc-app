@@ -219,7 +219,8 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     `_reading_parts`); a text-layer row goes with the column it lies in.
 
     A ruled table on the image (see `grids`) takes the boxes whose centres lie in its
-    cells; the boxes outside every cell are the page's rows.
+    cells, and the text-layer rows too, such as a note typed in a cell of a scanned table;
+    the boxes and rows outside every cell are the page's rows.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
@@ -229,12 +230,20 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
     grids = ruled_grids(_pixels(image), median(map(_height, texts))) if texts else ()
-    in_cells, read = _in_cells(texts, grids)
-    parts = _reading_parts(read, tuple(_LayerRow.of(row, on_image, scale) for row, on_image in kept))
+    layer_rows = [_LayerRow.of(row, on_image, scale) for row, on_image in kept]
+    in_cells, outside = _in_cells([*texts, *layer_rows], grids)
+    read = tuple(box for box in outside if not isinstance(box, _LayerRow))
+    parts = _reading_parts(read, tuple(box for box in outside if isinstance(box, _LayerRow)))
     lines_by_part = [_printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
     lines = [line for part_lines in lines_by_part for line in part_lines]
     lines_in_cells = {cell: _printed_lines(tuple(boxes_in_cell)) for cell, boxes_in_cell in in_cells.items()}
-    cell_lines = [line for printed in lines_in_cells.values() for line in printed]
+    # The font size is told by the engine's boxes; a text-layer row's height is its own font's.
+    cell_lines = [
+        line
+        for printed in lines_in_cells.values()
+        for line in printed
+        if not all(isinstance(box, _LayerRow) for box in line)
+    ]
     line_heights = [_line_height(line) for line in [*lines, *cell_lines]]
     size = median(line_heights) * scale / _BOX_HEIGHT_PER_FONT_SIZE if line_heights else 0.0
     tables = tuple(_table(grid, lines_in_cells, scale, size) for grid in grids)
@@ -253,9 +262,10 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
 
 
 def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridCell, list[TextBox]], tuple[TextBox, ...]]:
-    """The boxes in each cell of the grids, and the boxes outside every cell. A box goes to the
-    cell that holds its centre: a box reaches over the rules around its text only by the
-    detector's padding, and no box crossed a rule through its middle on the test pages."""
+    """The boxes in each cell of the grids, and the boxes outside every cell: the engine's, and
+    text-layer rows as boxes. A box goes to the cell that holds its centre: the engine's boxes reach
+    over the rules around their text only by the detector's padding, and no box crossed a rule
+    through its middle on the test pages."""
     in_cells: dict[GridCell, list[TextBox]] = {}
     outside: list[TextBox] = []
     for box in boxes:
@@ -298,7 +308,8 @@ def _table(grid: Grid, lines_in_cells: dict[GridCell, list[list[TextBox]]], scal
             elif (row, column) not in covered:
                 cells.append(RawCell(lines=()))
         rows.append(tuple(cells))
-    return PlacedTable(top=grid.box[1] * scale, bottom=grid.box[3] * scale, rows=tuple(rows))
+    x0, top, x1, bottom = (edge * scale for edge in grid.box)
+    return PlacedTable(x0=x0, top=top, x1=x1, bottom=bottom, rows=tuple(rows))
 
 
 def _cell_line(line: list[TextBox], scale: float, size: float) -> CellLine:
