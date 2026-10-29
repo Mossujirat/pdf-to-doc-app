@@ -8,6 +8,7 @@ from pdf_to_doc.model import (
     DEEPEST_HEADING,
     Block,
     Heading,
+    IncompleteTable,
     KeptImage,
     ListItem,
     PageKind,
@@ -140,6 +141,17 @@ class PlacedTable:
 
 
 @dataclass(frozen=True)
+class PlacedIncompleteTable:
+    """An incomplete table found on an OCR page, where it sits, and its printed lines as rows."""
+
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+    rows: tuple[Row, ...]
+
+
+@dataclass(frozen=True)
 class PlacedImage:
     """An image drawn on a text page, and where it sits."""
 
@@ -157,6 +169,7 @@ class PageRows:
     width: float
     height: float
     tables: tuple[PlacedTable, ...] = ()
+    incomplete_tables: tuple[PlacedIncompleteTable, ...] = ()  # on OCR pages only
     images: tuple[PlacedImage, ...] = ()
     # On an OCR page the font size is estimated, so it cannot tell headings apart.
     kind: PageKind = "text"
@@ -180,8 +193,11 @@ def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
 
 def _in_reading_order(groups: list[list[Row]], page: PageRows, levels: dict[float, int]) -> tuple[Block, ...]:
     """The page's blocks, with each image placed before the first text that starts below it, and
-    each table in the text of its own column (see `_table_place`)."""
+    each table, incomplete ones too, in the text of its own column (see `_table_place`)."""
     placed: list[tuple[int, float, Block]] = [(_table_place(table, groups), table.top, _table(table)) for table in page.tables]
+    placed += [
+        (_table_place(table, groups), table.top, _incomplete_table(table)) for table in page.incomplete_tables
+    ]
     placed += [
         (_place(image.top, groups), image.top, placeholder)
         for image in page.images
@@ -202,7 +218,7 @@ def _place(top: float, groups: list[list[Row]]) -> int:
     return next((index for index, group in enumerate(groups) if top <= group[0].y0), len(groups))
 
 
-def _table_place(table: PlacedTable, groups: list[list[Row]]) -> int:
+def _table_place(table: PlacedTable | PlacedIncompleteTable, groups: list[list[Row]]) -> int:
     """Where the table goes among the groups, which are in reading order, a column at a time on a page
     set in columns: before the first that starts below its top and lies under it, or else after the
     last above it that does, so that it is read in its own column. A table under no text is placed
@@ -214,7 +230,7 @@ def _table_place(table: PlacedTable, groups: list[list[Row]]) -> int:
     return under[-1] + 1 if under else _place(table.top, groups)
 
 
-def _across(table: PlacedTable, row: Row) -> bool:
+def _across(table: PlacedTable | PlacedIncompleteTable, row: Row) -> bool:
     """Whether the row and the table overlap across the page, one above the other."""
     return table.x0 < row.x1 and row.x0 < table.x1
 
@@ -263,6 +279,12 @@ def _table(placed: PlacedTable) -> Table:
     are sub-rows, and each cell's printed lines are joined into its items. What OCR read in a
     cell can be uncertain, as in a paragraph."""
     return Table(rows=tuple(tuple(_table_cell(cell) for cell in row) for row in _with_sub_rows(placed.rows)))
+
+
+def _incomplete_table(placed: PlacedIncompleteTable) -> IncompleteTable:
+    """The incomplete table as a reader takes it: each printed line a paragraph of its own."""
+    texts = [(repair(row.text), row) for row in placed.rows]
+    return IncompleteTable(rows=tuple(Paragraph(text, _uncertain(text, [row])) for text, row in texts if text))
 
 
 def _table_cell(cell: RawCell) -> TableCell:

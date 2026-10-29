@@ -99,6 +99,17 @@ def test_a_note_typed_over_a_rotated_scan_comes_out_once_and_no_line_is_lost() -
 
 
 @pytest.mark.ocr
+@pytest.mark.parametrize(("name", "labelled"), [("boxed-header-table-scans", True), ("unruled-table-scans", False)])
+def test_a_table_whose_header_alone_is_boxed_is_labelled_and_one_with_no_rules_is_not(name: str, labelled: bool) -> None:
+    markdown = convert((SYNTHETIC / f"{name}.pdf").read_bytes()).output.decode("utf-8")
+
+    for number, page in enumerate(markdown_page_texts(markdown), start=1):
+        reference = (SYNTHETIC / name / reference_file_name(number)).read_text(encoding="utf-8-sig")
+        assert page.count("[ตารางอาจไม่สมบูรณ์]") == labelled, f"page {number}"
+        assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
+
+
+@pytest.mark.ocr
 def test_two_columns_are_read_one_after_the_other_and_a_cover_sheet_row_by_row() -> None:
     # Pages 1 and 2 are set in two columns; page 3 sets labels apart from their values.
     # Read across the columns, or labels apart from their values, such a page is off by a third or more.

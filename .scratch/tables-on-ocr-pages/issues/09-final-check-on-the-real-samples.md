@@ -51,3 +51,9 @@
 - **Check each scan's resolution where it has a table.** The grid holds on synthetic scans at 150 dpi and more. At 110 dpi and below, thin rules scan lighter than the ink threshold (grey 160): cells merge into false spans, and their text reads in a worse order than with no table at all. The user chose to keep the threshold, as the samples' scans are 300 dpi. If a sample's table scan is that coarse, show the user what it does.
 - **Shaded headers:** the threshold was kept partly because a lighter one lost a table whose header was shaded 30% grey. Check that shaded header rows on the samples keep their cells.
 - **Stray mark boxes** ("ญ", "ะ") land in cells as an extra line until ticket 07 drops them.
+
+**2026-10-29, from ticket 08 (incomplete tables)**
+
+- **Check where the label lands.** A table is incomplete when only part of its rules is found (a boxed header row with rows set out under it, or rules that close off a space that is no rectangle), or when one of the engine's boxes runs through a rule of its cell, more than half a font size inside both its ends. On the corpus no page got a false label; on the samples, count the labels and check each against the page image: a stamp, a signature box or a form's boxes should get none.
+- **A short paragraph one blank line under an incomplete table** is taken as its lines. Note any on the samples.
+- **The summary's counts** now say how many tables on OCR pages came out as tables and how many may be incomplete, with their pages.

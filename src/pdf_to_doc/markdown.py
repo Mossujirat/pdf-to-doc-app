@@ -4,7 +4,19 @@ import html
 import re
 from collections.abc import Callable
 
-from pdf_to_doc.model import Block, Document, Heading, ListItem, Paragraph, Span, Table, TableCell, stretches, uncertain_text
+from pdf_to_doc.model import (
+    Block,
+    Document,
+    Heading,
+    IncompleteTable,
+    ListItem,
+    Paragraph,
+    Span,
+    Table,
+    TableCell,
+    stretches,
+    uncertain_text,
+)
 from pdf_to_doc.summary import Summary
 
 
@@ -31,6 +43,9 @@ def _render_block(block: Block) -> str:
         return f"{'  ' * block.level}- {_marked(block.text, uncertain_text(block))}"
     if isinstance(block, Table):
         return _html_table(block) if block.has_merged_cells else _gfm_table(block)
+    if isinstance(block, IncompleteTable):
+        # The label as a paragraph of its own, then each printed row as one.
+        return "\n\n".join([block.label, *(_render_block(row) for row in block.rows)])
     if isinstance(block, Paragraph):
         return _marked(block.text, uncertain_text(block))
     return block.text

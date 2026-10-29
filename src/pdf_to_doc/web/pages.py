@@ -11,9 +11,10 @@ import math
 from html import escape
 
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
-from pdf_to_doc.model import Placeholder
+from pdf_to_doc.model import IncompleteTable, Placeholder
 from pdf_to_doc.progress import Stage
 from pdf_to_doc.refusals import refusal_message, too_large_unmeasured
+from pdf_to_doc.summary import PageSummary
 from pdf_to_doc.validation import MIN_DICTIONARY_SHARE, MIN_WORDS_TO_JUDGE
 from pdf_to_doc.web.bot_check import ACTION, SCRIPT
 from pdf_to_doc.web.conversions import Conversion
@@ -247,7 +248,9 @@ def _inside(kept: int) -> str:
 <div class="inside-text">
 <h3>เก็บโครงสร้าง และไม่เดาสิ่งที่อ่านไม่ได้</h3>
 <p>หัวข้อและรายการ ยังเป็นหัวข้อและรายการ ตารางใน DOCX และตารางที่มีเส้นตารางใน PDF ยังเป็นตาราง
-รวมทั้งในหน้าที่อ่านด้วย OCR แต่หน้าที่อ่านด้วย OCR ยังไม่แยกหัวข้อ ข้อความที่ซ้ำกันที่ขอบบนหรือขอบล่างของหลายหน้า
+รวมทั้งในหน้าที่อ่านด้วย OCR แต่หน้าที่อ่านด้วย OCR ยังไม่แยกหัวข้อ
+ในหน้าเหล่านี้ ตารางที่เส้นไม่ครบจะออกเป็นข้อความทีละบรรทัด ตามหลังป้าย <span class="nowrap">[ตารางอาจไม่สมบูรณ์]</span>
+ส่วนตารางที่ไม่มีเส้นเลยออกเป็นแถวละบรรทัด ข้อความที่ซ้ำกันที่ขอบบนหรือขอบล่างของหลายหน้า
 เช่น หัวกระดาษและเลขหน้า ถูกตัดออก</p>
 <p>ในหน้าที่มีข้อความในไฟล์ รูปภาพ ลายเซ็น และตราประทับที่ฝังอยู่ ถูกแทนด้วยป้าย เช่น <span class="nowrap">[ลายเซ็น]</span>
 ไม่มีการเดาเป็นข้อความ ถ้าเลือกเก็บหน้าสแกนเป็นภาพ DOCX จะแสดงรูปเหล่านี้ตามจริงแทนป้าย แต่ Markdown ยังเป็นป้ายเหมือนเดิม
@@ -501,7 +504,7 @@ def conversion_page(identifier: str, conversion: Conversion, place: int | None, 
                 downloads.append(f'<a class="button button--secondary" href="{link}/docx" download>{_DOWN} ดาวน์โหลด DOCX</a>')
             pages = conversion.summary.pages
             chips = f'<span class="chip">{len(pages)} หน้า</span>'
-            to_check = sum(1 for page in pages if page.uncertain)
+            to_check = sum(1 for page in pages if _to_check(page))
             if to_check:
                 chips += f'<span class="chip chip--warn">ควรตรวจ {to_check} หน้า</span>'
             body = f"""<p class="summary">{escape(conversion.summary.headline())}</p>
@@ -578,8 +581,8 @@ def _what_became_of_it(conversion: Conversion) -> str:
 
 def _page_rows(conversion: Conversion) -> str:
     """A finished conversion's pages: how each was read, or that it was kept as an image, and what
-    on it the visitor should check. A page with uncertain text is tagged to check, as the
-    summary's headline says."""
+    on it the visitor should check. A page with uncertain text or an incomplete table is tagged to
+    check, as the summary's headline says. Tables on OCR pages are noted apart from placeholders."""
     assert conversion.summary is not None
     rows = []
     for page in conversion.summary.pages:
@@ -590,13 +593,22 @@ def _page_rows(conversion: Conversion) -> str:
             notes.append(f"ข้อความในไฟล์ผิด {'จึงไม่ได้นำมาใช้' if page.kind == 'kept' else 'จึงอ่านด้วย OCR'}")
         if page.uncertain:
             notes.append(f"ไม่แน่ใจ {page.uncertain} จุด")
+        if page.tables:
+            notes.append(f"ตาราง {page.tables}")
+        if page.incomplete_tables:
+            notes.append(f"{IncompleteTable.name} {page.incomplete_tables}")
         for kind in dict.fromkeys(page.placeholders):
             notes.append(f"{Placeholder(kind).name} {page.placeholders.count(kind)}")
         noted = escape(" · ".join(notes)) if notes else '<span class="none">–</span>'
-        if page.uncertain:
+        if _to_check(page):
             noted = f'<span class="chip chip--warn">ตรวจ</span> {noted}'
         rows.append(f'<tr><th scope="row">หน้า {page.number}</th><td>{read}</td><td>{noted}</td></tr>')
     return "\n".join(rows)
+
+
+def _to_check(page: PageSummary) -> bool:
+    """Whether the visitor should check the page against the original."""
+    return bool(page.uncertain or page.incomplete_tables)
 
 
 def _step_at(conversion: Conversion) -> str:

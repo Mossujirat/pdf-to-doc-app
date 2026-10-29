@@ -147,7 +147,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - Models: PP-OCRv5 mobile detector; the Thai mobile recogniser. It reads English words and digits on the same line correctly, and on the English sample's scans it agrees with the English recogniser on 99.3–99.8% of characters, so the English recogniser is not used (ticket 08).
   - Detector input limited to a longest side of 1280 px. Defaults split Thai marks into separate boxes and were far worse: CER 11.8% instead of 4.0%, at four times the time.
   - Orientation and unwarping off.
-  - Scanned table structure: try PaddleOCR's table model (PP-StructureV3) on CPU. If it is not good enough, output the table as lines with a placeholder saying the table structure may be incomplete.
+  - Scanned table structure: found from the rules in the page image, through the OCR engine interface, on every OCR page (spec `.scratch/tables-on-ocr-pages/`). PP-StructureV3 was measured and rejected. A table whose text cannot be placed in its cells with certainty is an incomplete table: its printed lines one by one, after the label `[ตารางอาจไม่สมบูรณ์]`, which is not a placeholder. A table with no rules comes out one line per row, with no label.
 - **Typhoon OCR 1.5 2B (Accurate mode)**
   - The GGUF Q8 build through llama-cpp-python, with flash attention on, and the prompt from the model card.
   - It outputs HTML tables, which feed the document model's tables.
@@ -179,7 +179,8 @@ Where the converter cannot confirm that it read text correctly, it marks that te
   - paragraphs made of text runs, each run flagged if uncertain
   - list items
   - tables with cells, row spans and column spans
-  - placeholders with a kind (image, signature, stamp, handwriting, incomplete table)
+  - incomplete tables, with their printed rows, each a line with its uncertain text
+  - placeholders with a kind (image, signature, stamp, handwriting, scan)
   - page boundaries with the original page number
 - Every block records its source page.
 - The summary is built from the model.

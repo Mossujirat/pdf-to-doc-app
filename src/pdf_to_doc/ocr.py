@@ -11,8 +11,8 @@ import cv2
 import numpy as np
 import pymupdf
 
-from pdf_to_doc.grids import Grid, GridCell, ruled_grids
-from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedTable, RawCell, Row
+from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
+from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedIncompleteTable, PlacedTable, RawCell, Row
 from pdf_to_doc.thai import DIGITS, UPPER_MARK
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
@@ -36,6 +36,10 @@ _BOX_HEIGHT_PER_FONT_SIZE = 1.5
 # A detector's box also reaches about this share of the font size past each end of its text:
 # PaddleOCR's boxes in the synthetic scans' table cells reached 3 to 7 points past text 16 points tall.
 _BOX_PADDING = 0.3
+# A rule more than this many font sizes inside both ends of a box runs through its text, not its
+# padding: PaddleOCR's boxes reached at most 0.44 of the font size past text in table cells, and
+# a box reaches about 0.4 font sizes above and below its letters' body, marks aside.
+_THROUGH_A_RULE = 0.5
 # A box less tall than this share of the page's usual box can be a copy of a line's marks, boxed
 # apart from the line (see `_without_stray_marks`). On the synthetic table pages, such copies were
 # 0.45 of the usual box at most.
@@ -233,6 +237,10 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     the boxes and rows outside every cell are the page's rows. Copies of a line's upper marks,
     boxed apart from it, are dropped (see `_without_stray_marks`), a cell's apart from the
     rest, so that none is taken across a rule.
+
+    A table whose text cannot be placed in its cells with certainty is an incomplete table of its
+    printed lines: a grid with a box that runs through one of its rules (see `_through_a_rule`),
+    and rules that make no whole grid, with the rows set out under them (see `_part_ruled`).
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
@@ -242,12 +250,24 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
     unit = median(map(_height, texts)) if texts else 0.0
-    grids = ruled_grids(_pixels(image), unit) if texts else ()
+    rules = ruled_tables(_pixels(image), unit) if texts else Rules()
     layer_rows = [_LayerRow.of(row, on_image, scale) for row, on_image in kept]
-    in_cells, outside = _in_cells([*texts, *layer_rows], grids)
+    in_cells, outside = _in_cells([*texts, *layer_rows], rules.grids)
     # A cell's boxes are looked at apart from the rest, so no copy is taken across a rule.
     in_cells = {cell: _without_stray_marks(boxes_in_cell, unit) for cell, boxes_in_cell in in_cells.items()}
     outside = tuple(_without_stray_marks(outside, unit))
+    reach = _THROUGH_A_RULE * unit / _BOX_HEIGHT_PER_FONT_SIZE
+    crossed = [
+        grid
+        for grid in rules.grids
+        if any(_through_a_rule(box, cell, reach) for cell in grid.cells for box in in_cells.get(cell, []))
+    ]
+    grids = tuple(grid for grid in rules.grids if grid not in crossed)
+    incomplete = [[box for cell in grid.cells for box in in_cells.pop(cell, [])] for grid in crossed]
+    for part_rules in rules.parts:
+        taken, outside = _part_ruled(part_rules, outside, unit, reach)
+        incomplete.append(taken)
+    lines_by_table = [_printed_lines(tuple(boxes)) for boxes in incomplete if boxes]
     read = tuple(box for box in outside if not isinstance(box, _LayerRow))
     parts = _reading_parts(read, tuple(box for box in outside if isinstance(box, _LayerRow)))
     lines_by_part = [_printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
@@ -260,9 +280,11 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         for line in printed
         if not all(isinstance(box, _LayerRow) for box in line)
     ]
-    line_heights = [_line_height(line) for line in [*lines, *cell_lines]]
+    table_lines = [line for table in lines_by_table for line in table if not all(isinstance(box, _LayerRow) for box in line)]
+    line_heights = [_line_height(line) for line in [*lines, *cell_lines, *table_lines]]
     size = median(line_heights) * scale / _BOX_HEIGHT_PER_FONT_SIZE if line_heights else 0.0
     tables = tuple(_table(grid, lines_in_cells, scale, size) for grid in grids)
+    incomplete_tables = tuple(_incomplete_table(table, scale, size) for table in lines_by_table)
     rows: list[Row] = []
     for part, part_lines in zip(parts, lines_by_part):
         part_rows = [
@@ -274,7 +296,9 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         if len(parts) > 1 and part_rows:
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
-    return PageRows(rows=tuple(rows), width=width, height=height, tables=tables, kind="ocr")
+    return PageRows(
+        rows=tuple(rows), width=width, height=height, tables=tables, incomplete_tables=incomplete_tables, kind="ocr"
+    )
 
 
 def _without_stray_marks(boxes: Sequence[TextBox], unit: float) -> list[TextBox]:
@@ -294,7 +318,7 @@ def _copies_marks_of(under: TextBox, box: TextBox, unit: float) -> bool:
     over_its_top = under.box[1] < box.box[3] and _centre(box) < _centre(under)
     if not (spanned and over_its_top):
         return False
-    at = round(((box.box[0] + box.box[2]) / 2 - under.box[0]) / _width(under) * len(under.text))
+    at = round((_centre_across(box) - under.box[0]) / _width(under) * len(under.text))
     return bool(_UPPER_MARK.search(under.text[max(0, at - _MARKS_NEAR) : at + _MARKS_NEAR + 1]))
 
 
@@ -306,7 +330,7 @@ def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridC
     in_cells: dict[GridCell, list[TextBox]] = {}
     outside: list[TextBox] = []
     for box in boxes:
-        x, y = (box.box[0] + box.box[2]) / 2, _centre(box)
+        x, y = _centre_across(box), _centre(box)
         home = next(
             (
                 cell
@@ -321,6 +345,65 @@ def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridC
         else:
             outside.append(box)
     return in_cells, tuple(outside)
+
+
+def _through_a_rule(box: TextBox, cell: GridCell, reach: float) -> bool:
+    """Whether the box runs through a rule of its cell, more than `reach` inside both its ends, so
+    that its text would belong to the cell beyond too, or, past the table's frame, to what lies
+    beside the table. Reaching past a rule by a detector's padding, it does not."""
+    x0, y0, x1, y1 = cell.box
+    left, top, right, bottom = box.box
+    return any(_through(left, right, edge, reach) for edge in (x0, x1)) or any(
+        _through(top, bottom, edge, reach) for edge in (y0, y1)
+    )
+
+
+def _through(start: float, end: float, rule: float, reach: float) -> bool:
+    return start + reach < rule < end - reach
+
+
+def _part_ruled(
+    part: PartRules, outside: tuple[TextBox, ...], unit: float, reach: float
+) -> tuple[list[TextBox], tuple[TextBox, ...]]:
+    """The boxes of the incomplete table that part rules show, and the boxes left outside it.
+
+    It takes the boxes whose centres lie within the rules, and the printed lines that follow
+    under them, each less than a box height below the last, with no box running through a
+    column's rule: so a sentence under the table ends it. The first such line must be set out in
+    two or more columns, as a row is; later ones may lie in one, as the wrapped line of a cell
+    does. A boxed row with no row under it shows no table, and its text is read as lines.
+    Only boxes whose centres lie across the rules' width are looked at, so the column beside a
+    table in a column is left to be read on its own."""
+    x0, y0, x1, y1 = part.box
+    within = [box for box in outside if x0 <= _centre_across(box) <= x1]
+    taken = [box for box in within if y0 <= _centre(box) <= y1]
+    rows, bottom = part.rows, y1  # rows counts ruled rows and lines taken under them
+    for line in _printed_lines(tuple(box for box in within if _centre(box) > y1)):
+        # Which of the spaces between the rules each box's centre lies in.
+        set_out = {sum(edge < _centre_across(box) for edge in part.columns) for box in line}
+        if (
+            min(box.box[1] for box in line) - bottom >= unit
+            or (len(set_out) < 2 and rows == part.rows)
+            or any(_through(box.box[0], box.box[2], edge, reach) for box in line for edge in part.columns)
+        ):
+            break
+        taken += line
+        rows, bottom = rows + 1, max(box.box[3] for box in line)
+    if rows < 2:
+        return [], outside
+    return taken, tuple(box for box in outside if not any(box is other for other in taken))
+
+
+def _incomplete_table(lines: list[list[TextBox]], scale: float, size: float) -> PlacedIncompleteTable:
+    """The printed lines of an incomplete table as rows on the page, in points, and where it lies."""
+    boxes = [box for line in lines for box in line]
+    return PlacedIncompleteTable(
+        x0=min(box.box[0] for box in boxes) * scale,
+        top=min(box.box[1] for box in boxes) * scale,
+        x1=max(box.box[2] for box in boxes) * scale,
+        bottom=max(box.box[3] for box in boxes) * scale,
+        rows=tuple(_row(line, scale, size) for line in lines),
+    )
 
 
 def _table(grid: Grid, lines_in_cells: dict[GridCell, list[list[TextBox]]], scale: float, size: float) -> PlacedTable:
@@ -360,9 +443,13 @@ def _cell_line(line: list[TextBox], scale: float, size: float) -> CellLine:
         x1=x1 - padding,
         centre=median(_centre(box) for box in line) * scale,
         size=size,
-        # A text-layer row's text is exact, and never uncertain.
-        pieces=tuple(Piece(box.text) if isinstance(box, _LayerRow) else Piece(box.text, box.confidence) for box in line),
+        pieces=_pieces(line),
     )
+
+
+def _pieces(line: list[TextBox]) -> tuple[Piece, ...]:
+    """What a printed line was read from. A text-layer row's text is exact, and never uncertain."""
+    return tuple(Piece(box.text) if isinstance(box, _LayerRow) else Piece(box.text, box.confidence) for box in line)
 
 
 @dataclass(frozen=True)
@@ -560,7 +647,7 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
         y1=centre + half,
         size=size,
         in_columns=any(gap > COLUMN_GAP * size for gap in gaps),
-        pieces=tuple(Piece(box.text, box.confidence) for box in line),
+        pieces=_pieces(line),
     )
 
 
@@ -581,6 +668,10 @@ def _line_height(line: list[TextBox]) -> float:
 
 def _centre(box: TextBox) -> float:
     return (box.box[1] + box.box[3]) / 2
+
+
+def _centre_across(box: TextBox) -> float:
+    return (box.box[0] + box.box[2]) / 2
 
 
 def _height(box: TextBox) -> float:

@@ -8,7 +8,7 @@ Run `uv run python corpus/generate.py` after changing a document below, and comm
 
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -631,6 +631,80 @@ RULED_TABLE_DOCUMENTS = (
     ),
 )
 
+
+
+def unboxed(grid: Grid, boxed_rows: int = 0) -> Grid:
+    """The table with only its first `boxed_rows` rows boxed: none for a table with no rules."""
+    rows = tuple(
+        tuple(replace(Cell(cell) if isinstance(cell, str) else cell, boxed=number < boxed_rows) for cell in row)
+        for number, row in enumerate(grid.rows)
+    )
+    return replace(grid, rows=rows)
+
+
+# Tables on scans that are seen but not fully ruled. A table whose header alone is boxed comes out
+# as an incomplete table: its label, then its printed lines one by one. A table with no rules at
+# all comes out one line per row with no label, as on text pages.
+PRICE_LIST = Grid(
+    rows=(
+        ("ลำดับ", "รายการ", "จำนวนเงิน (บาท)"),
+        ("1", "ค่าตอบแทนผู้วิจัย", Cell("96,000", align="right")),
+        ("2", "ค่าวัสดุและอุปกรณ์", Cell("30,000", align="right")),
+        ("3", "ค่าเดินทางไปประชุม", Cell("12,500", align="right")),
+    ),
+    widths=(60, 220, 140),
+)
+PRICE_LIST_ROWS = "ลำดับ รายการ จำนวนเงิน (บาท)\n\n1 ค่าตอบแทนผู้วิจัย 96,000\n\n2 ค่าวัสดุและอุปกรณ์ 30,000\n\n3 ค่าเดินทางไปประชุม 12,500"
+UNRULED_DATES = replace(unboxed(DATES), widths=(160, 160, 160))
+PART_RULED_TABLE_DOCUMENTS = (
+    SyntheticDocument(
+        name="boxed-header-table-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้", unboxed(PAYMENT_SCHEDULE, 1), "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"],
+                    seed=31,
+                ),
+                reference=(
+                    "ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้\n\n[ตารางอาจไม่สมบูรณ์]\n\n"
+                    "งวดที่ รายละเอียดงานที่ส่งมอบ จำนวนเงิน (บาท)\n\n"
+                    "๑ ส่งแผนการดำเนินงานและรายงาน 150,000\n\nการทบทวนวรรณกรรมที่เกี่ยวข้อง\n\n"
+                    "๒ ส่งรายงานความก้าวหน้าพร้อมผล 250,000\n\nการทดลองเบื้องต้นของต้นแบบ\n\n"
+                    "๓ ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือ 100,000\n\nการใช้งานระบบ\n\n"
+                    "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(["งบประมาณที่ขอรับการสนับสนุนมีดังนี้", unboxed(PRICE_LIST, 1)], seed=32),
+                reference=f"งบประมาณที่ขอรับการสนับสนุนมีดังนี้\n\n[ตารางอาจไม่สมบูรณ์]\n\n{PRICE_LIST_ROWS}",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="unruled-table-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        "งบประมาณที่ขอรับการสนับสนุนมีดังนี้",
+                        unboxed(PRICE_LIST),
+                        "ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้",
+                        UNRULED_DATES,
+                    ],
+                    seed=33,
+                ),
+                reference=(
+                    f"งบประมาณที่ขอรับการสนับสนุนมีดังนี้\n\n{PRICE_LIST_ROWS}\n\n"
+                    "ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้\n\n"
+                    "วันลงนามในสัญญา วันเริ่มดำเนินงาน วันสิ้นสุดโครงการ\n\n1 มีนาคม 2568 15 มีนาคม 2568 14 มีนาคม 2569"
+                ),
+            ),
+        ),
+    ),
+)
+
 # Pages set in two columns of body text, each paragraph whole in its column, and a
 # cover sheet whose labels are set apart from their values.
 THAI_COLUMNS_TITLE = "ข้อกำหนดและเงื่อนไขการให้ทุนวิจัย"
@@ -760,6 +834,7 @@ ALL_DOCUMENTS = (
     + SIDEWAYS_DOCUMENTS
     + TWO_COLUMN_DOCUMENTS
     + RULED_TABLE_DOCUMENTS
+    + PART_RULED_TABLE_DOCUMENTS
 )
 
 

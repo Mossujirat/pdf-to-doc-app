@@ -25,6 +25,7 @@ from pdf_to_doc.model import (
     Block,
     Document,
     Heading,
+    IncompleteTable,
     KeptImage,
     ListItem,
     Placeholder,
@@ -145,6 +146,13 @@ def _add_block(word: WordDocument, block: Block, unmarked_list_id: int) -> WordP
     if isinstance(block, Table):
         first_paragraph: WordParagraph = _add_table(word, block).cell(0, 0).paragraphs[0]
         return first_paragraph
+    if isinstance(block, IncompleteTable):
+        # The label, then each printed row as a paragraph of its own.
+        label = word.add_paragraph()
+        _add_text(label, block.label)
+        for row in block.rows:
+            _add_block(word, row, unmarked_list_id)
+        return label
     if isinstance(block, Placeholder) and block.image is not None:
         return _add_picture(word, block.image)
     if isinstance(block, Heading):

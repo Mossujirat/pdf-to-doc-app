@@ -40,6 +40,10 @@ def converted(source: bytes, engine: FakeEngine) -> list[str]:
     return page_texts(convert(source, ocr=engine).output.decode("utf-8"))
 
 
+def schedule(task: str) -> Grid:
+    return Grid(rows=(("งวดที่", "งาน"), ("๑", task)), widths=(80, 300))
+
+
 def test_a_ruled_table_on_a_scan_becomes_a_table_between_the_text_around_it() -> None:
     grid = Grid(rows=(("งวดที่", "จำนวนเงิน"), ("๑", "50,000"), ("๒", "75,000")), widths=(150, 150))
     lines: list[str | Grid] = ["ผู้ให้ทุนจะจ่ายเงินเป็นงวด", grid, "ตามเงื่อนไขในสัญญา"]
@@ -248,19 +252,198 @@ def test_a_frame_around_a_paragraph_on_a_scan_is_boxed_text_not_a_table() -> Non
     assert pages == ["ผู้รับทุนต้องส่งรายงานความก้าวหน้าทุกหกเดือนนับแต่วันลงนามในสัญญาฉบับนี้"]
 
 
-def test_a_ruled_row_with_no_ruled_rows_under_it_is_read_as_lines() -> None:
-    # Only the header is boxed; whether such a table is incomplete is told elsewhere (ticket 08).
-    header = Grid(rows=(("ชื่อโครงการ", "งบประมาณ", "ระยะเวลา"),), widths=(180, 120, 120))
-    rows = [
-        Styled(text, x=x, y=y)
-        for y, row in ((170, ("ระบบติดตามงาน", "1,200,000", "12 เดือน")), (192, ("ระบบจัดเก็บเอกสาร", "800,000", "6 เดือน")))
-        for x, text in zip((76, 256, 376), row)
+# Tables whose text cannot be placed in cells with certainty: incomplete tables
+
+def boxed_header_table(baseline: float, *, misread: bool = False) -> list[Styled | Grid]:
+    """A table whose header alone is boxed, its first line on the baseline, and its rows set out
+    under it in the header's columns, ruled at 72, 252, 372 and 492 points. `misread` reads
+    "เดือน" as "เคือน", which no word list holds."""
+    month = "เคือน" if misread else "เดือน"
+    rows = (("ระบบติดตามงาน", "1,200,000", f"12 {month}"), ("ระบบจัดเก็บเอกสาร", "800,000", f"6 {month}"))
+    return [
+        Grid(rows=(("ชื่อโครงการ", "งบประมาณ", "ระยะเวลา"),), widths=(180, 120, 120), y=baseline),
+        *(
+            Styled(text, x=x, y=baseline + 38 + number * LINE_HEIGHT)
+            for number, row in enumerate(rows)
+            for x, text in zip((76, 256, 376), row)
+        ),
     ]
-    lines: list[str | Styled | Grid] = [header, *rows]
+
+
+BOXED_HEADER_ROWS = ["ชื่อโครงการ งบประมาณ ระยะเวลา", "ระบบติดตามงาน 1,200,000 12 เดือน", "ระบบจัดเก็บเอกสาร 800,000 6 เดือน"]
+UNDER_IT = TOP + 38 + 2 * LINE_HEIGHT  # the baseline under such a table on a page's first line
+
+
+def test_a_table_whose_header_alone_is_boxed_is_an_incomplete_table_of_its_rows() -> None:
+    # The paragraph under the rows runs across the header's first column rule: it is no row of the
+    # table. Taken for rows, its two lines would be parted.
+    after = [Styled("ทั้งนี้ระยะเวลานับแต่วันลงนาม", y=UNDER_IT + LINE_HEIGHT), Styled("ในสัญญาฉบับนี้")]
+    lines: list[str | Styled | Grid] = ["โครงการที่เสนอขอรับทุน", *boxed_header_table(TOP + LINE_HEIGHT), *after]
 
     pages = markdown_pages(lines, lines)
 
-    assert pages == ["ชื่อโครงการ งบประมาณ ระยะเวลา\n\nระบบติดตามงาน 1,200,000 12 เดือน\n\nระบบจัดเก็บเอกสาร 800,000 6 เดือน"]
+    assert pages == [
+        "\n\n".join(["โครงการที่เสนอขอรับทุน", "[ตารางอาจไม่สมบูรณ์]", *BOXED_HEADER_ROWS, "ทั้งนี้ระยะเวลานับแต่วันลงนามในสัญญาฉบับนี้"])
+    ]
+
+
+def test_an_incomplete_table_ends_where_a_gap_wider_than_a_line_parts_it_from_what_follows() -> None:
+    # Two short lines of a signature block, two lines under the table, within its first column.
+    after = [Styled("ลงชื่อผู้เสนอโครงการ", y=UNDER_IT + 3 * LINE_HEIGHT), Styled("หัวหน้าโครงการ")]
+    lines: list[Styled | Grid] = [*boxed_header_table(TOP), *after]
+
+    pages = markdown_pages(lines, lines)
+
+    assert pages == ["\n\n".join(["[ตารางอาจไม่สมบูรณ์]", *BOXED_HEADER_ROWS, "ลงชื่อผู้เสนอโครงการหัวหน้าโครงการ"])]
+
+
+def test_the_wrapped_line_of_a_cell_under_a_boxed_header_stays_in_the_incomplete_table() -> None:
+    # Only the header is boxed; the second row's description wraps onto a line of its own column,
+    # on the baseline at TOP + 81. Read outside the table, it would run on into the sentence under it.
+    def unboxed(*texts: str) -> tuple[Cell, ...]:
+        return tuple(Cell(text, boxed=False) for text in texts)
+
+    grid = Grid(
+        rows=(
+            ("งวดที่", "รายละเอียดงานที่ส่งมอบ", "จำนวนเงิน"),
+            unboxed("๑", "ส่งแผนการดำเนินงาน", "150,000"),
+            unboxed("๒", "ส่งรายงานความก้าวหน้า\nพร้อมผลการทดลอง", "250,000"),
+        ),
+        widths=(60, 230, 130),
+    )
+    lines: list[Styled | Grid] = [grid, Styled("ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่มตามที่กฎหมายกำหนด", y=TOP + 81 + LINE_HEIGHT)]
+
+    pages = markdown_pages(lines, lines)
+
+    assert pages == [
+        "[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ รายละเอียดงานที่ส่งมอบ จำนวนเงิน\n\n๑ ส่งแผนการดำเนินงาน 150,000\n\n"
+        "๒ ส่งรายงานความก้าวหน้า 250,000\n\nพร้อมผลการทดลอง\n\nทั้งนี้ไม่รวมภาษีมูลค่าเพิ่มตามที่กฎหมายกำหนด"
+    ]
+
+
+def test_an_incomplete_table_in_a_column_takes_none_of_the_column_beside_it() -> None:
+    # The left column holds a table whose header alone is boxed; the right column runs on beside
+    # its rows, level with them.
+    above, below = THAI_LEFT[:2], THAI_LEFT[2:]
+    right = [*THAI_RIGHT, *THAI_LEFT[:4]]
+    header = Grid(rows=(("ปี", "งบประมาณ"),), widths=(90, 110), y=TOP + 3 * LINE_HEIGHT)
+    rows = [("2568", "50,000"), ("2569", "60,000")]
+    lines: list[str | Styled | Grid] = [
+        *(Styled(text, size=12, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(above)),
+        header,
+        *(
+            Styled(text, size=12, x=x, y=TOP + 3 * LINE_HEIGHT + 38 + number * LINE_HEIGHT)
+            for number, row in enumerate(rows)
+            for x, text in zip((LEFT + 4, LEFT + 94), row)
+        ),
+        *(Styled(text, size=12, y=TOP + (7 + number) * LINE_HEIGHT) for number, text in enumerate(below)),
+        *(Styled(text, size=12, x=300, y=TOP + number * LINE_HEIGHT) for number, text in enumerate(right)),
+    ]
+
+    [page] = markdown_pages(lines, lines)
+
+    assert page == "\n\n".join(
+        ["".join(above), "[ตารางอาจไม่สมบูรณ์]", "ปี งบประมาณ", "2568 50,000", "2569 60,000", "".join(below), "".join(right)]
+    )
+
+
+def test_misread_words_in_an_incomplete_table_are_marked_and_counted() -> None:
+    result = convert(pdf(scanned(boxed_header_table(TOP), seed=1)), ocr=FakeEngine(boxed_header_table(TOP, misread=True)))
+
+    assert page_texts(result.output.decode("utf-8")) == [
+        "[ตารางอาจไม่สมบูรณ์]\n\nชื่อโครงการ งบประมาณ ระยะเวลา\n\n"
+        "ระบบติดตามงาน 1,200,000 12 <mark>เคือน</mark>\n\nระบบจัดเก็บเอกสาร 800,000 6 <mark>เคือน</mark>"
+    ]
+    assert [page.uncertain for page in result.summary.pages] == [2]
+
+
+def test_an_incomplete_table_in_word_is_its_label_then_a_paragraph_per_row_highlighted_where_uncertain() -> None:
+    result = convert(
+        pdf(scanned(boxed_header_table(TOP), seed=1)), to="docx", ocr=FakeEngine(boxed_header_table(TOP, misread=True))
+    )
+
+    [page] = read_docx(result.output).pages
+    assert [block.text for block in page if not isinstance(block, Table)] == [
+        "[ตารางอาจไม่สมบูรณ์]",
+        BOXED_HEADER_ROWS[0],
+        *(row.replace("เดือน", "เคือน") for row in BOXED_HEADER_ROWS[1:]),
+    ]
+    assert [[run.text for run in runs(block) if run.highlight] for block in page if not isinstance(block, Table)] == [
+        [],
+        [],
+        ["เคือน"],
+        ["เคือน"],
+    ]
+
+
+def test_the_summary_counts_tables_on_ocr_pages_and_incomplete_ones_with_their_pages() -> None:
+    # A text page with a table, a scan with neither, and a scan with a table and an incomplete one.
+    text_page: list[str | Styled | Grid] = [Grid(rows=(("ปี", "งบ"), ("2568", "100")), widths=(100, 100))]
+    plain: list[str | Styled | Grid] = ["ผู้รับทุนต้องส่งรายงานตามกำหนด"]
+    tables: list[str | Styled | Grid] = [schedule("ส่งรายงานทุกหกเดือน"), *boxed_header_table(TOP + 5 * LINE_HEIGHT)]
+
+    result = convert(pdf(text_page, scanned(plain, seed=1), scanned(tables, seed=2)), ocr=FakeEngine(plain, tables))
+
+    assert [(page.tables, page.incomplete_tables) for page in result.summary.pages] == [(0, 0), (0, 0), (1, 1)]
+    assert result.summary.headline().endswith(
+        " ตารางในหน้าที่อ่านด้วย OCR: เป็นตาราง 1 ตาราง, อาจไม่สมบูรณ์ 1 ตาราง ในหน้า 3 ควรตรวจโครงสร้างกับต้นฉบับ"
+    )
+
+
+@pytest.mark.parametrize(
+    ("lines", "said"),
+    [
+        (["ผู้รับทุนต้องส่งรายงานตามกำหนด"], ""),
+        ([schedule("ส่งรายงานทุกหกเดือน")], " ตารางในหน้าที่อ่านด้วย OCR: เป็นตาราง 1 ตาราง"),
+        (boxed_header_table(TOP), " ตารางในหน้าที่อ่านด้วย OCR: อาจไม่สมบูรณ์ 1 ตาราง ในหน้า 2 ควรตรวจโครงสร้างกับต้นฉบับ"),
+    ],
+    ids=["a text page's table alone", "a table", "an incomplete table"],
+)
+def test_the_headline_says_only_the_kinds_of_ocr_table_there_are(lines: list[str | Styled | Grid], said: str) -> None:
+    # After a text page with a table, which is not counted.
+    text_page: list[str | Styled | Grid] = [Grid(rows=(("ปี", "งบ"), ("2568", "100")), widths=(100, 100))]
+
+    result = convert(pdf(text_page, scanned(lines, seed=1)), ocr=FakeEngine(lines))
+
+    headline = result.summary.headline()
+    assert headline.endswith(said) and headline.count("ตาราง") == said.count("ตาราง")
+
+
+@pytest.mark.parametrize(
+    "under",
+    ["ผู้รับทุนลงนามรับรองว่าข้อมูลข้างต้นเป็นความจริงทุกประการ", "กรอกให้ครบทุกช่อง"],
+    ids=["a sentence across its columns", "a note in one of them"],
+)
+def test_a_boxed_row_with_no_row_set_out_under_it_is_read_as_lines(under: str) -> None:
+    # Boxes of a form, with text under them that is set out in no more than one of its columns.
+    header, *_ = boxed_header_table(TOP)
+    lines: list[str | Styled | Grid] = [header, Styled(under, y=TOP + 38)]
+
+    pages = markdown_pages(lines, lines)
+
+    assert pages == [f"{BOXED_HEADER_ROWS[0]}\n\n{under}"]
+
+
+def test_a_box_that_runs_through_a_rule_makes_its_table_incomplete() -> None:
+    # The engine boxes the second row's two cells as one line, through the rule between them.
+    scanned_grid = Grid(rows=(("งวดที่", "งาน"), ("๑", "ส่งรายงานทุกหกเดือน")), widths=(80, 300))
+    read_grid = Grid(rows=(("งวดที่", "งาน"), (Cell("๑ ส่งรายงานทุกหกเดือน", colspan=2),)), widths=(80, 300))
+
+    pages = markdown_pages([scanned_grid], [read_grid])
+
+    assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน\n\n๑ ส่งรายงานทุกหกเดือน"]
+
+
+def test_a_box_that_runs_out_through_the_frame_of_a_table_makes_it_incomplete() -> None:
+    # The engine boxes the last cell's text past the table's right rule, 380 points from its left,
+    # as it would with a note printed beside the table: what lies outside cannot be told apart.
+    grid = Grid(rows=(("งวดที่", "งาน"), ("๑", "")), widths=(80, 300))
+    baseline = TOP + 38  # the second row's
+    spilled = Boxed("ส่งรายงานความก้าวหน้าทุกหกเดือน", LEFT + 250, baseline - 1.1 * FONT_SIZE, baseline + 0.4 * FONT_SIZE, 0.99)
+
+    pages = markdown_pages([grid], [grid, spilled])
+
+    assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน\n\n๑ ส่งรายงานความก้าวหน้าทุกหกเดือน"]
 
 
 AFTER_THE_PICTURE = TOP + LINE_HEIGHT - FONT_SIZE + 200 + LINE_HEIGHT  # the baseline below a picture 200 pt tall
@@ -296,9 +479,9 @@ def test_a_table_drawn_inside_a_cell_of_another_is_part_of_that_cell() -> None:
     assert pages == ["| หัวข้อ | รายละเอียด |\n| --- | --- |\n| แผนงาน | ปี งบ<br>1 100 |"]
 
 
-def test_rules_that_leave_a_space_no_cell_could_be_make_no_table() -> None:
+def test_rules_that_leave_a_space_no_cell_could_be_make_an_incomplete_table() -> None:
     # Three cells are left unruled, so the rules around them close off an L: it cannot be told
-    # which of them the text in it belongs to, so the rows are read as lines.
+    # which of them the text in it belongs to, so the rows are read as lines, after the label.
     def cell(row: int, column: int) -> Cell:
         return Cell(f"{row}{column}", boxed=(row, column) not in {(2, 2), (2, 3), (3, 2)})
 
@@ -306,7 +489,7 @@ def test_rules_that_leave_a_space_no_cell_could_be_make_no_table() -> None:
 
     pages = markdown_pages([grid], [grid])
 
-    assert pages == ["11 12 13 14\n\n21 22 23 24\n\n31 32 33 34\n\n41 42 43 44"]
+    assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\n11 12 13 14\n\n21 22 23 24\n\n31 32 33 34\n\n41 42 43 44"]
 
 
 def test_a_ruled_header_box_repeated_at_the_top_of_scans_is_page_furniture() -> None:
@@ -322,10 +505,6 @@ def test_a_ruled_header_box_repeated_at_the_top_of_scans_is_page_furniture() -> 
 
 
 # Uncertain text in cells: marked and counted as it is in paragraphs
-
-
-def schedule(task: str) -> Grid:
-    return Grid(rows=(("งวดที่", "งาน"), ("๑", task)), widths=(80, 300))
 
 
 def test_a_word_misread_in_a_cell_is_marked() -> None:

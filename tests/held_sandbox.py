@@ -13,7 +13,7 @@ _STARTED = (
 )
 _SUMMARY = (
     b'{"event": "summary", "pages": [{"number": 1, "kind": "ocr", "engine": "held",'
-    b' "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}]}'
+    b' "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}]}'
 )
 _MARKDOWN = "เสร็จแล้ว".encode()
 

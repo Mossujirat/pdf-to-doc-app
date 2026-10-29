@@ -178,10 +178,10 @@ def page_rows(page: str) -> list[list[str]]:
 def test_the_finished_table_says_which_pages_were_kept_and_why_a_kept_pages_text_was_left_out() -> None:
     summary = (
         b'{"event": "summary", "pages": ['
-        b'{"number": 1, "kind": "text", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}, '
-        b'{"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": true, "placeholders": [], "uncertain": 0}, '
-        b'{"number": 3, "kind": "kept", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}, '
-        b'{"number": 4, "kind": "kept", "engine": null, "untrusted_text_layer": true, "placeholders": [], "uncertain": 0}]}'
+        b'{"number": 1, "kind": "text", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}, '
+        b'{"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": true, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}, '
+        b'{"number": 3, "kind": "kept", "engine": null, "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}, '
+        b'{"number": 4, "kind": "kept", "engine": null, "untrusted_text_layer": true, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}]}'
     )
     with browser(ScriptedSandbox([summary], Ended(0, b"markdown 0\n"))) as client:
         link = upload(client, pdf(["หน้าแรก"]), keep_images="yes")
@@ -195,6 +195,27 @@ def test_the_finished_table_says_which_pages_were_kept_and_why_a_kept_pages_text
         ["หน้า 3", "เก็บเป็นภาพ", "–"],
         ["หน้า 4", "เก็บเป็นภาพ", "ข้อความในไฟล์ผิด จึงไม่ได้นำมาใช้"],
     ]
+
+
+def test_the_finished_table_notes_tables_and_incomplete_tables_apart_from_placeholders_and_tags_those_to_check() -> None:
+    summary = (
+        b'{"event": "summary", "pages": ['
+        b'{"number": 1, "kind": "ocr", "engine": "fake", "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 2, "incomplete_tables": 0}, '
+        b'{"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 1, "incomplete_tables": 1}, '
+        b'{"number": 3, "kind": "text", "engine": null, "untrusted_text_layer": false, "placeholders": ["image"], "uncertain": 0, "tables": 0, "incomplete_tables": 0}]}'
+    )
+    with browser(ScriptedSandbox([summary], Ended(0, b"markdown 0\n"))) as client:
+        link = upload(client, pdf(["หน้าแรก"]))
+
+        assert ended_state(client, link) == "finished"
+        page = client.get(link).text
+    assert "ตารางในหน้าที่อ่านด้วย OCR: เป็นตาราง 3 ตาราง, อาจไม่สมบูรณ์ 1 ตาราง ในหน้า 2 ควรตรวจโครงสร้างกับต้นฉบับ" in page
+    assert page_rows(page) == [
+        ["หน้า 1", "อ่านด้วย OCR", "ตาราง 2"],
+        ["หน้า 2", "อ่านด้วย OCR", "ตรวจ ตาราง 1 · ตารางอาจไม่สมบูรณ์ 1"],
+        ["หน้า 3", "ข้อความในไฟล์", "รูปภาพ 1"],
+    ]
+    assert "ควรตรวจ 1 หน้า" in page
 
 
 def test_a_docx_gives_markdown_only(client: TestClient) -> None:
@@ -380,7 +401,7 @@ SUMMARY = b'{"event": "summary", "pages": []}'
         pytest.param(
             [
                 '{"event": "summary", "pages": [{"number": 1, "kind": "ocr", "engine": "ผู้รับทุนตกลง",'
-                ' "untrusted_text_layer": false, "placeholders": [], "uncertain": 0}]}'.encode()
+                ' "untrusted_text_layer": false, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0}]}'.encode()
             ],
             Ended(0, b"markdown 0\n"),
             id="an engine name that is not a name",

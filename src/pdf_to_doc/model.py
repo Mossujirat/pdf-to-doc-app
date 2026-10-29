@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Literal, assert_never
+from typing import ClassVar, Literal, assert_never
 
 # How a page was read: from its text layer, with OCR, or not at all, as a scan kept as an image.
 PageKind = Literal["text", "ocr", "kept"]
@@ -53,7 +53,21 @@ class Table:
         return any(cell.rowspan > 1 or cell.colspan > 1 for row in self.rows for cell in row)
 
 
-PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "incomplete_table", "scan"]
+@dataclass(frozen=True)
+class IncompleteTable:
+    """A table on an OCR page whose text could not be placed in its cells with certainty: its
+    printed rows, each a line of its own, after a label saying the table may be incomplete. Its
+    text is transcribed, so it is no placeholder."""
+
+    rows: tuple[Paragraph, ...]
+    name: ClassVar[str] = "ตารางอาจไม่สมบูรณ์"
+
+    @property
+    def label(self) -> str:
+        return f"[{self.name}]"
+
+
+PlaceholderKind = Literal["image", "signature", "stamp", "handwriting", "scan"]
 
 
 @dataclass(frozen=True)
@@ -85,8 +99,6 @@ class Placeholder:
                 return "ตราประทับ"
             case "handwriting":
                 return "ลายมือ"
-            case "incomplete_table":
-                return "ตารางอาจไม่สมบูรณ์"
             case "scan":
                 return "หน้าสแกน"
             case _:
@@ -97,12 +109,13 @@ class Placeholder:
         return f"[{self.name}]"
 
 
-Block = Paragraph | Heading | ListItem | Table | Placeholder
+Block = Paragraph | Heading | ListItem | Table | IncompleteTable | Placeholder
 
 
 def uncertain_text(part: Block | TableCell) -> tuple[Span, ...]:
     """The uncertain text of a block, or of a table's cell. Only paragraphs, list items and cells
-    hold any: OCR pages give no headings, and a table's text is in its cells."""
+    hold any: OCR pages give no headings, a table's text is in its cells, and an incomplete
+    table's in its rows, which are paragraphs."""
     return part.uncertain if isinstance(part, (Paragraph, ListItem, TableCell)) else ()
 
 

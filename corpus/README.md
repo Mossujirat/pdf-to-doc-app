@@ -38,7 +38,7 @@ A reference file holds what a reader sees on the page, written as Markdown:
   - `[ลายเซ็น]` for a signature
   - `[ตราประทับ]` for a stamp
   - `[ลายมือ]` for handwriting
-  - `[ตารางอาจไม่สมบูรณ์]` beside a table whose structure may be incomplete
+- Write an **incomplete table** (see `GLOSSARY.md`) as its label, `[ตารางอาจไม่สมบูรณ์]`, on a line of its own, then its printed lines one by one. The label is not a placeholder: the table's text is transcribed. A table with no rules at all gets no label; write its rows one per line.
 - Leave out page furniture: headers, footers and page numbers that repeat at the same edge on two or more pages, and rows that are only a page counter. The converter drops them.
 - Line breaks and spacing between paragraphs do not matter.
 - Saving with or without a byte order mark makes no difference.

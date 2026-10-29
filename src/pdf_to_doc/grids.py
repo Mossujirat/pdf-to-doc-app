@@ -2,6 +2,7 @@
 
 Long horizontal and vertical rules are found in the image, and the cells are the
 spaces they close off, with row and column spans where a rule is left out to merge cells.
+Rules that make no whole grid can still show a table, whose text cannot be placed in cells.
 """
 
 import math
@@ -56,16 +57,36 @@ class Grid:
     cells: tuple[GridCell, ...]
 
 
-def ruled_grids(pixels: np.ndarray, unit: float) -> tuple[Grid, ...]:
-    """The grids of the ruled tables on a page image of 8-bit RGB samples, in its pixels. `unit`
+@dataclass(frozen=True)
+class PartRules:
+    """Rules that show a table but make no whole grid of it: a boxed row of two or more cells
+    with no ruled rows under it, as a table whose header alone is boxed, or rules that close off
+    a space that is no rectangle, as when part of a rule is missing. Where they lie, the lines
+    their columns' edges lie on, left to right, and how many rows of cells they rule."""
+
+    box: Box
+    columns: tuple[float, ...]
+    rows: int
+
+
+@dataclass(frozen=True)
+class Rules:
+    """The ruled tables on a page: whole grids, and rules that make no whole grid."""
+
+    grids: tuple[Grid, ...] = ()
+    parts: tuple[PartRules, ...] = ()
+
+
+def ruled_tables(pixels: np.ndarray, unit: float) -> Rules:
+    """The rules of the tables on a page image of 8-bit RGB samples, in its pixels. `unit`
     is the height of the OCR engine's usual box on it: a rule is at least that long, as text
     holds no stroke so long, and a table's rows are taller.
 
-    Rules of a single row make no table: a frame around a paragraph is boxed text, and a boxed
-    row with no ruled rows under it, such as a table whose header alone is boxed, is read as lines.
-    Nor do rules wholly in the page's top or bottom edge band: as on text pages, they are read as
-    rows, so that a ruled header or footer stays page furniture. A grid drawn inside a cell of
-    another is part of that cell, as on text pages.
+    Rules of a single row make no grid: a frame around a paragraph is boxed text, and a boxed
+    row of two or more cells is part rules, as is a grid whose rules close off a space that is
+    no rectangle. Rules wholly in the page's top or bottom edge band make neither: as on text
+    pages, they are read as rows, so that a ruled header or footer stays page furniture. Rules
+    drawn inside a cell of others are part of that cell, as on text pages.
 
     The grids lie in the same frame as the boxes of an engine that straightens them by the
     page's slant, as PaddleOCR does: the image is turned back by the slant of its rules, about
@@ -75,7 +96,7 @@ def ruled_grids(pixels: np.ndarray, unit: float) -> tuple[Grid, ...]:
     length = max(round(unit / _SHRINK), 2)
     slant = _slant(_ink(grey), length)
     if slant is None:
-        return ()
+        return Rules()
     ink = _ink(_straightened(grey, slant))
     thickest = max(_THICKEST_PIXELS, _THICKEST_SHARE * unit) / _SHRINK
     horizontal = _thin(cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, length), np.uint8)), cv2.CC_STAT_WIDTH, thickest)
@@ -83,7 +104,7 @@ def ruled_grids(pixels: np.ndarray, unit: float) -> tuple[Grid, ...]:
     # Rules that meet leave no gap at the joint for a cell to leak through.
     rules = cv2.dilate(cv2.bitwise_or(horizontal, vertical), np.ones((3, 3), np.uint8))
     count, labels, stats, _ = cv2.connectedComponentsWithStats(rules, connectivity=8)
-    grids = []
+    found: list[Grid | PartRules] = []
     band = EDGE_BAND * len(ink)
     for label in range(1, count):
         x, y, width, height, _ = stats[label]
@@ -93,10 +114,13 @@ def ruled_grids(pixels: np.ndarray, unit: float) -> tuple[Grid, ...]:
         boxes: list[Box] = [
             (_SHRINK * (x + x0), _SHRINK * (y + y0), _SHRINK * (x + x1), _SHRINK * (y + y1)) for x0, y0, x1, y1 in cells
         ]
-        grid = _grid(boxes, _SAME_LINE * unit)
-        if grid and grid.rows > 1:
-            grids.append(grid)
-    return tuple(grid for grid in grids if not any(other is not grid and _inside(grid.box, other.box) for other in grids))
+        if ruled := _grid(boxes, _SAME_LINE * unit):
+            found.append(ruled)
+    found = [ruled for ruled in found if not any(other is not ruled and _inside(ruled.box, other.box) for other in found)]
+    return Rules(
+        tuple(ruled for ruled in found if isinstance(ruled, Grid)),
+        tuple(ruled for ruled in found if isinstance(ruled, PartRules)),
+    )
 
 
 def _inside(box: Box, other: Box) -> bool:
@@ -159,13 +183,15 @@ def _cells(rules: np.ndarray) -> list[tuple[int, int, int, int]]:
     ]
 
 
-def _grid(cells: list[Box], tolerance: float) -> Grid | None:
+def _grid(cells: list[Box], tolerance: float) -> Grid | PartRules | None:
     """The grid the cells make: the lines their edges lie on, each cell's place and spans along
     them. A space too narrow to make a row or column, as between the two rules of a double
-    rule, is no cell. None when a cell covers the same place as another, as when part of a rule
-    was not found and the space it would have closed off is no rectangle."""
+    rule, is no cell. Part rules when a cell covers the same place as another, as when part of a
+    rule was not found and the space it would have closed off is no rectangle, or when the cells
+    make one row of two or more; None when they make one cell, or none."""
     columns = _lines([edge for cell in cells for edge in (cell[0], cell[2])], tolerance)
     rows = _lines([edge for cell in cells for edge in (cell[1], cell[3])], tolerance)
+    box = (columns[0], rows[0], columns[-1], rows[-1])
     placed: list[GridCell] = []
     covered: set[tuple[int, int]] = set()
     for x0, y0, x1, y1 in cells:
@@ -175,13 +201,14 @@ def _grid(cells: list[Box], tolerance: float) -> Grid | None:
         if not places:
             continue
         if places & covered:
-            return None
+            return PartRules(box, tuple(columns), len(rows) - 1)
         covered |= places
-        box = (columns[left], rows[top], columns[right], rows[bottom])
-        placed.append(GridCell(box, top, left, bottom - top, right - left))
-    if not placed:
+        placed.append(GridCell((columns[left], rows[top], columns[right], rows[bottom]), top, left, bottom - top, right - left))
+    if len(placed) < 2:
         return None
-    return Grid((columns[0], rows[0], columns[-1], rows[-1]), len(rows) - 1, len(columns) - 1, tuple(placed))
+    if len(rows) == 2:
+        return PartRules(box, tuple(columns), 1)
+    return Grid(box, len(rows) - 1, len(columns) - 1, tuple(placed))
 
 
 def _lines(edges: list[float], tolerance: float) -> list[float]:
