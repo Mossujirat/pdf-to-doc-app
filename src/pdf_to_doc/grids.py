@@ -189,6 +189,8 @@ def _grid(cells: list[Box], tolerance: float) -> Grid | PartRules | None:
     rule, is no cell. Part rules when a cell covers the same place as another, as when part of a
     rule was not found and the space it would have closed off is no rectangle, or when the cells
     make one row of two or more; None when they make one cell, or none."""
+    if not cells:
+        return None
     columns = _lines([edge for cell in cells for edge in (cell[0], cell[2])], tolerance)
     rows = _lines([edge for cell in cells for edge in (cell[1], cell[3])], tolerance)
     box = (columns[0], rows[0], columns[-1], rows[-1])

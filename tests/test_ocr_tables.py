@@ -25,7 +25,22 @@ from generate import (
     scanned,
 )
 from markdown_reader import page_texts
-from pdf_builder import FONT_SIZE, LEFT, LINE_HEIGHT, TOP, Cell, Drawn, Grid, Line, Picture, Scan, Styled, pdf, remapped
+from pdf_builder import (
+    FONT_SIZE,
+    LEFT,
+    LINE_HEIGHT,
+    TOP,
+    Cell,
+    Drawn,
+    Grid,
+    Line,
+    Picture,
+    Scan,
+    Styled,
+    laid_out_grid,
+    pdf,
+    remapped,
+)
 from test_ocr_pages import THAI_LEFT, THAI_RIGHT, two_columns
 
 from pdf_to_doc import convert
@@ -252,6 +267,17 @@ def test_a_frame_around_a_paragraph_on_a_scan_is_boxed_text_not_a_table() -> Non
     assert pages == ["ผู้รับทุนต้องส่งรายงานความก้าวหน้าทุกหกเดือนนับแต่วันลงนามในสัญญาฉบับนี้"]
 
 
+def test_rules_that_meet_but_close_off_no_space_make_no_table() -> None:
+    # A rule across the page and one down its left side, meeting at the corner, drawn as cells a
+    # point thin: there is no space between them for a cell.
+    corner = Grid(rows=(("", ""), ("", Cell("", boxed=False))), widths=(1, 300), heights=((0, 1.0), (1, 120.0)))
+    lines: list[str | Grid] = [corner, "ผู้รับทุนต้องส่งรายงานทุกหกเดือน"]
+
+    pages = markdown_pages(lines, lines)
+
+    assert pages == ["ผู้รับทุนต้องส่งรายงานทุกหกเดือน"]
+
+
 # Tables whose text cannot be placed in cells with certainty: incomplete tables
 
 def boxed_header_table(baseline: float, *, misread: bool = False) -> list[Styled | Grid]:
@@ -444,6 +470,50 @@ def test_a_box_that_runs_out_through_the_frame_of_a_table_makes_it_incomplete() 
     pages = markdown_pages([grid], [grid, spilled])
 
     assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน\n\n๑ ส่งรายงานความก้าวหน้าทุกหกเดือน"]
+
+
+def test_a_box_reaching_past_the_rule_above_its_row_by_its_marks_keeps_the_table() -> None:
+    # The engine boxes the last cell's line with its upper marks stacked high in a tight row: the box
+    # is 2.2 font sizes tall and reaches 0.6 over the rule above it, as on a real scan, but holds no
+    # line of the row above.
+    grid = Grid(rows=(("งวดที่", "งาน"), ("๑", "")), widths=(80, 300))
+    top = laid_out_grid(grid, TOP).cells[3].rect.y0
+    tall = Boxed("ส่งรายงานทุกหกเดือน", LEFT + 90, top - 0.6 * FONT_SIZE, top + 1.6 * FONT_SIZE, 0.99)
+
+    pages = markdown_pages([grid], [grid, tall])
+
+    assert pages == ["| งวดที่ | งาน |\n| --- | --- |\n| ๑ | ส่งรายงานทุกหกเดือน |"]
+
+
+def test_a_box_reaching_past_the_rule_beside_it_by_its_padding_keeps_the_table() -> None:
+    # On a real scan in small print, a box reached 0.53 font sizes past the rule to the left of its
+    # text; this one reaches 0.6.
+    grid = Grid(rows=(("งวดที่", "งาน"), ("๑", "")), widths=(80, 300))
+    cell = laid_out_grid(grid, TOP).cells[3].rect
+    padded = Boxed("ส่งรายงานทุกหกเดือน", cell.x0 - 0.6 * FONT_SIZE, cell.y0 + 2, cell.y0 + 2 + 1.5 * FONT_SIZE, 0.99)
+
+    pages = markdown_pages([grid], [grid, padded])
+
+    assert pages == ["| งวดที่ | งาน |\n| --- | --- |\n| ๑ | ส่งรายงานทุกหกเดือน |"]
+
+
+def test_text_within_a_table_that_no_cell_holds_makes_it_incomplete() -> None:
+    # The scan lost the rules round the last cell, so no cell holds its text.
+    grid = Grid(rows=(("งวดที่", "งาน"), ("๑", Cell("ส่งรายงานทุกหกเดือน", boxed=False))), widths=(80, 300))
+
+    pages = markdown_pages([grid], [grid])
+
+    assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน\n\n๑ ส่งรายงานทุกหกเดือน"]
+
+
+def test_rules_round_no_text_make_no_table() -> None:
+    # Such as the printed dots of a watermark, taken for rules: no cell they make holds text.
+    empty = Grid(rows=(("", "", ""), ("", "", "")), widths=(120, 120, 120))
+    lines: list[str | Grid] = ["ผู้รับทุนต้องส่งรายงานทุกหกเดือน", empty, "ตามเงื่อนไขในสัญญา"]
+
+    pages = markdown_pages(lines, lines)
+
+    assert pages == ["ผู้รับทุนต้องส่งรายงานทุกหกเดือน\n\nตามเงื่อนไขในสัญญา"]
 
 
 AFTER_THE_PICTURE = TOP + LINE_HEIGHT - FONT_SIZE + 200 + LINE_HEIGHT  # the baseline below a picture 200 pt tall

@@ -72,6 +72,9 @@ def render_docx(document: Document, summary: Summary) -> bytes:
     _add_text(summary_paragraph, "สรุปการแปลง", bold=True)
     _add_text(summary_paragraph, f" {summary.headline(uncertain_marked_as='ไฮไลต์สีเหลือง')}")
     writing = a4  # the properties of the section being written
+    # The block written last, on this page or the one before, if nothing lies between: Word joins
+    # tables that touch into one.
+    touching: Block | None = None
     for index, page in enumerate(document.pages):
         kept = page.kept_image
         # A kept page is a section of its own, and so are the other pages after it, back on A4.
@@ -79,21 +82,27 @@ def render_docx(document: Document, summary: Summary) -> bytes:
         new_section = kept is not None or writing is not a4
         if new_section:
             _end_section(word, writing)
+            touching = None  # the section's end lies between
         writing = a4 if kept is None else _kept_page_section(a4, kept)
         if kept is not None:
             _add_page_image(word, kept, writing)
             continue
         first: WordParagraph | None = None
-        previous: Block | None = None
+        previous: Block | None = None  # the block before on this page
         for block in page.blocks:
-            if isinstance(previous, Table) and isinstance(block, Table):
-                word.add_paragraph()  # Word joins tables that touch into one
+            if isinstance(touching, Table) and isinstance(block, Table):
+                # Between pages, the paragraph between starts the page, so that it cannot fall onto
+                # a page of its own.
+                between = word.add_paragraph()
+                first = first or between
             paragraph = _add_block(word, block, unmarked_list_id)
             first = first or paragraph
             if isinstance(previous, Table) and not isinstance(block, (Heading, Table)):
                 # Headings have space above them already; other text would sit on the table's bottom line.
                 paragraph.paragraph_format.space_before = _SPACE_AFTER_TABLE
-            previous = block
+            previous = touching = block
+        if first is None:
+            touching = None  # the empty page's paragraph lies between
         if new_section and first is None:
             word.add_paragraph()  # an empty page, so that the section holds something
         elif index > 0 and not new_section:

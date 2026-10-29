@@ -37,9 +37,12 @@ _BOX_HEIGHT_PER_FONT_SIZE = 1.5
 # PaddleOCR's boxes in the synthetic scans' table cells reached 3 to 7 points past text 16 points tall.
 _BOX_PADDING = 0.3
 # A rule more than this many font sizes inside both ends of a box runs through its text, not its
-# padding: PaddleOCR's boxes reached at most 0.44 of the font size past text in table cells, and
-# a box reaches about 0.4 font sizes above and below its letters' body, marks aside.
-_THROUGH_A_RULE = 0.5
+# padding or its marks. PaddleOCR's boxes reached 0.44 of the font size past text in the synthetic
+# scans' cells; on the real samples, one reached 0.53 past the rule beside its text, in small
+# print, and two boxes of lines whose upper marks stack high, in tight rows, 0.58 and 0.62 over
+# the rule above them. The one box there that held the text of two cells reached 2.9 font sizes
+# past the rule on its shorter side.
+_THROUGH_A_RULE = 1.0
 # A box less tall than this share of the page's usual box can be a copy of a line's marks, boxed
 # apart from the line (see `_without_stray_marks`). On the synthetic table pages, such copies were
 # 0.45 of the usual box at most.
@@ -236,11 +239,12 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     cells, and the text-layer rows too, such as a note typed in a cell of a scanned table;
     the boxes and rows outside every cell are the page's rows. Copies of a line's upper marks,
     boxed apart from it, are dropped (see `_without_stray_marks`), a cell's apart from the
-    rest, so that none is taken across a rule.
+    rest, so that none is taken across a rule. A grid none of whose cells holds text is no table.
 
     A table whose text cannot be placed in its cells with certainty is an incomplete table of its
-    printed lines: a grid with a box that runs through one of its rules (see `_through_a_rule`),
-    and rules that make no whole grid, with the rows set out under them (see `_part_ruled`).
+    printed lines: a grid with a box that runs through one of its rules (see `_through_a_rule`), or
+    with text within it that no cell holds, as where a scan lost part of a rule; and rules that make
+    no whole grid, with the rows set out under them (see `_part_ruled`).
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
@@ -257,13 +261,17 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     in_cells = {cell: _without_stray_marks(boxes_in_cell, unit) for cell, boxes_in_cell in in_cells.items()}
     outside = tuple(_without_stray_marks(outside, unit))
     reach = _THROUGH_A_RULE * unit / _BOX_HEIGHT_PER_FONT_SIZE
-    crossed = [
-        grid
-        for grid in rules.grids
-        if any(_through_a_rule(box, cell, reach) for cell in grid.cells for box in in_cells.get(cell, []))
-    ]
-    grids = tuple(grid for grid in rules.grids if grid not in crossed)
-    incomplete = [[box for cell in grid.cells for box in in_cells.pop(cell, [])] for grid in crossed]
+    whole: list[Grid] = []
+    incomplete: list[list[TextBox]] = []
+    # Rules round no text, such as the printed dots of a watermark, make no table.
+    for grid in (grid for grid in rules.grids if any(in_cells.get(cell) for cell in grid.cells)):
+        stray = [box for box in outside if _centred_in(box, grid.box)]
+        if stray or any(_through_a_rule(box, cell, reach) for cell in grid.cells for box in in_cells.get(cell, [])):
+            outside = _without(outside, stray)
+            incomplete.append([*(box for cell in grid.cells for box in in_cells.pop(cell, [])), *stray])
+        else:
+            whole.append(grid)
+    grids = tuple(whole)
     for part_rules in rules.parts:
         taken, outside = _part_ruled(part_rules, outside, unit, reach)
         incomplete.append(taken)
@@ -350,12 +358,18 @@ def _in_cells(boxes: list[TextBox], grids: tuple[Grid, ...]) -> tuple[dict[GridC
 def _through_a_rule(box: TextBox, cell: GridCell, reach: float) -> bool:
     """Whether the box runs through a rule of its cell, more than `reach` inside both its ends, so
     that its text would belong to the cell beyond too, or, past the table's frame, to what lies
-    beside the table. Reaching past a rule by a detector's padding, it does not."""
+    beside the table. Reaching past a rule by a detector's padding, or by marks stacked over a
+    line, it does not."""
     x0, y0, x1, y1 = cell.box
     left, top, right, bottom = box.box
     return any(_through(left, right, edge, reach) for edge in (x0, x1)) or any(
         _through(top, bottom, edge, reach) for edge in (y0, y1)
     )
+
+
+def _centred_in(box: TextBox, area: Box) -> bool:
+    x0, y0, x1, y1 = area
+    return x0 <= _centre_across(box) <= x1 and y0 <= _centre(box) <= y1
 
 
 def _through(start: float, end: float, rule: float, reach: float) -> bool:
@@ -391,7 +405,12 @@ def _part_ruled(
         rows, bottom = rows + 1, max(box.box[3] for box in line)
     if rows < 2:
         return [], outside
-    return taken, tuple(box for box in outside if not any(box is other for other in taken))
+    return taken, _without(outside, taken)
+
+
+def _without(boxes: tuple[TextBox, ...], taken: list[TextBox]) -> tuple[TextBox, ...]:
+    """The boxes but those taken, each told by itself: two boxes can read the same."""
+    return tuple(box for box in boxes if not any(box is other for other in taken))
 
 
 def _incomplete_table(lines: list[list[TextBox]], scale: float, size: float) -> PlacedIncompleteTable:

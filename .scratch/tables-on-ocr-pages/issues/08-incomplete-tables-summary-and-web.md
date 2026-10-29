@@ -125,3 +125,13 @@
 - **Known limits:**
   - A short paragraph one blank line under an incomplete table, within its columns, is taken as its lines: a blank line between 22-point lines leaves less than a box height.
   - A table with no rules is never labelled, as decided; nor is a boxed row alone.
+
+**2026-10-29, from ticket 09 (the samples)**
+
+- **A regression of this ticket:** `grids._grid` read its frame before checking that any space was closed off. Rules that meet but close off none, as an L does, made the 110-page contract fail to convert. Fixed in ticket 09.
+- **Changed on the samples' evidence, as the user chose:**
+  - a box crosses a rule only when the rule lies 1.0 font size inside both its ends, not 0.5;
+  - text within a grid's frame that no cell holds makes the table incomplete;
+  - a grid with no text in any cell is no table.
+
+  Ticket 09's comments have the numbers.
