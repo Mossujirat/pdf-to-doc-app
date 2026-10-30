@@ -11,9 +11,10 @@ import cv2
 import numpy as np
 import pymupdf
 
+from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
 from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedIncompleteTable, PlacedTable, RawCell, Row
-from pdf_to_doc.thai import DIGITS, UPPER_MARK
+from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
 
@@ -52,8 +53,6 @@ _STRAY_MARKS = 0.5
 # synthetic table pages lay within 3 characters of an upper vowel or tone mark of its line's.
 _MARKS_NEAR = 3
 _UPPER_MARK = re.compile(UPPER_MARK)
-# Boxes whose centres are closer than this share of a box height sit on one printed line.
-_SAME_LINE = 0.5
 # A row of a text layer is about this many times as tall as its font size.
 _ROW_HEIGHT_PER_FONT_SIZE = 1.2
 # A box at least this many times as tall as wide runs down the page; a single
@@ -70,27 +69,6 @@ _SIDEWAYS = 0.5
 # reading taken for upright was 0.90 sure or more.
 _CLEARLY_BETTER = 0.15
 _READ_UPRIGHT = 0.8
-# A page set in columns is cut where its boxes leave room, in median box heights:
-# a band across the page this tall parts what is above it from what is below, and a
-# gutter down it this wide parts columns. Of the bands tried, 0.5 to 1.2, this one read
-# the synthetic scans best. The narrowest gutter that parted two columns on them left
-# 0.63 box heights between their boxes; narrower ones, and Thai ones up to 16 pt, had
-# boxes running into or across them.
-_BAND_GAP = 0.8
-_GUTTER = 0.5
-# A column holds at least this many printed lines. Fewer, such as initials in the
-# margin, belong with the column beside them.
-_COLUMN_LINES = 2
-# But only where every column is body text, its lines at least this many characters
-# long at the median, spaces left out. Labels set apart from their values, as in a
-# form, look the same but are read row by row. On synthetic scans the shorter side of
-# such layouts measured 18 characters at most, and of side panels, signature blocks and
-# bank details beside signatories 18.5, against 27 to 40 for body text.
-_BODY_LINE = 24
-# And only where most of each column's lines start at one place, or centre on one, give
-# or take this many box heights. On the samples' columns they were 0.3 off at most; the
-# holes that a diagonal watermark leaves in lines left their text 1.3 or more off.
-_LINED_UP = 0.5
 
 
 @dataclass(frozen=True)
@@ -275,12 +253,12 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     for part_rules in rules.parts:
         taken, outside = _part_ruled(part_rules, outside, unit, reach)
         incomplete.append(taken)
-    lines_by_table = [_printed_lines(tuple(boxes)) for boxes in incomplete if boxes]
+    lines_by_table = [printed_lines(tuple(boxes)) for boxes in incomplete if boxes]
     read = tuple(box for box in outside if not isinstance(box, _LayerRow))
     parts = _reading_parts(read, tuple(box for box in outside if isinstance(box, _LayerRow)))
-    lines_by_part = [_printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
+    lines_by_part = [printed_lines(tuple(box for box in part if not isinstance(box, _LayerRow))) for part in parts]
     lines = [line for part_lines in lines_by_part for line in part_lines]
-    lines_in_cells = {cell: _printed_lines(tuple(boxes_in_cell)) for cell, boxes_in_cell in in_cells.items()}
+    lines_in_cells = {cell: printed_lines(tuple(boxes_in_cell)) for cell, boxes_in_cell in in_cells.items()}
     # The font size is told by the engine's boxes; a text-layer row's height is its own font's.
     cell_lines = [
         line
@@ -392,7 +370,7 @@ def _part_ruled(
     within = [box for box in outside if x0 <= _centre_across(box) <= x1]
     taken = [box for box in within if y0 <= _centre(box) <= y1]
     rows, bottom = part.rows, y1  # rows counts ruled rows and lines taken under them
-    for line in _printed_lines(tuple(box for box in within if _centre(box) > y1)):
+    for line in printed_lines(tuple(box for box in within if _centre(box) > y1)):
         # Which of the spaces between the rules each box's centre lies in.
         set_out = {sum(edge < _centre_across(box) for edge in part.columns) for box in line}
         if (
@@ -491,141 +469,7 @@ def _reading_parts(read: tuple[TextBox, ...], layer: tuple[TextBox, ...]) -> lis
     measured in the engine's median box height."""
     read = tuple(box for box in read if box.text.strip())
     boxes = read + tuple(box for box in layer if box.text.strip())
-    return _parts(boxes, median(_height(box) for box in read)) if read else [boxes]
-
-
-def _parts(boxes: tuple[TextBox, ...], unit: float) -> list[tuple[TextBox, ...]]:
-    """The boxes in reading order, as `_reading_parts` gives them; each column is read the same way in turn."""
-    parts: list[tuple[TextBox, ...]] = []
-    run: list[TextBox] = []  # bands not set in columns, read as one part
-    for region in _regions(boxes, unit):
-        columns = _text_columns(region, unit)
-        if not columns:
-            run += region
-            continue
-        if run:
-            parts.append(tuple(run))
-            run = []
-        parts += [part for column in columns for part in _parts(column, unit)]
-    if run:
-        parts.append(tuple(run))
-    return parts if len(parts) > 1 else [boxes]
-
-
-def _regions(boxes: tuple[TextBox, ...], unit: float) -> list[tuple[TextBox, ...]]:
-    """The boxes cut into bands down the page, each band taken with the columns above it when it is more of them."""
-    regions: list[tuple[TextBox, ...]] = []
-    for band in _cut(boxes, 1, _BAND_GAP * unit):
-        if regions and _more_of(regions[-1], band, unit):
-            regions[-1] += band
-        else:
-            regions.append(band)
-    return regions
-
-
-def _more_of(above: tuple[TextBox, ...], band: tuple[TextBox, ...], unit: float) -> bool:
-    """Whether the band is more of the columns of body text above it: set in the same
-    columns, as when the paragraphs of two columns end on the same line, or body text
-    under the one column that reaches further down than the others, as when the last
-    column on a page ends early. Labels and values, or signatures, under them are not."""
-    columns = _text_columns(above, unit)
-    if not columns:
-        return False
-    if band_columns := _text_columns(band, unit):
-        return any(a0 < b1 and b0 < a1 for a0, a1 in _gutters(columns) for b0, b1 in _gutters(band_columns))
-    return _under_the_longest(columns, band, unit) and _body_text(band) and _lined_up(band, unit)
-
-
-def _under_the_longest(columns: list[tuple[TextBox, ...]], band: tuple[TextBox, ...], unit: float) -> bool:
-    """Whether the band lies under the column that reaches further down than the others, clear of their sides."""
-    bottoms = [_bottom(column) for column in columns]
-    longest = bottoms.index(max(bottoms))
-    if any(bottoms[longest] - bottom < _BAND_GAP * unit for number, bottom in enumerate(bottoms) if number != longest):
-        return False
-    left = _right(columns[longest - 1]) if longest > 0 else float("-inf")
-    right = _left(columns[longest + 1]) if longest + 1 < len(columns) else float("inf")
-    return left < _left(band) and _right(band) < right
-
-
-def _text_columns(boxes: tuple[TextBox, ...], unit: float) -> list[tuple[TextBox, ...]]:
-    """The boxes' columns, left to right, when they are set in columns of body text; otherwise none."""
-    columns = _columns(boxes, unit)
-    if len(columns) > 1 and all(_body_text(column) and _lined_up(column, unit) for column in columns):
-        return columns
-    return []
-
-
-def _gutters(columns: list[tuple[TextBox, ...]]) -> list[tuple[float, float]]:
-    """Where the gutters between the columns run across the page, left to right."""
-    return [(_right(before), _left(after)) for before, after in zip(columns, columns[1:])]
-
-
-def _columns(band: tuple[TextBox, ...], unit: float) -> list[tuple[TextBox, ...]]:
-    """The band cut at its gutters, left to right; a piece of too few lines is joined to
-    the piece across the narrower gutter beside it."""
-    pieces = _cut(band, 0, _GUTTER * unit)
-    while len(pieces) > 1:
-        short = [number for number, piece in enumerate(pieces) if len(_printed_lines(piece)) < _COLUMN_LINES]
-        if not short:
-            break
-        number = short[0]
-        after = number + 1 < len(pieces) and (
-            number == 0 or _gutter(pieces[number], pieces[number + 1]) < _gutter(pieces[number - 1], pieces[number])
-        )
-        first = number if after else number - 1
-        pieces[first : first + 2] = [pieces[first] + pieces[first + 1]]
-    return pieces
-
-
-def _gutter(before: tuple[TextBox, ...], after: tuple[TextBox, ...]) -> float:
-    return _left(after) - _right(before)
-
-
-def _left(boxes: tuple[TextBox, ...]) -> float:
-    return min(box.box[0] for box in boxes)
-
-
-def _right(boxes: tuple[TextBox, ...]) -> float:
-    return max(box.box[2] for box in boxes)
-
-
-def _bottom(boxes: tuple[TextBox, ...]) -> float:
-    return max(box.box[3] for box in boxes)
-
-
-def _body_text(column: tuple[TextBox, ...]) -> bool:
-    """Whether the column reads as body text: long lines, mostly not digits, unlike a column of amounts."""
-    lines = ["".join("".join(box.text for box in line).split()) for line in _printed_lines(column)]
-    digits = sum(len(run) for line in lines for run in re.findall(DIGITS, line))
-    return median(map(len, lines)) >= _BODY_LINE and 2 * digits < sum(map(len, lines))
-
-
-def _lined_up(column: tuple[TextBox, ...], unit: float) -> bool:
-    """Whether most of the column's lines start at one place, or centre on one when set
-    centred, as a column's lines do; not wherever holes in the lines happen to end."""
-    lines = _printed_lines(column)
-    starts = [line[0].box[0] for line in lines]
-    centres = [(line[0].box[0] + line[-1].box[2]) / 2 for line in lines]
-    return any(
-        2 * sum(abs(place - median(places)) < _LINED_UP * unit for place in places) > len(places)
-        for places in (starts, centres)
-    )
-
-
-def _cut(boxes: tuple[TextBox, ...], axis: int, gap: float) -> list[tuple[TextBox, ...]]:
-    """The boxes cut where they leave a stretch at least `gap` wide free of boxes: across
-    the page (axis 0), into columns, or down it (axis 1), into bands."""
-    groups: list[list[TextBox]] = []
-    reach = 0.0
-    for box in sorted(boxes, key=lambda box: box.box[axis]):
-        start, end = box.box[axis], box.box[axis + 2]
-        if groups and start - reach < gap:
-            groups[-1].append(box)
-            reach = max(reach, end)
-        else:
-            groups.append([box])
-            reach = end
-    return [tuple(group) for group in groups]
+    return reading_parts(boxes, median(_height(box) for box in read)) if read else [boxes]
 
 
 def _turned_row(row: Row, turn: int, page: PageRows) -> Row:
@@ -637,17 +481,6 @@ def _turned_row(row: Row, turn: int, page: PageRows) -> Row:
 def _placed(row: Row, across: float, down: float) -> Row:
     """The row moved to the same share of a page `across` times as wide and `down` times as tall."""
     return replace(row, x0=row.x0 * across, y0=row.y0 * down, x1=row.x1 * across, y1=row.y1 * down)
-
-
-def _printed_lines(boxes: tuple[TextBox, ...]) -> list[list[TextBox]]:
-    """Boxes grouped into printed lines, top to bottom, each line left to right."""
-    lines: list[list[TextBox]] = []
-    for box in sorted((box for box in boxes if box.text.strip()), key=_centre):
-        if lines and abs(_centre(box) - _centre(lines[-1][0])) <= _SAME_LINE * _height(lines[-1][0]):
-            lines[-1].append(box)
-        else:
-            lines.append([box])
-    return [sorted(line, key=lambda box: box.box[0]) for line in lines]
 
 
 def _row(line: list[TextBox], scale: float, size: float) -> Row:

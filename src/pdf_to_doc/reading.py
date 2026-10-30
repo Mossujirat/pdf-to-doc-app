@@ -12,6 +12,7 @@ import numpy as np
 import numpy.typing as npt
 import pymupdf
 
+from pdf_to_doc.columns import in_reading_order
 from pdf_to_doc.layout import EDGE_BAND, PageRows, Row, body_text_share, page_blocks
 from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
 from pdf_to_doc.ocr import OcrEngine, read_page, render, softened
@@ -80,6 +81,9 @@ def read_pdf(
         with_pictures = [index for index, kind in enumerate(kinds) if kind == "text" and rows[index].images]
         for index in with_pictures:
             rows[index] = replace(rows[index], images=kept_pictures(pages[index]))
+    text_pages = [index for index, kind in enumerate(kinds) if kind == "text"]
+    for index in text_pages:
+        rows[index] = in_reading_order(rows[index])
     ocr_pages = [index for index, kind in enumerate(kinds) if kind == "ocr"]
     engines: dict[int, str] = {}
     # The engine lives only as long as this call: an engine holds what it last read.

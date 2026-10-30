@@ -791,17 +791,23 @@ COVER_SHEET = [
 ]
 
 
-def column_lines(columns: Sequence[list[list[str]]], xs: Sequence[float], size: float, pitch: float) -> list[Line]:
-    """Each column's paragraphs line under line from the same top, a blank line between them."""
-    lines: list[Line] = []
-    for x, paragraphs in zip(xs, columns, strict=True):
+def column_lines(
+    columns: Sequence[list[list[str]]], xs: Sequence[float], size: float, pitch: float, *, across: bool = False
+) -> list[Line]:
+    """Each column's paragraphs line under line from the same top, a blank line between them.
+    Drawn one column after the other, as Word draws them, or with `across`, a row at a time
+    across the columns, as some PDF writers do."""
+    placed: list[tuple[int, int, Styled]] = []  # each line's row, its column, and the line
+    for column, (x, paragraphs) in enumerate(zip(xs, columns, strict=True)):
         slot = 0
         for paragraph in paragraphs:
             for text in paragraph:
-                lines.append(Styled(text, size=size, x=x, y=150 + slot * pitch))
+                placed.append((slot, column, Styled(text, size=size, x=x, y=150 + slot * pitch)))
                 slot += 1
             slot += 1
-    return lines
+    if across:
+        placed.sort(key=lambda line: line[:2])
+    return [line for _, _, line in placed]
 
 
 TWO_COLUMN_DOCUMENTS = (
@@ -846,6 +852,22 @@ TWO_COLUMN_DOCUMENTS = (
                     seed=13,
                 ),
                 reference=f"{COVER_SHEET_INTRO}\n\n" + "\n".join(f"{label} {value}" for label, value in COVER_SHEET),
+            ),
+        ),
+    ),
+    # The scans' first page as a text page, drawn line by line across its columns.
+    SyntheticDocument(
+        name="two-column-drawn-across",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    Styled(THAI_COLUMNS_TITLE, size=18, bold=True, y=95, centered=True),
+                    *column_lines(THAI_COLUMNS, xs=(72, 311), size=14, pitch=21, across=True),
+                ],
+                reference="\n\n".join(
+                    [THAI_COLUMNS_TITLE, *("".join(paragraph) for column in THAI_COLUMNS for paragraph in column)]
+                ),
             ),
         ),
     ),
