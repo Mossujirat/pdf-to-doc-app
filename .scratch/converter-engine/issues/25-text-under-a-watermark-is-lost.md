@@ -6,7 +6,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** a 110-page Thai contract among the local samples in `docs/example_pdf/`. Its attachments are scans pasted into Word pages. It was converted on 2026-10-23 with the user's permission.
 - **A certificate's pages:** on six of them, the text under the watermark was lost. On one page, five of eight numbered items came out as fragments or not at all.
@@ -34,3 +34,8 @@
 
   Whether the blur, or something aimed at the watermark, should apply to scans is left to this ticket's triage.
 - **The detector's box score is a likely stage.** Ticket 33 found that PaddleOCR drops a region whose mean probability over its enclosing rectangle is under `box_thresh` (0.6). That held for crisp pages; for watermarked scans it is not yet measured.
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

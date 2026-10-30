@@ -24,3 +24,10 @@ They waste AI tokens and break the text between pages.
 - **Check again after ticket 19.** Every page of this sample is rotated, and the edge bands depend on positions on the page.
 - How OCR rows can match while their text differs slightly, for example by similarity rather than equality, and only within the edge bands.
 - Whether page numbers need their own rule on OCR pages, where a misread digit breaks the "same distance from the PDF page number" test.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

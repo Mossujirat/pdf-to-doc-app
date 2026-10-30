@@ -6,7 +6,7 @@
 
 **Blocked by:** 08, 09, 33
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Branch:** `feat/ocr`
 
@@ -169,3 +169,9 @@ The decisions below replace the sections "If PP-StructureV3 is good enough" and 
 - sideways column headers (ticket 29);
 - ticks in cells (ticket 26);
 - the structure of unruled tables in default mode.
+
+**2026-10-30, done**
+
+- **Built** as the feature `.scratch/tables-on-ocr-pages/`, tickets 01–09. Merged into `main` in PR #17 (`6e85aa5`), with ticket 33.
+- **The final check on the samples is in that feature's ticket 09:** 60 tables and 6 incomplete tables over the three samples, counts only.
+- **Left over:** ticket 10 of that feature (row labels beside a ruled table), as well as what this ticket left out above.

@@ -11,7 +11,7 @@ In a contract these are amounts, codes and names, where a wrong character change
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** a five-page English agreement among the local samples in `docs/example_pdf/`, converted on 2026-10-23 with the user's permission. It was printed to PDF with its text drawn as shapes, so every page is read with OCR. All four uncertain spots the converter marked are handwriting, and none of them is a misread.
 
@@ -37,3 +37,10 @@ English words and numbers meet only the second signal, and these misreads were r
 - **English words:** whether to check them against an English word list, as Thai words are, and which list, since it must be AGPL-compatible.
 - **Case:** whether a word whose case changes in the middle, such as "aBC", should be marked.
 - **Measuring it:** synthetic English scans in the corpus with amounts and codes, so that the harness measures this.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

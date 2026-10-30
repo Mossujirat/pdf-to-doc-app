@@ -6,7 +6,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** a text page exported from Word in a 110-page Thai contract among the local samples in `docs/example_pdf/`, converted on 2026-10-23 with the user's permission. Text pages are otherwise the most faithful part of the output.
 
@@ -17,3 +17,10 @@
   - the row before ends with a word that introduces a reference, such as "ข้อ", "ตามข้อ", "มาตรา" or "clause";
   - the row starts at the indent of the paragraph's wrapped lines, not where its items start.
 - **A synthetic fixture:** a wrapped cross-reference in the corpus, with its reference text.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

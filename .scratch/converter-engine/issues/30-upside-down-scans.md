@@ -6,7 +6,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** none of the local samples yet. Opened while grilling ticket 21 (2026-10-24), which turns only pages whose content is a quarter turn from the page.
 
@@ -22,3 +22,10 @@
 - Whether this is worth doing before a sample shows it.
 - How to find such a page: the confidence and word-list signs on what OCR already read, or the classifier on a page cropped to its ink.
 - What it may cost on upright pages, which ticket 21 keeps at nothing.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

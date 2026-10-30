@@ -6,7 +6,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** synthetic pages only, built while grilling ticket 18 on 2026-10-24. None of the local samples has shown it: every case of text read across columns there was on OCR pages.
 
@@ -38,3 +38,10 @@
 - Whether to wait until a real source file shows the fault.
 - Whether to apply ticket 18's method to text-layer rows, with its guards, or to use `TEXT_SEGMENT` with a guard of its own.
 - How to keep tab-stop rows and unruled lists reading row by row, under the zero-broken-text gate.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

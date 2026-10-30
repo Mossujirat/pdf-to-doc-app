@@ -23,3 +23,10 @@ Both are marked uncertain, so nothing false is passed off as certain. But the Ma
   - repeated edge images are dropped as page furniture;
   - they are blanked out of the page image before OCR reads it, so that their ink is not read as text.
 - **How this meets kept images (the next feature).** There, pictures on text pages are shown as themselves in DOCX, and pages whose text is drawn as shapes are still read with OCR. Their pictures could be shown as themselves too.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

@@ -36,3 +36,8 @@ The ticks vanish from the output, so the choice is lost. Sometimes a tick comes 
   - A cell whose only content is a lost tick comes out empty, in its place.
   - A tick read as "V" or "√" lands in its cell, marked uncertain.
 - Ticks themselves stay with this ticket.
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

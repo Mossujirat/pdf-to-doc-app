@@ -14,7 +14,7 @@ The file got 1,319 marks over 91 OCR pages, about 14 a page. When many marks fal
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** a 110-page Thai contract among the local samples in `docs/example_pdf/`, whose attachments are scans pasted into Word pages, converted on 2026-10-23 with the user's permission. Five reviewers compared every page with its image.
 
@@ -26,3 +26,10 @@ The file got 1,319 marks over 91 OCR pages, about 14 a page. When many marks fal
   - names that the text layer of the same file spells the same way.
 - **Joining segments:** whether to judge a word after joining segments that the segmenter split, so that a misread splitting into real words is caught.
 - **Measuring it:** the harness should measure how many marks fall on correct text, besides the share of errors left unmarked, which ticket 17 records. Both need real Thai scans with reference text (tickets 16 and 17).
+
+## Comments
+
+**2026-10-30, triage**
+
+- **In the next deploy:** the user chose this ticket among the 6 to be done before it. See `.scratch/next-deploy.md`.
+- **Next:** `/grill-with-docs`, then `/implement`.

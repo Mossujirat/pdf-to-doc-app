@@ -39,3 +39,10 @@ An account or registry number lands in the wrong text, and a signer's name can b
 **To decide at triage**
 - Which cue to use for each layout, and whether the signature cue is reliable on real signing pages.
 - How the title beside each signature should come out. Today the right-hand signer's title came first on one sample.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.
