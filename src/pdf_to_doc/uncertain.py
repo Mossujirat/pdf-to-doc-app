@@ -76,10 +76,12 @@ def _trimmed(text: str, start: int, end: int) -> Span:
 
 def _merged(text: str, spans: list[Span]) -> tuple[Span, ...]:
     """The spans in order, empty ones dropped, and those that touch, overlap or lie only
-    whitespace apart made one."""
+    spaces apart made one. A line break kept in a table's cell parts its items, so stretches
+    either side of it stay two."""
     merged: list[Span] = []
     for start, end in sorted(span for span in spans if span[0] < span[1]):
-        if merged and (start <= merged[-1][1] or text[merged[-1][1] : start].isspace()):
+        between = text[merged[-1][1] : start] if merged else ""
+        if merged and (start <= merged[-1][1] or (between.isspace() and "\n" not in between)):
             merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
         else:
             merged.append((start, end))

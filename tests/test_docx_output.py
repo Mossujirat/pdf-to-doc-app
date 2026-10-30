@@ -194,6 +194,27 @@ def test_merged_cells_are_merged_in_the_word_table() -> None:
     ]
 
 
+def test_sub_rows_are_merged_and_items_keep_their_line_breaks_in_the_word_table() -> None:
+    grid = Grid(
+        rows=(
+            ("หมวด", "รายการ", "จำนวนเงิน"),
+            ("ค่าดำเนินงาน", "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร", "12,000\n3,500"),
+            ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900"),
+        ),
+        widths=(110, 210, 100),
+    )
+
+    [[table]] = read_docx(docx_of([grid])).pages
+
+    assert isinstance(table, Table)
+    assert cells(table) == [
+        [Cell("หมวด"), Cell("รายการ"), Cell("จำนวนเงิน")],
+        [Cell("ค่าดำเนินงาน", rowspan=2), Cell("ค่าวัสดุสำนักงาน"), Cell("12,000")],
+        [Cell("ค่าถ่ายเอกสาร"), Cell("3,500")],
+        [Cell("ค่าครุภัณฑ์"), Cell("เครื่องคอมพิวเตอร์\nเครื่องพิมพ์"), Cell("53,900")],
+    ]
+
+
 def test_text_after_a_table_keeps_clear_of_its_bottom_line() -> None:
     # Found in real Word: the next line sat on the table's bottom border.
     grid = Grid(rows=(("งวดที่", "จำนวนเงิน"), ("๑", "50,000")), widths=(150, 150))
@@ -215,6 +236,23 @@ def test_two_tables_in_a_row_stay_two_tables() -> None:
     assert [shown(block) for block in page] == [
         [[Cell("งวดที่"), Cell("จำนวนเงิน")], [Cell("๑"), Cell("50,000")]],
         [[Cell("รายการ"), Cell("หมายเหตุ")], [Cell("ค่าวัสดุ"), Cell("เบิกได้")]],
+    ]
+    body = list(docx.Document(io.BytesIO(output)).element.body)
+    assert not any(
+        before.tag == after.tag == qn("w:tbl") for before, after in zip(body, body[1:])
+    ), "nothing between the tables"
+
+
+def test_a_table_that_ends_a_page_and_one_that_starts_the_next_stay_two_tables() -> None:
+    # Found in real Word, on a scanned contract: the two were joined into one.
+    first = Grid(rows=(("งวดที่", "จำนวนเงิน"), ("๑", "50,000")), widths=(150, 150))
+    second = Grid(rows=(("รายการ", "หมายเหตุ"), ("ค่าวัสดุ", "เบิกได้")), widths=(150, 150))
+
+    output = docx_of(["หน้าแรก", first], [second])
+
+    assert [[shown(block) for block in page] for page in read_docx(output).pages] == [
+        ["หน้าแรก", [[Cell("งวดที่"), Cell("จำนวนเงิน")], [Cell("๑"), Cell("50,000")]]],
+        [[[Cell("รายการ"), Cell("หมายเหตุ")], [Cell("ค่าวัสดุ"), Cell("เบิกได้")]]],
     ]
     body = list(docx.Document(io.BytesIO(output)).element.body)
     assert not any(

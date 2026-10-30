@@ -36,4 +36,4 @@ def trusted(page: PageRows) -> bool:
 
 
 def _cell_lines(page: PageRows) -> list[str]:
-    return [line for table in page.tables for row in table.rows for cell in row for line in cell.lines]
+    return [line.text for table in page.tables for row in table.rows for cell in row for line in cell.lines]

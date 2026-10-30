@@ -8,7 +8,7 @@ Run `uv run python corpus/generate.py` after changing a document below, and comm
 
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +19,7 @@ from pdf_builder import (
     SARABUN,
     TOP,
     Cell,
+    Drawn,
     Grid,
     Line,
     Picture,
@@ -40,7 +41,7 @@ DEGRADED = Path(__file__).parent / "degraded"
 
 @dataclass(frozen=True)
 class SyntheticPage:
-    lines: Sequence[Line] | Scan | Rotated
+    lines: Sequence[Line] | Scan | Rotated | Drawn
     reference: str
 
 
@@ -51,6 +52,30 @@ class SyntheticDocument:
     pages: tuple[SyntheticPage, ...]
     # Characters the fonts' text layer reports as something else, as broken or legacy fonts do.
     remap: dict[str, str] | None = None
+
+
+# A coarse ruled table, as some budgets are drawn: several printed lines share one cell.
+# Items stacked beside their amounts are sub-rows; items beside one total keep their
+# line breaks; a wrapped description is one sentence.
+COARSE_TABLE = Grid(
+    rows=(
+        ("หมวดรายจ่าย", "รายการ", "จำนวนเงิน"),
+        ("ค่าดำเนินงาน", "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร\nค่าไปรษณีย์", "12,000\n3,500\n1,200"),
+        ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900"),
+        ("ค่าเดินทาง", "ค่าเช่ารถและค่าน้ำมันเชื้อเพลิง\nสำหรับการลงพื้นที่", "15,000"),
+    ),
+    widths=(110, 210, 100),
+)
+COARSE_TABLE_REFERENCE = (
+    "<table>\n"
+    "<tr><td>หมวดรายจ่าย</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n"
+    '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>\n'
+    "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
+    "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
+    "<tr><td>ค่าครุภัณฑ์</td><td>เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์</td><td>53,900</td></tr>\n"
+    "<tr><td>ค่าเดินทาง</td><td>ค่าเช่ารถและค่าน้ำมันเชื้อเพลิงสำหรับการลงพื้นที่</td><td>15,000</td></tr>\n"
+    "</table>"
+)
 
 
 DOCUMENTS = (
@@ -210,7 +235,8 @@ DOCUMENTS = (
                     Grid(
                         rows=(
                             ("งวดที่", "กำหนดส่งงาน", "จำนวนเงิน"),
-                            ("๑", "ส่งรายงานความก้าว\nหน้าฉบับที่หนึ่ง", "50,000"),
+                            # Wrapped as Word wraps it: the next word would not fit on the first line.
+                            ("๑", "ส่งรายงานความก้าวหน้าฉบับ\nที่หนึ่ง", "50,000"),
                             ("๒", "ส่งรายงานฉบับสมบูรณ์", "75,000"),
                         ),
                         widths=(70, 200, 100),
@@ -242,6 +268,16 @@ DOCUMENTS = (
                     "</table>\n\n"
                     "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"
                 ),
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="coarse-table",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=["งบประมาณโครงการแยกตามหมวดรายจ่าย", COARSE_TABLE],
+                reference=f"งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n{COARSE_TABLE_REFERENCE}",
             ),
         ),
     ),
@@ -334,6 +370,12 @@ CLAUSES = [
     "หากผู้รับทุนไม่สามารถดำเนินการได้ตามกำหนดเวลา",
     "ให้แจ้งผู้ให้ทุนเป็นหนังสือก่อนครบกำหนดอย่างน้อยสามสิบวัน",
 ]
+# The clauses and a line with marks over its first and last words. An OCR page that is
+# not a scan is rendered from the PDF, crisp; read crisp, this page lost its fifth line.
+CRISP_PAGE = [*CLAUSES, "ผู้รับทุนต้องส่งงานตามกำหนดเวลาในตารางนี้", *CLAUSES[:2]]
+# A font whose ToUnicode map reports sara aa as sara am, so that "การ" reads "กำร": the
+# page looks right, but its text layer cannot be trusted, so it is read with OCR.
+KAR_AS_KAM = {chr(0x0E32): chr(0x0E33)}
 
 TEXT_LAYER_DOCUMENTS = (
     # A legacy Windows Thai font: marks over tall consonants and below the line
@@ -356,13 +398,20 @@ TEXT_LAYER_DOCUMENTS = (
             chr(0x0E0D): chr(0xF70F),  # yo ying without its lower part
         },
     ),
-    # A font whose ToUnicode map reports sara aa as sara am: "การ" reads "กำร".
-    # The page looks right, so it is read with OCR.
     SyntheticDocument(
         name="wrong-unicode-map",
         font_file=SARABUN,
-        pages=(SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),),
-        remap={chr(0x0E32): chr(0x0E33)},
+        pages=(
+            SyntheticPage(lines=CLAUSES, reference="".join(CLAUSES)),
+            SyntheticPage(lines=CRISP_PAGE, reference="".join(CRISP_PAGE)),
+        ),
+        remap=KAR_AS_KAM,
+    ),
+    # Text drawn as shapes, with no text layer, as some PDF printers write it: read with OCR.
+    SyntheticDocument(
+        name="text-drawn-as-shapes",
+        font_file=SARABUN,
+        pages=(SyntheticPage(lines=Drawn(CRISP_PAGE), reference="".join(CRISP_PAGE)),),
     ),
 )
 
@@ -467,7 +516,7 @@ PRICES = (
     ("3", "ค่าเดินทางไปประชุม", "5 ครั้ง", "2,500.00", "12,500.00"),
 )
 # A price schedule as wide as a landscape sheet, and what a reader sees on it.
-PRICE_SCHEDULE: list[Line] = [
+PRICE_SCHEDULE: list[str | Grid] = [
     "ตารางราคา (Price Schedule)",
     Grid(rows=PRICES, widths=(60, 230, 100, 130, 130)),
     "รวมทั้งสิ้น 138,500.00 บาท",
@@ -490,6 +539,168 @@ SIDEWAYS_DOCUMENTS = (
         pages=(
             SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=7, sideways=90), reference=PRICE_SCHEDULE_REFERENCE),
             SyntheticPage(lines=scanned(PRICE_SCHEDULE, seed=8, sideways=270), reference=PRICE_SCHEDULE_REFERENCE),
+        ),
+    ),
+)
+
+# Ruled tables as contracts and their attachments hold them, for tables on OCR pages.
+# Wrapped text fills its cell before it wraps, as Word wraps it.
+PAYMENT_SCHEDULE = Grid(
+    rows=(
+        ("งวดที่", "รายละเอียดงานที่ส่งมอบ", "จำนวนเงิน (บาท)"),
+        ("๑", "ส่งแผนการดำเนินงานและรายงาน\nการทบทวนวรรณกรรมที่เกี่ยวข้อง", Cell("150,000", align="right")),
+        ("๒", "ส่งรายงานความก้าวหน้าพร้อมผล\nการทดลองเบื้องต้นของต้นแบบ", Cell("250,000", align="right")),
+        ("๓", "ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือ\nการใช้งานระบบ", Cell("100,000", align="right")),
+    ),
+    widths=(60, 230, 130),
+)
+PAYMENT_SCHEDULE_REFERENCE = (
+    "| งวดที่ | รายละเอียดงานที่ส่งมอบ | จำนวนเงิน (บาท) |\n"
+    "| --- | --- | --- |\n"
+    "| ๑ | ส่งแผนการดำเนินงานและรายงานการทบทวนวรรณกรรมที่เกี่ยวข้อง | 150,000 |\n"
+    "| ๒ | ส่งรายงานความก้าวหน้าพร้อมผลการทดลองเบื้องต้นของต้นแบบ | 250,000 |\n"
+    "| ๓ | ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือการใช้งานระบบ | 100,000 |"
+)
+BUDGET = Grid(
+    rows=(
+        (Cell("รายการ", rowspan=2), Cell("งบประมาณ (บาท)", colspan=2)),
+        ("ปีที่ 1", "ปีที่ 2"),
+        ("ค่าตอบแทนผู้วิจัย", Cell("240,000", align="right"), Cell("240,000", align="right")),
+        ("ค่าวัสดุและอุปกรณ์", Cell("45,000", align="right"), Cell("30,000", align="right")),
+        ("ค่าเดินทาง", Cell("12,000", align="right"), Cell("-", align="right")),
+    ),
+    widths=(170, 110, 110),
+)
+BUDGET_REFERENCE = (
+    "<table>\n"
+    '<tr><td rowspan="2">รายการ</td><td colspan="2">งบประมาณ (บาท)</td></tr>\n'
+    "<tr><td>ปีที่ 1</td><td>ปีที่ 2</td></tr>\n"
+    "<tr><td>ค่าตอบแทนผู้วิจัย</td><td>240,000</td><td>240,000</td></tr>\n"
+    "<tr><td>ค่าวัสดุและอุปกรณ์</td><td>45,000</td><td>30,000</td></tr>\n"
+    "<tr><td>ค่าเดินทาง</td><td>12,000</td><td>-</td></tr>\n"
+    "</table>"
+)
+DATES = Grid(
+    rows=(("วันลงนามในสัญญา", "วันเริ่มดำเนินงาน", "วันสิ้นสุดโครงการ"), ("1 มีนาคม 2568", "15 มีนาคม 2568", "14 มีนาคม 2569")),
+    widths=(140, 140, 140),
+)
+DATES_REFERENCE = (
+    "| วันลงนามในสัญญา | วันเริ่มดำเนินงาน | วันสิ้นสุดโครงการ |\n"
+    "| --- | --- | --- |\n"
+    "| 1 มีนาคม 2568 | 15 มีนาคม 2568 | 14 มีนาคม 2569 |"
+)
+# A page for each of them, with text around it, and what a reader sees on it.
+RULED_TABLE_PAGES: list[tuple[list[str | Grid], str]] = [
+    (
+        ["ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้", PAYMENT_SCHEDULE, "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"],
+        f"ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้\n\n{PAYMENT_SCHEDULE_REFERENCE}\n\nทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม",
+    ),
+    (
+        ["งบประมาณโครงการแยกตามปีงบประมาณ", BUDGET, "ผู้รับทุนต้องใช้เงินตามหมวดที่ได้รับอนุมัติเท่านั้น"],
+        f"งบประมาณโครงการแยกตามปีงบประมาณ\n\n{BUDGET_REFERENCE}\n\nผู้รับทุนต้องใช้เงินตามหมวดที่ได้รับอนุมัติเท่านั้น",
+    ),
+    (
+        ["ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้", DATES],
+        f"ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้\n\n{DATES_REFERENCE}",
+    ),
+    (
+        ["งบประมาณโครงการแยกตามหมวดรายจ่าย", COARSE_TABLE],
+        f"งบประมาณโครงการแยกตามหมวดรายจ่าย\n\n{COARSE_TABLE_REFERENCE}",
+    ),
+]
+RULED_TABLE_DOCUMENTS = (
+    SyntheticDocument(
+        name="ruled-table-scans",
+        font_file=SARABUN,
+        pages=tuple(
+            SyntheticPage(lines=scanned(lines, seed=21 + number), reference=reference)
+            for number, (lines, reference) in enumerate(RULED_TABLE_PAGES)
+        ),
+    ),
+    # The same pages on OCR pages that are not scans: rendered from the PDF, rules and all.
+    SyntheticDocument(
+        name="ruled-tables-wrong-unicode-map",
+        font_file=SARABUN,
+        pages=tuple(SyntheticPage(lines=lines, reference=reference) for lines, reference in RULED_TABLE_PAGES),
+        remap=KAR_AS_KAM,
+    ),
+    SyntheticDocument(
+        name="ruled-tables-drawn-as-shapes",
+        font_file=SARABUN,
+        pages=tuple(SyntheticPage(lines=Drawn(lines), reference=reference) for lines, reference in RULED_TABLE_PAGES),
+    ),
+)
+
+
+
+def unboxed(grid: Grid, boxed_rows: int = 0) -> Grid:
+    """The table with only its first `boxed_rows` rows boxed: none for a table with no rules."""
+    rows = tuple(
+        tuple(replace(Cell(cell) if isinstance(cell, str) else cell, boxed=number < boxed_rows) for cell in row)
+        for number, row in enumerate(grid.rows)
+    )
+    return replace(grid, rows=rows)
+
+
+# Tables on scans that are seen but not fully ruled. A table whose header alone is boxed comes out
+# as an incomplete table: its label, then its printed lines one by one. A table with no rules at
+# all comes out one line per row with no label, as on text pages.
+PRICE_LIST = Grid(
+    rows=(
+        ("ลำดับ", "รายการ", "จำนวนเงิน (บาท)"),
+        ("1", "ค่าตอบแทนผู้วิจัย", Cell("96,000", align="right")),
+        ("2", "ค่าวัสดุและอุปกรณ์", Cell("30,000", align="right")),
+        ("3", "ค่าเดินทางไปประชุม", Cell("12,500", align="right")),
+    ),
+    widths=(60, 220, 140),
+)
+PRICE_LIST_ROWS = "ลำดับ รายการ จำนวนเงิน (บาท)\n\n1 ค่าตอบแทนผู้วิจัย 96,000\n\n2 ค่าวัสดุและอุปกรณ์ 30,000\n\n3 ค่าเดินทางไปประชุม 12,500"
+UNRULED_DATES = replace(unboxed(DATES), widths=(160, 160, 160))
+PART_RULED_TABLE_DOCUMENTS = (
+    SyntheticDocument(
+        name="boxed-header-table-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    ["ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้", unboxed(PAYMENT_SCHEDULE, 1), "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"],
+                    seed=31,
+                ),
+                reference=(
+                    "ผู้ให้ทุนจะจ่ายเงินทุนเป็นสามงวดตามตารางนี้\n\n[ตารางอาจไม่สมบูรณ์]\n\n"
+                    "งวดที่ รายละเอียดงานที่ส่งมอบ จำนวนเงิน (บาท)\n\n"
+                    "๑ ส่งแผนการดำเนินงานและรายงาน 150,000\n\nการทบทวนวรรณกรรมที่เกี่ยวข้อง\n\n"
+                    "๒ ส่งรายงานความก้าวหน้าพร้อมผล 250,000\n\nการทดลองเบื้องต้นของต้นแบบ\n\n"
+                    "๓ ส่งรายงานฉบับสมบูรณ์พร้อมคู่มือ 100,000\n\nการใช้งานระบบ\n\n"
+                    "ทั้งนี้ไม่รวมภาษีมูลค่าเพิ่ม"
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(["งบประมาณที่ขอรับการสนับสนุนมีดังนี้", unboxed(PRICE_LIST, 1)], seed=32),
+                reference=f"งบประมาณที่ขอรับการสนับสนุนมีดังนี้\n\n[ตารางอาจไม่สมบูรณ์]\n\n{PRICE_LIST_ROWS}",
+            ),
+        ),
+    ),
+    SyntheticDocument(
+        name="unruled-table-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        "งบประมาณที่ขอรับการสนับสนุนมีดังนี้",
+                        unboxed(PRICE_LIST),
+                        "ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้",
+                        UNRULED_DATES,
+                    ],
+                    seed=33,
+                ),
+                reference=(
+                    f"งบประมาณที่ขอรับการสนับสนุนมีดังนี้\n\n{PRICE_LIST_ROWS}\n\n"
+                    "ระยะเวลาดำเนินโครงการเป็นไปตามตารางนี้\n\n"
+                    "วันลงนามในสัญญา วันเริ่มดำเนินงาน วันสิ้นสุดโครงการ\n\n1 มีนาคม 2568 15 มีนาคม 2568 14 มีนาคม 2569"
+                ),
+            ),
         ),
     ),
 )
@@ -622,6 +833,8 @@ ALL_DOCUMENTS = (
     + ROTATED_DOCUMENTS
     + SIDEWAYS_DOCUMENTS
     + TWO_COLUMN_DOCUMENTS
+    + RULED_TABLE_DOCUMENTS
+    + PART_RULED_TABLE_DOCUMENTS
 )
 
 

@@ -8,6 +8,7 @@ from pdf_to_doc.model import (
     DEEPEST_HEADING,
     Block,
     Heading,
+    IncompleteTable,
     KeptImage,
     ListItem,
     PageKind,
@@ -17,8 +18,9 @@ from pdf_to_doc.model import (
     Table,
     TableCell,
 )
-from pdf_to_doc.thai import DIGITS, THAI_CONSONANT, THAI_LETTER, join_lines, repair
+from pdf_to_doc.thai import DIGITS, MARK, THAI_CONSONANT, THAI_LETTER, join_lines, repair
 from pdf_to_doc.uncertain import Piece, uncertain_spans
+from pdf_to_doc.words import first_word
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
 EDGE_BAND = 0.10
@@ -63,15 +65,21 @@ _SIGNATURE_MAX_HEIGHT = 0.2
 _SAME_IMAGE_SIZE = 0.2
 _SAME_IMAGE_PLACE = 36.0
 # Lines whose baselines differ by less than this share of the font size are on one
-# row; a gap wider than this many character widths sets the row out in columns.
+# row; a gap wider than this many character widths sets the row out in columns, on
+# text pages and OCR pages alike.
 _BASELINE_TOLERANCE = 0.3
-_COLUMN_GAP = 2.0
+COLUMN_GAP = 2.0
 # A gap between rows this share of the font size wider than the document's usual
 # line spacing ends a paragraph. The usual spacing counts for at most the cap: in a
 # short document most gaps may be between paragraphs. (Double-spaced text, rare in
 # office documents, therefore splits into one paragraph per line.)
 _PARAGRAPH_GAP = 0.4
 _LINE_GAP_CAP = 0.75
+# Items stacked in two cells of a row are on the same sub-row when the middles of their lines
+# are less than this share of the font size apart. Lines of one sub-row share a baseline, and
+# the next sub-row is a whole line lower, 1.4 font sizes on the corpus's tables.
+_SAME_SUB_ROW = 0.4
+_THAI_MARK = re.compile(MARK)
 
 
 @dataclass(frozen=True)
@@ -95,12 +103,26 @@ class Row:
 
 
 @dataclass(frozen=True)
+class CellLine:
+    """One printed line of a table cell, and where it sits on the page."""
+
+    text: str
+    x0: float
+    x1: float
+    centre: float  # half way down the line
+    size: float
+    # What the line was read from, as a row's pieces: empty on a text page, whose text layer holds it.
+    pieces: tuple[Piece, ...] = ()
+
+
+@dataclass(frozen=True)
 class RawCell:
     """A table cell as printed: its lines of text, before they are joined and repaired."""
 
-    lines: tuple[str, ...]
+    lines: tuple[CellLine, ...]
     rowspan: int = 1
     colspan: int = 1
+    box: tuple[float, float, float, float] | None = None  # its ruled edges (x0, y0, x1, y1)
 
 
 @dataclass(frozen=True)
@@ -111,9 +133,22 @@ class PlacedTable:
     positions its spans reach in the rows and columns after it.
     """
 
+    x0: float
     top: float
+    x1: float
     bottom: float
     rows: tuple[tuple[RawCell, ...], ...]
+
+
+@dataclass(frozen=True)
+class PlacedIncompleteTable:
+    """An incomplete table found on an OCR page, where it sits, and its printed lines as rows."""
+
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+    rows: tuple[Row, ...]
 
 
 @dataclass(frozen=True)
@@ -134,6 +169,7 @@ class PageRows:
     width: float
     height: float
     tables: tuple[PlacedTable, ...] = ()
+    incomplete_tables: tuple[PlacedIncompleteTable, ...] = ()  # on OCR pages only
     images: tuple[PlacedImage, ...] = ()
     # On an OCR page the font size is estimated, so it cannot tell headings apart.
     kind: PageKind = "text"
@@ -156,17 +192,47 @@ def page_blocks(pages: list[PageRows]) -> list[tuple[Block, ...]]:
 
 
 def _in_reading_order(groups: list[list[Row]], page: PageRows, levels: dict[float, int]) -> tuple[Block, ...]:
-    """The page's blocks, with each table and image placed before the first text that starts below it."""
-    placed: list[tuple[float, Block]] = [(table.top, _table(table)) for table in page.tables]
-    placed += [(image.top, placeholder) for image in page.images if (placeholder := _placeholder(image, page))]
-    pending = sorted(placed, key=lambda item: item[0])
+    """The page's blocks, with each image placed before the first text that starts below it, and
+    each table, incomplete ones too, in the text of its own column (see `_table_place`)."""
+    placed: list[tuple[int, float, Block]] = [(_table_place(table, groups), table.top, _table(table)) for table in page.tables]
+    placed += [
+        (_table_place(table, groups), table.top, _incomplete_table(table)) for table in page.incomplete_tables
+    ]
+    placed += [
+        (_place(image.top, groups), image.top, placeholder)
+        for image in page.images
+        if (placeholder := _placeholder(image, page))
+    ]
+    placed.sort(key=lambda item: item[:2])
     blocks: list[Block] = []
-    for group in groups:
-        while pending and pending[0][0] <= group[0].y0:
-            blocks.append(pending.pop(0)[1])
+    for index, group in enumerate(groups):
+        while placed and placed[0][0] <= index:
+            blocks.append(placed.pop(0)[2])
         blocks.append(_block(group, levels))
-    blocks.extend(block for _, block in pending)
+    blocks.extend(block for *_, block in placed)
     return tuple(blocks)
+
+
+def _place(top: float, groups: list[list[Row]]) -> int:
+    """Where something whose top is at `top` goes among the groups: before the first that starts below it."""
+    return next((index for index, group in enumerate(groups) if top <= group[0].y0), len(groups))
+
+
+def _table_place(table: PlacedTable | PlacedIncompleteTable, groups: list[list[Row]]) -> int:
+    """Where the table goes among the groups, which are in reading order, a column at a time on a page
+    set in columns: before the first that starts below its top and lies under it, or else after the
+    last above it that does, so that it is read in its own column. A table under no text is placed
+    by its top alone."""
+    under = [index for index, group in enumerate(groups) if any(_across(table, row) for row in group)]
+    below = [index for index in under if table.top <= groups[index][0].y0]
+    if below:
+        return below[0]
+    return under[-1] + 1 if under else _place(table.top, groups)
+
+
+def _across(table: PlacedTable | PlacedIncompleteTable, row: Row) -> bool:
+    """Whether the row and the table overlap across the page, one above the other."""
+    return table.x0 < row.x1 and row.x0 < table.x1
 
 
 def _behind_text(image: PlacedImage, rows: tuple[Row, ...]) -> bool:
@@ -209,13 +275,95 @@ def _next_to(image: PlacedImage, row: Row) -> bool:
 
 
 def _table(placed: PlacedTable) -> Table:
-    """Join each cell's printed lines with the Thai line rules, and repair them."""
-    return Table(
-        rows=tuple(
-            tuple(TableCell(repair(join_lines(list(cell.lines))), cell.rowspan, cell.colspan) for cell in row)
-            for row in placed.rows
-        )
+    """The table as a reader takes it: items stacked in a row's cells that line up across them
+    are sub-rows, and each cell's printed lines are joined into its items. What OCR read in a
+    cell can be uncertain, as in a paragraph."""
+    return Table(rows=tuple(tuple(_table_cell(cell) for cell in row) for row in _with_sub_rows(placed.rows)))
+
+
+def _incomplete_table(placed: PlacedIncompleteTable) -> IncompleteTable:
+    """The incomplete table as a reader takes it: each printed line a paragraph of its own."""
+    texts = [(repair(row.text), row) for row in placed.rows]
+    return IncompleteTable(rows=tuple(Paragraph(text, _uncertain(text, [row])) for text, row in texts if text))
+
+
+def _table_cell(cell: RawCell) -> TableCell:
+    text = _cell_text(cell)
+    uncertain = uncertain_spans(text, [piece for line in cell.lines for piece in line.pieces])
+    return TableCell(text, cell.rowspan, cell.colspan, uncertain)
+
+
+def _with_sub_rows(rows: tuple[tuple[RawCell, ...], ...]) -> list[list[RawCell]]:
+    """The rows, each row whose cells stack items that line up across them split into a sub-row
+    per item. The row's other cells, and the cells above that reach into it, span its sub-rows."""
+    splits = [_sub_rows(row) for row in rows]
+    counts = [count for count, _ in splits]
+    split_rows: list[list[RawCell]] = []
+    for row_index, (row, (count, lined_up)) in enumerate(zip(rows, splits)):
+        parts: list[list[RawCell]] = [[] for _ in range(count)]
+        for cell_index, cell in enumerate(row):
+            if cell_index in lined_up:
+                for part, line in zip(parts, cell.lines):
+                    part.append(replace(cell, lines=(line,)))
+            else:
+                parts[0].append(replace(cell, rowspan=sum(counts[row_index : row_index + cell.rowspan])))
+        split_rows += parts
+    return split_rows
+
+
+def _sub_rows(row: tuple[RawCell, ...]) -> tuple[int, set[int]]:
+    """How many sub-rows the row splits into, and which of its cells hold them: two or more cells
+    that each stack as many items, more than one, on lines that line up across them. A cell whose
+    lines wrap holds a sentence, not items. (1, no cells) when the row does not split."""
+    itemised = [
+        cell_index
+        for cell_index, cell in enumerate(row)
+        if cell.rowspan == 1
+        and len(cell.lines) > 1
+        and not any(_wraps(line, following, cell) for line, following in zip(cell.lines, cell.lines[1:]))
+    ]
+    for cell_index in itemised:
+        lined_up = {other for other in itemised if _lines_up(row[cell_index], row[other])}
+        if len(lined_up) > 1:
+            return len(row[cell_index].lines), lined_up
+    return 1, set()
+
+
+def _lines_up(cell: RawCell, other: RawCell) -> bool:
+    return len(cell.lines) == len(other.lines) and all(
+        abs(line.centre - beside.centre) <= _SAME_SUB_ROW * max(line.size, beside.size)
+        for line, beside in zip(cell.lines, other.lines)
     )
+
+
+def _cell_text(cell: RawCell) -> str:
+    """The cell's printed lines as a reader takes them: a line that wraps joins the next by the
+    Thai line rules, and a line that ends short of its cell ends an item, which keeps its break."""
+    items: list[list[str]] = []
+    for previous, line in zip((None, *cell.lines), cell.lines):
+        if previous and _wraps(previous, line, cell):
+            items[-1].append(line.text)
+        else:
+            items.append([line.text])
+    return "\n".join(text for text in (repair(join_lines(item)) for item in items) if text)
+
+
+def _wraps(line: CellLine, following: CellLine, cell: RawCell) -> bool:
+    """Whether the line wraps into the next, as Word wraps a line: the line and the next line's
+    first word would not have fitted across the cell together. Judged by widths, so it holds
+    for text set flush left, flush right or centred. The cell's padding is the least room its
+    text leaves at either edge, at most half a font size, as short centred lines leave more."""
+    assert cell.box, "a cell that holds lines has a box"
+    left, _, right, _ = cell.box
+    padding = min(min(each.x0 for each in cell.lines) - left, right - max(each.x1 for each in cell.lines), line.size / 2)
+    return line.x1 - line.x0 + _first_word_width(following) > right - left - 2 * max(padding, 0.0)
+
+
+def _first_word_width(line: CellLine) -> float:
+    """How wide the line's first word is, by its share of the line's letters. Marks above and
+    below the letters take no room."""
+    letters = len(_THAI_MARK.sub("", line.text.strip()))
+    return (line.x1 - line.x0) * len(_THAI_MARK.sub("", first_word(line.text))) / letters if letters else 0.0
 
 
 def _heading_levels(groups: list[list[Row]], body_size: float) -> dict[float, int]:
@@ -250,7 +398,7 @@ def _join_on_baselines(rows: tuple[Row, ...]) -> tuple[Row, ...]:
                 y0=min(previous.y0, row.y0),
                 y1=max(previous.y1, row.y1),
                 bold=previous.bold and row.bold,
-                in_columns=previous.in_columns or row.x0 - previous.x1 > _COLUMN_GAP * row.size,
+                in_columns=previous.in_columns or row.x0 - previous.x1 > COLUMN_GAP * row.size,
                 pieces=_pieces(previous) + _pieces(row) if previous.pieces or row.pieces else (),
             )
         else:
@@ -368,9 +516,10 @@ def _group_rows(page: PageRows, line_gap: float) -> list[list[Row]]:
     right_edge = page.width - min((row.x0 for row in rows), default=0.0)
     groups: list[list[Row]] = []
     for row in rows:
-        # A paragraph never runs across a table that starts between two of its rows.
+        # A paragraph never runs across a table that starts between two of its rows, under them;
+        # beside a table in the next column, it carries on.
         table_between = bool(groups) and any(
-            groups[-1][-1].y0 < table.top <= row.y0 for table in page.tables
+            groups[-1][-1].y0 < table.top <= row.y0 and _across(table, row) for table in page.tables
         )
         if groups and not table_between and _continues(groups[-1], row, page, right_edge, line_gap):
             groups[-1].append(row)

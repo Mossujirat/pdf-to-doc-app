@@ -72,6 +72,8 @@ def _total_dict(report: Report) -> dict[str, Any]:
         "broken": _broken_dict(report.broken),
         "uncertain": report.uncertain,
         "unmarked_share": report.unmarked_share,
+        "cells": report.cells,
+        "cells_right": report.cells_right,
     }
 
 
@@ -90,6 +92,8 @@ def _page_dict(page: PageReport) -> dict[str, Any]:
         "unmarked_edits": score.unmarked_edits,
         "marked_characters": score.marked_characters,
         "broken": _broken_dict(score.broken),
+        "cells": score.cells,
+        "cells_right": score.cells_right,
     }
 
 
@@ -98,8 +102,9 @@ def _broken_dict(broken: BrokenText) -> dict[str, int]:
 
 
 _BROKEN_KINDS = [field.name for field in fields(BrokenText)]
-# "unmarked" is the share of edits that fall outside uncertain text.
-_COLUMNS = ["source", "page", "kind", "engine", "CER", "Thai CER", *_BROKEN_KINDS, "broken", "uncertain", "unmarked"]
+# "unmarked" is the share of edits that fall outside uncertain text; "cells", the reference
+# tables' cells that the output holds in the same place, out of all of them.
+_COLUMNS = ["source", "page", "kind", "engine", "CER", "Thai CER", *_BROKEN_KINDS, "broken", "uncertain", "unmarked", "cells"]
 
 
 def format_table(report: Report) -> str:
@@ -123,6 +128,7 @@ def _measures(report: Report) -> list[str]:
         str(report.broken.total),
         str(report.uncertain),
         f"{report.unmarked_share:.2f}",
+        f"{report.cells_right}/{report.cells}" if report.cells else "-",
     ]
 
 

@@ -27,3 +27,12 @@ The ticks vanish from the output, so the choice is lost. Sometimes a tick comes 
   - Or as a placeholder. A new placeholder kind is a glossary change.
 - **When unsure:** a tick the converter cannot confirm is uncertain text.
 - **Text pages:** whether boxes there need anything. Word exports boxes as characters, which already come through.
+
+## Comments
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- Once ticket 14 is done, a ruled table on an OCR page comes out as a table.
+  - A cell whose only content is a lost tick comes out empty, in its place.
+  - A tick read as "V" or "√" lands in its cell, marked uncertain.
+- Ticks themselves stay with this ticket.

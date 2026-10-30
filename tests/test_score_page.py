@@ -157,3 +157,90 @@ def test_markdown_list_bullets_do_not_count_as_errors() -> None:
     reference = "1. เงื่อนไขของสัญญา\n2. ขอบเขตของงาน\nรายงานฉบับสมบูรณ์"
 
     assert score_page(output=output, reference=reference).cer == 0
+
+
+# Tables: how many of the reference's cells the output holds in the right place
+
+PAYMENTS = "ผู้ให้ทุนจ่ายเงินเป็นงวด\n\n| งวดที่ | จำนวนเงิน |\n| --- | --- |\n| 1 | 150,000 |\n| 2 | 250,000 |"
+
+
+def test_a_table_that_is_all_right_has_every_cell_in_place() -> None:
+    score = score_page(output=PAYMENTS, reference=PAYMENTS)
+
+    assert (score.cells_right, score.cells) == (6, 6)
+
+
+def test_amounts_swapped_between_rows_are_out_of_place_though_every_character_is_right() -> None:
+    swapped = PAYMENTS.replace("150,000", "X").replace("250,000", "150,000").replace("X", "250,000")
+
+    score = score_page(output=swapped, reference=PAYMENTS)
+
+    assert (score.cells_right, score.cells) == (4, 6)
+
+
+def test_a_table_flattened_into_a_paragraph_has_no_cell_in_place() -> None:
+    flattened = "ผู้ให้ทุนจ่ายเงินเป็นงวด\n\nงวดที่ จำนวนเงิน 1 150,000 2 250,000"
+
+    score = score_page(output=flattened, reference=PAYMENTS)
+
+    assert score.cer == 0  # the characters cannot tell
+    assert (score.cells_right, score.cells) == (0, 6)
+
+
+BUDGET = (
+    '<table>\n<tr><td rowspan="2">รายการ</td><td colspan="2">งบประมาณ</td></tr>\n'
+    "<tr><td>ปีที่ ๑</td><td>ปีที่ ๒</td></tr>\n"
+    "<tr><td>ค่าวัสดุ</td><td>-</td><td>30,000</td></tr>\n</table>"
+)
+
+
+def test_merged_cells_put_the_cells_after_them_where_a_reader_finds_them() -> None:
+    # Without the merges, "ปีที่ ๑" and "ปีที่ ๒" move one column left, and the
+    # third column of that row is gone: 5 of the 7 cells stay in place.
+    unmerged = "| รายการ | งบประมาณ |\n| --- | --- |\n| ปีที่ ๑ | ปีที่ ๒ |\n| ค่าวัสดุ | - | 30,000 |"
+
+    score = score_page(output=BUDGET, reference=BUDGET)
+
+    assert (score.cells_right, score.cells) == (7, 7)
+    assert score_page(output=unmerged, reference=BUDGET).cells_right == 5
+
+
+def test_a_table_the_output_lacks_has_none_of_its_cells_in_place() -> None:
+    score = score_page(output=PAYMENTS, reference=f"{PAYMENTS}\n\nงบประมาณ\n\n{BUDGET}")
+
+    assert (score.cells_right, score.cells) == (6, 13)
+
+
+def test_each_reference_table_is_compared_with_the_output_table_that_holds_its_text() -> None:
+    # The output found a table the reference does not have, before the payments.
+    score = score_page(output=f"{BUDGET}\n\n{PAYMENTS}", reference=PAYMENTS)
+
+    assert (score.cells_right, score.cells) == (6, 6)
+
+
+def test_a_table_that_shares_only_empty_cells_and_dashes_is_not_the_matching_one() -> None:
+    reference = "| รายการ | ปีที่ ๑ | ปีที่ ๒ |\n| --- | --- | --- |\n| ค่าวัสดุ | - |  |"
+    unrelated = "| ชื่อ | บทบาท | หน่วยงาน |\n| --- | --- | --- |\n| นายสมชาย | - |  |"
+
+    assert score_page(output=unrelated, reference=reference).cells_right == 0
+
+
+def test_a_page_without_tables_has_no_cells() -> None:
+    score = score_page(output="สัญญาให้ทุนโครงการ", reference="สัญญาให้ทุนโครงการ")
+
+    assert (score.cells_right, score.cells) == (0, 0)
+
+
+def test_uncertain_text_marks_and_escaped_bars_inside_cells_do_not_move_them() -> None:
+    reference = "| งวดที่ | รายละเอียด |\n| --- | --- |\n| 1 | ส่งแผนงาน \\| รายงาน |"
+    output = "| งวดที่ | รายละเอียด |\n| --- | --- |\n| 1 | ส่ง<mark>แผน</mark>งาน \\| รายงาน |"
+
+    assert score_page(output=output, reference=reference).cells_right == 4
+
+
+def test_a_line_break_kept_in_a_cell_counts_the_same_on_both_sides() -> None:
+    reference = "| รายการ | จำนวนเงิน |\n| --- | --- |\n| ค่าวัสดุสำนักงาน<br>ค่าถ่ายเอกสาร | 15,500 |"
+    glued = reference.replace("<br>", "")
+
+    assert score_page(output=reference, reference=reference).cells_right == 4
+    assert score_page(output=glued, reference=reference).cells_right == 3

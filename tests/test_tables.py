@@ -1,5 +1,8 @@
 """Ruled tables on text pages come out as tables, with Thai text in each cell intact."""
 
+from typing import Literal
+
+import pytest
 from markdown_reader import page_texts
 from pdf_builder import Cell, Grid, Line, Spaced, Styled, pdf
 
@@ -53,10 +56,107 @@ def test_merged_cells_make_an_html_table_with_spans() -> None:
 
 
 def test_text_wrapped_inside_a_cell_is_rejoined_with_the_thai_rules() -> None:
-    grid = Grid(rows=(("ขั้นตอน", "รายละเอียด"), ("๑", "ส่งรายงานความก้าว\nหน้าทุกหกเดือน")), widths=(80, 200))
+    # As Word wraps it: the first line fills the cell, and the next word would not fit after it.
+    grid = Grid(rows=(("ขั้นตอน", "รายละเอียด"), ("๑", "ส่งรายงานความก้าวหน้า\nทุกหกเดือน")), widths=(80, 170))
 
     assert markdown_pages([grid]) == [
         "| ขั้นตอน | รายละเอียด |\n| --- | --- |\n| ๑ | ส่งรายงานความก้าวหน้าทุกหกเดือน |"
+    ]
+
+
+# A cell holding several printed lines: sub-rows, stacked items, or one wrapped sentence
+
+STACKED_ITEMS = "ค่าวัสดุสำนักงาน\nค่าถ่ายเอกสาร\nค่าไปรษณีย์"
+
+
+def test_stacked_items_beside_their_amounts_become_sub_rows() -> None:
+    grid = Grid(
+        rows=(("หมวด", "รายการ", "จำนวนเงิน"), ("ค่าดำเนินงาน", STACKED_ITEMS, "12,000\n3,500\n1,200")),
+        widths=(110, 210, 100),
+    )
+
+    assert markdown_pages([grid]) == [
+        "<table>\n"
+        "<tr><td>หมวด</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n"
+        '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>\n'
+        "<tr><td>ค่าถ่ายเอกสาร</td><td>3,500</td></tr>\n"
+        "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>\n"
+        "</table>"
+    ]
+
+
+def test_amounts_set_flush_right_beside_stacked_items_become_sub_rows_too() -> None:
+    grid = Grid(
+        rows=(("หมวด", "รายการ", "จำนวนเงิน"), ("ค่าดำเนินงาน", STACKED_ITEMS, Cell("12,000\n3,500\n1,200", align="right"))),
+        widths=(110, 210, 100),
+    )
+
+    [page] = markdown_pages([grid])
+
+    assert '<tr><td rowspan="3">ค่าดำเนินงาน</td><td>ค่าวัสดุสำนักงาน</td><td>12,000</td></tr>' in page
+    assert "<tr><td>ค่าไปรษณีย์</td><td>1,200</td></tr>" in page
+
+
+@pytest.mark.parametrize("align", ["left", "right", "centre"])
+def test_short_items_keep_their_breaks_and_a_wrapped_sentence_joins_however_the_cell_is_aligned(
+    align: Literal["left", "right", "centre"],
+) -> None:
+    grid = Grid(
+        rows=(
+            ("รายการ", "รายละเอียด"),
+            (Cell("เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", align=align), Cell("ส่งรายงานความก้าวหน้า\nทุกหกเดือน", align=align)),
+        ),
+        widths=(210, 170),
+    )
+
+    assert markdown_pages([grid]) == [
+        "| รายการ | รายละเอียด |\n| --- | --- |\n| เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์ | ส่งรายงานความก้าวหน้าทุกหกเดือน |"
+    ]
+
+
+def test_short_items_stacked_beside_one_total_keep_their_line_breaks() -> None:
+    grid = Grid(rows=(("หมวด", "รายการ", "จำนวนเงิน"), ("ค่าครุภัณฑ์", "เครื่องคอมพิวเตอร์\nเครื่องพิมพ์", "53,900")), widths=(110, 210, 100))
+
+    assert markdown_pages([grid]) == [
+        "| หมวด | รายการ | จำนวนเงิน |\n| --- | --- | --- |\n| ค่าครุภัณฑ์ | เครื่องคอมพิวเตอร์<br>เครื่องพิมพ์ | 53,900 |"
+    ]
+
+
+def test_two_sentences_wrapping_over_as_many_lines_side_by_side_are_not_sub_rows() -> None:
+    # Both cells' lines line up, but each first line fills its cell: they are wrapped sentences.
+    grid = Grid(
+        rows=(
+            ("งวดที่", "งาน", "ค่าใช้จ่าย"),
+            ("๑", "ส่งรายงานความก้าวหน้า\nทุกหกเดือน", "ค่าเช่ารถและค่าน้ำมันเชื้อเพลิง\nสำหรับการลงพื้นที่"),
+        ),
+        widths=(50, 170, 210),
+    )
+
+    assert markdown_pages([grid]) == [
+        "| งวดที่ | งาน | ค่าใช้จ่าย |\n| --- | --- | --- |\n"
+        "| ๑ | ส่งรายงานความก้าวหน้าทุกหกเดือน | ค่าเช่ารถและค่าน้ำมันเชื้อเพลิงสำหรับการลงพื้นที่ |"
+    ]
+
+
+def test_items_that_do_not_line_up_across_cells_are_not_sub_rows() -> None:
+    # The second amount sits a line lower than the second item.
+    grid = Grid(rows=(("รายการ", "จำนวนเงิน"), ("ค่าวัสดุ\nค่าเดินทาง", "1,000\n\n2,000")), widths=(210, 100))
+
+    assert markdown_pages([grid]) == ["| รายการ | จำนวนเงิน |\n| --- | --- |\n| ค่าวัสดุ<br>ค่าเดินทาง | 1,000<br>2,000 |"]
+
+
+def test_a_cell_merged_down_into_a_row_of_sub_rows_spans_them_all() -> None:
+    grid = Grid(
+        rows=((Cell("หมวด", rowspan=2), "รายการ", "จำนวนเงิน"), ("ค่าวัสดุ\nค่าเดินทาง", "1,000\n2,000")),
+        widths=(110, 210, 100),
+    )
+
+    assert markdown_pages([grid]) == [
+        "<table>\n"
+        '<tr><td rowspan="3">หมวด</td><td>รายการ</td><td>จำนวนเงิน</td></tr>\n'
+        "<tr><td>ค่าวัสดุ</td><td>1,000</td></tr>\n"
+        "<tr><td>ค่าเดินทาง</td><td>2,000</td></tr>\n"
+        "</table>"
     ]
 
 

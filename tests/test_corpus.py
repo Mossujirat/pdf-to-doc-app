@@ -14,6 +14,8 @@ from pdf_to_doc.quality import evaluate, reference_file_name, score_page
 # OCR pages are read with real PaddleOCR. Their gate comes with the OCR baseline
 # (ticket 17); until then, a page this far off means OCR has stopped working.
 OCR_PAGE_MAX_CER = 0.05
+# The share of the cells of tables on OCR pages that must be in place: 152 of 181 were (ticket 05).
+OCR_CELLS_IN_PLACE = 0.8
 
 
 def files(folder: Path) -> dict[str, bytes]:
@@ -71,6 +73,8 @@ def test_paddleocr_reads_the_scanned_pages_of_the_committed_corpus() -> None:
     assert {page.engine for page in report.pages} == {"PaddleOCR"}
     assert all(page.score.cer <= OCR_PAGE_MAX_CER for page in report.pages)
     assert report.broken.total == 0
+    # Ruled tables come out as tables; the cells out of place are misread, as a word that lost its tone mark.
+    assert report.cells_right >= OCR_CELLS_IN_PLACE * report.cells
 
 
 @pytest.mark.ocr
@@ -91,6 +95,17 @@ def test_a_note_typed_over_a_rotated_scan_comes_out_once_and_no_line_is_lost() -
     for number, (page, note) in enumerate(zip(pages, [NOTE_BELOW, NOTE_ABOVE], strict=True), start=1):
         reference = (SYNTHETIC / "rotated-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
         assert page.count(note) == 1, f"page {number}"
+        assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
+
+
+@pytest.mark.ocr
+@pytest.mark.parametrize(("name", "labelled"), [("boxed-header-table-scans", True), ("unruled-table-scans", False)])
+def test_a_table_whose_header_alone_is_boxed_is_labelled_and_one_with_no_rules_is_not(name: str, labelled: bool) -> None:
+    markdown = convert((SYNTHETIC / f"{name}.pdf").read_bytes()).output.decode("utf-8")
+
+    for number, page in enumerate(markdown_page_texts(markdown), start=1):
+        reference = (SYNTHETIC / name / reference_file_name(number)).read_text(encoding="utf-8-sig")
+        assert page.count("[ตารางอาจไม่สมบูรณ์]") == labelled, f"page {number}"
         assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
 
 

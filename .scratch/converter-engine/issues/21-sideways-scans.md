@@ -127,3 +127,8 @@ Kept images (the next feature) shows these pages as they are, so DOCX readers wh
     - placing it by share of the page;
     - the weighting by characters;
     - turning at all, for the PaddleOCR test in both directions.
+
+**2026-10-25, from grilling ticket 14 (scanned tables)**
+
+- A ruled price schedule, printed sideways each way and turned upright by this ticket's code, got 36 of its 40 cells right with ticket 14's chosen method: rules found in the page image, and OCR boxes placed in cells by their centre. The 4 misses are OCR misreads.
+- So the tables on the samples' sideways pages are expected to come out as tables once ticket 14 is done. Unruled ones will come out one line per row.

@@ -3,13 +3,16 @@
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pytest
-from fake_ocr import FakeEngine, Sideways, Unsure
+from fake_ocr import FakeEngine, Sideways, Boxed, Unsure, marks_over
+from generate import CRISP_PAGE
 from markdown_reader import page_texts
-from pdf_builder import LINE_HEIGHT, TOP, Rotated, Scan, Styled, pdf
+from pdf_builder import LEFT, LINE_HEIGHT, TOP, Drawn, Rotated, Scan, Styled, pdf, remapped
 
 from pdf_to_doc import ConversionResult, convert
 from pdf_to_doc.cli import main
+from pdf_to_doc.ocr import PageImage
 
 
 def markdown_pages(result: ConversionResult) -> list[str]:
@@ -106,6 +109,46 @@ def test_lines_of_a_scan_stay_one_paragraph_whatever_the_height_of_their_boxes()
     result = convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine)
 
     assert markdown_pages(result) == ["ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติและจะรายงานผลทุกหกเดือน"]
+
+
+# An OCR page that is not a scan is rendered from the PDF, crisp: it is softened before it
+# is read, or PaddleOCR's detector drops some of its lines (ticket 33). A scan is soft already.
+# Softened, the steepest step between neighbouring pixels measured 68 grey levels; a 300-dpi
+# scan steps 255, and the corpus's 200-dpi scans 172.
+
+
+def steepest_step(image: PageImage) -> int:
+    """The largest step in grey between two pixels side by side: a crisp edge goes from paper to ink at once."""
+    pixels = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, 3).astype(int)
+    return int(np.abs(np.diff(pixels, axis=1)).max())
+
+
+@pytest.mark.parametrize("keep_images", [False, True], ids=["images read", "images kept"])
+@pytest.mark.parametrize("drawn", [False, True], ids=["text layer that cannot be trusted", "text drawn as shapes"])
+def test_an_ocr_page_that_is_not_a_scan_is_softened_before_it_is_read(drawn: bool, keep_images: bool) -> None:
+    engine = FakeEngine(CRISP_PAGE)
+    source = pdf(Drawn(CRISP_PAGE)) if drawn else remapped(pdf(CRISP_PAGE), {SARA_AA: SARA_AM})
+
+    result = convert(source, ocr=engine, keep_images=keep_images)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert steepest_step(engine.images[0]) < 100
+
+
+@pytest.mark.parametrize(
+    "hidden",
+    [None, "over", "under"],
+    ids=["a scan", "a searchable scan whose hidden text is wrong", "a scan over wrong text it hides"],
+)
+def test_a_scan_is_read_as_sharp_as_it_was_scanned(hidden: Literal["over", "under"] | None) -> None:
+    engine = FakeEngine(CRISP_PAGE)
+    scan = pdf(Scan(CRISP_PAGE, dpi=300, searchable=hidden))
+
+    result = convert(remapped(scan, {SARA_AA: SARA_AM}) if hidden else scan, ocr=engine)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert result.summary.pages[0].untrusted_text_layer == bool(hidden)
+    assert steepest_step(engine.images[0]) > 150
 
 
 # What the user sees
@@ -525,6 +568,38 @@ def test_labels_set_apart_from_their_values_are_read_row_by_row(rows: list[Piece
     assert_read_row_by_row(rows)
 
 
+# A row whose parts are set apart by a gap wider than two font sizes, as at a tab stop, is
+# a line of its own, as on a text page.
+
+
+PARTS_SET_APART = [
+    "a table without rules or numbers",
+    "values at a tab stop",
+    "long labels and short values",
+    "a form with two fields on each line",
+]
+
+
+@pytest.mark.parametrize("layout", PARTS_SET_APART)
+def test_rows_whose_parts_are_set_apart_on_an_ocr_page_stay_lines_of_their_own(layout: str) -> None:
+    rows = LABELS_AND_VALUES[layout]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert page.split("\n\n") == [" ".join(text for _, text in row) for row in rows]
+
+
+def test_a_body_line_the_detector_cut_at_an_ordinary_space_stays_in_its_paragraph() -> None:
+    rows: list[Pieces] = [
+        [(72, "ผู้รับทุนตกลงดำเนินงาน"), (210, "ตามแผนที่กำหนดไว้ในสัญญา")],
+        [(72, "และส่งรายงานทุกหกเดือนจนกว่าจะสิ้นสุดโครงการ")],
+    ]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert page == "ผู้รับทุนตกลงดำเนินงาน ตามแผนที่กำหนดไว้ในสัญญาและส่งรายงานทุกหกเดือนจนกว่าจะสิ้นสุดโครงการ"
+
+
 def test_holes_a_diagonal_watermark_leaves_in_lines_are_not_a_gutter() -> None:
     # The watermark wipes out each line a little further along than the line above, so
     # the text after each hole starts somewhere else, unlike a column's lines.
@@ -574,3 +649,72 @@ SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
 @pytest.mark.parametrize("rows", SHORT_LINES_BESIDE_OTHER_TEXT.values(), ids=SHORT_LINES_BESIDE_OTHER_TEXT.keys())
 def test_short_lines_beside_other_text_are_read_row_by_row_for_now(rows: list[Pieces]) -> None:
     assert_read_row_by_row(rows)
+
+
+# Stray mark boxes: the detector boxes a line's upper marks apart from the line, and reads
+# them as junk; the line's own reading already holds them. The first line's baseline is TOP,
+# and its box runs from 17.6 points over it (1.1 font sizes) to 6.4 under; a stray box is
+# less than half as tall as that.
+
+MARKED_LINES = ["ผู้รับทุนส่งรายงานความก้าวหน้าทุกหกเดือน", "จนกว่าจะสิ้นสุดระยะเวลาของโครงการ", "และส่งรายงานฉบับสมบูรณ์เมื่อจบงาน"]
+
+
+def test_a_copy_of_a_lines_upper_marks_boxed_apart_from_it_is_dropped() -> None:
+    engine = FakeEngine([*MARKED_LINES, marks_over(TOP, x=LEFT)])
+
+    assert markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine)) == ["".join(MARKED_LINES)]
+
+
+def test_a_dash_on_a_line_of_its_own_stays() -> None:
+    # A short box, but under no line: half way up the letters of the blank line under the first,
+    # it overlaps no line's box.
+    dash = Boxed("-", LEFT, TOP + LINE_HEIGHT - 11, TOP + LINE_HEIGHT - 5, confidence=0.99)
+    engine = FakeEngine([MARKED_LINES[0], "", *MARKED_LINES[1:], dash])
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert page.count("-") == 1
+    assert [line for line in MARKED_LINES if line not in page] == []
+
+
+def test_a_short_box_over_a_line_with_no_upper_marks_there_stays() -> None:
+    # A footnote's number over "ตามแผนงาน", which holds no upper vowel or tone mark, over the top of
+    # the line's box, as a copy of marks would be.
+    lines = ["ตามแผนงานที่ได้รับอนุมัติแล้ว", *MARKED_LINES[1:]]
+    engine = FakeEngine([*lines, Boxed("1", LEFT, TOP - 22, TOP - 14, confidence=0.99)])
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert page.startswith("1")
+    assert page.endswith("".join(lines))
+
+
+def test_a_footnotes_number_raised_before_its_line_stays() -> None:
+    # Over the top of the line, which starts with marked "ผู้", but before it: no line spans it.
+    engine = FakeEngine([*MARKED_LINES, Boxed("1", LEFT - 10, TOP - 18, TOP - 10, confidence=0.99)])
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert page.startswith("1")
+
+
+def test_a_note_squeezed_in_over_a_line_stays() -> None:
+    # Shorter than the line under it, but no copy of marks: two thirds of a line's box tall, from
+    # well over the line to over its top.
+    note = Boxed("แก้ไข", LEFT, TOP - 30, TOP - 14, confidence=0.99)
+    engine = FakeEngine([*MARKED_LINES, note])
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert "แก้ไข" in page
+
+
+def test_a_dash_boxed_apart_in_the_middle_of_a_line_stays() -> None:
+    # Short, and spanned by the line under marked "ผู้", but on its lower half, where marks above
+    # the letters never are: the line's box runs from 1.1 font sizes over its baseline to 0.4 under.
+    dash = Boxed("-", LEFT + 4, TOP - 8, TOP - 2, confidence=0.99)
+    engine = FakeEngine([*MARKED_LINES, dash])
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert "-" in page

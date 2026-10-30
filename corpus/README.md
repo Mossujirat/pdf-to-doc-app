@@ -38,7 +38,7 @@ A reference file holds what a reader sees on the page, written as Markdown:
   - `[ลายเซ็น]` for a signature
   - `[ตราประทับ]` for a stamp
   - `[ลายมือ]` for handwriting
-  - `[ตารางอาจไม่สมบูรณ์]` beside a table whose structure may be incomplete
+- Write an **incomplete table** (see `GLOSSARY.md`) as its label, `[ตารางอาจไม่สมบูรณ์]`, on a line of its own, then its printed lines one by one. The label is not a placeholder: the table's text is transcribed. A table with no rules at all gets no label; write its rows one per line.
 - Leave out page furniture: headers, footers and page numbers that repeat at the same edge on two or more pages, and rows that are only a page counter. The converter drops them.
 - Line breaks and spacing between paragraphs do not matter.
 - Saving with or without a byte order mark makes no difference.
@@ -65,6 +65,11 @@ The harness then reports, per page and in total:
 - **Page kind**: text page or OCR page.
 - **OCR engine**: the engine that read an OCR page, `-` for a text page.
 - **Uncertain text**: how many stretches the output marks as uncertain text, as its summary counts them.
+- **Cells**: on a page whose reference text holds tables, how many of their cells the output holds in the same place, out of all of them, such as `38/44`, and `cells_right` and `cells` in the JSON report; `-` on a page whose reference holds no table.
+  - The comparison above ignores table structure, so a table flattened into paragraphs scores the same CER as one kept whole. This measure does not.
+  - A cell is in place when the output's matching table has a cell at the same row and column, with merged cells spread over the positions they cover, holding the same text after NFC and with its spaces collapsed.
+  - Each reference table is matched with the output table that shares most of its cells' text. A table the output lacks has none of its cells in place.
+  - `<mark>` is dropped, and a `<br>` inside a cell counts as a space on both sides.
 - **Unmarked**: the share of edits that fall outside uncertain text, where a reader is not told to check. An edit counts as marked when the output character it changes or deletes is inside a `<mark>`, or, for text the output lacks, when a marked character stands next to the gap. The JSON report also gives each page's `unmarked_edits` and `marked_characters`, which show how much correct text is marked too.
 
 Totals are given for all pages, and separately for text pages and for OCR pages. `--max-cer` and `--max-broken` apply to text pages only: the quality gate is zero broken text on text pages. OCR pages are measured, and their gate comes with the OCR baseline.
@@ -87,10 +92,18 @@ uv run python corpus/generate.py                              # regenerate corpu
 It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 - A scanned page is drawn, rendered as a grey image at 200 dpi, turned 0.4° and given mild grain, then saved as a JPEG inside the PDF. A header can be stamped over it as text, as PDF tools do.
 - A document can have its fonts' ToUnicode maps rewritten, so the page looks right but its text layer says something else: `legacy-font` reports shifted marks as Private Use Area characters, as legacy Windows Thai fonts do, and `wrong-unicode-map` reports sara aa as sara am, so "การ" reads "กำร".
+- `coarse-table` holds a ruled table whose cells hold several printed lines, as some budgets are drawn:
+  - items stacked beside their amounts, which are sub-rows;
+  - items beside one total, which keep their line breaks;
+  - a wrapped description, which is one sentence.
+
+  Text in a table cell wraps as Word wraps it: the first line fills the cell, and the next word would not fit after it.
+- A page can draw its text as shapes, with no text layer, as some PDF printers write it: `text-drawn-as-shapes`. It holds the same clauses as the second page of `wrong-unicode-map`, with a line marked over its first and last words. Both are OCR pages that are not scans, which the converter renders from the PDF and softens before reading; read crisp, they lose their fifth line.
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.
 - A sideways page has its content printed on a landscape sheet set a quarter turn on the page, so a reader turns the page to read it: `sideways-scans` holds a price schedule turned each way.
 - `two-column-scans` holds pages set in two columns of body text, read one column after the other: a Thai page and an English page of terms. Its third page is a cover sheet whose labels are set apart from their values, read row by row.
+- `ruled-table-scans` holds ruled tables on scans, one a page, with text around each: a payment schedule with wrapped cells, a budget with merged cells, a table of dates two rows deep, and the coarse table of `coarse-table`. The rules are found in the scan's image, so each comes out as a table. `ruled-tables-wrong-unicode-map` and `ruled-tables-drawn-as-shapes` hold the same pages on OCR pages that are not scans, whose rules are found in the image rendered from the PDF.
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` or `degraded/` differ from what the generator makes.
 

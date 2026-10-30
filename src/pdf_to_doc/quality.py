@@ -3,14 +3,15 @@
 import html
 import re
 import unicodedata
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
+from html.parser import HTMLParser
 from pathlib import Path
 
 from rapidfuzz.distance import Editop, Indel, Levenshtein, Opcode
 
 from pdf_to_doc.conversion import convert
 from pdf_to_doc.markdown import split_pages
-from pdf_to_doc.model import PageKind
+from pdf_to_doc.model import PageKind, TableCell
 from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.thai import MARK, THAI_LETTER, is_thai
 
@@ -56,6 +57,8 @@ class PageScore:
     broken: BrokenText
     unmarked_edits: int  # edits outside uncertain text, where a reader is not told to check
     marked_characters: int  # output characters marked as uncertain text
+    cells: int = 0  # the cells of the reference's tables
+    cells_right: int = 0  # those of them the output holds in the same place, with the same text
 
     @property
     def cer(self) -> float:
@@ -74,7 +77,9 @@ def error_rate(edits: int, characters: int) -> float:
 
 
 def score_page(output: str, reference: str) -> PageScore:
-    """Score one page. Both sides are compared as visible text: markup and spacing are ignored."""
+    """Score one page. Both sides are compared as visible text: markup and spacing are ignored.
+    Their tables are compared cell by cell as well, which visible text cannot show."""
+    cells, cells_right = _cells_in_place(output, reference)
     output, marked = _visible_and_marked(output)
     reference = visible_text(reference)
     thai_output, thai_reference = _thai_only(output), _thai_only(reference)
@@ -86,6 +91,8 @@ def score_page(output: str, reference: str) -> PageScore:
         broken=_broken_text(output, reference),
         unmarked_edits=sum(1 for edit in Levenshtein.editops(output, reference) if not _marked_at(edit, marked)),
         marked_characters=sum(marked),
+        cells=cells,
+        cells_right=cells_right,
     )
 
 
@@ -163,8 +170,10 @@ _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _INLINE_TAG = re.compile(r"</?(?:mark|b|strong|i|em|u|s|span|sup|sub|a|font)\b[^<>]*>", re.IGNORECASE)
 # Other tags, such as table cells, separate their contents.
 _TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9]*\b[^<>]*>")
+# The row of dashes under a GFM table's header.
+_SEPARATOR_ROW = r"\|?[ \t:-]*-{3,}[ \t:|-]*$"
 # Headings, quotes, list bullets and table separator rows.
-_LINE_MARKUP = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\|?[ \t:-]*-{3,}[ \t:|-]*$)", re.MULTILINE)
+_LINE_MARKUP = re.compile(rf"^[ \t]*(?:#{{1,6}}[ \t]+|>[ \t]?|[-*+][ \t]+|{_SEPARATOR_ROW})", re.MULTILINE)
 _EMPHASIS = re.compile(r"\*\*|__")
 _TABLE_PIPE = re.compile(r"\|")
 _WHITESPACE = re.compile(r"\s+")
@@ -211,6 +220,119 @@ def _visible_and_marked(markdown: str) -> tuple[str, list[bool]]:
     return "".join(characters), marked
 
 
+# A table as the text of the cell that starts at each row and column.
+Cells = dict[tuple[int, int], str]
+_GFM_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$")
+_GFM_SEPARATOR = re.compile(rf"^[ \t]*{_SEPARATOR_ROW}")
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+_LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def _cells_in_place(output: str, reference: str) -> tuple[int, int]:
+    """How many cells the reference's tables hold, and how many of them the output holds in the
+    same place with the same text. Each reference table is compared with the output's table that
+    shares most of its cells' text. Empty cells and dashes say nothing about which table it is, so
+    a table that shares no other text with the reference's is not its match; a table the output
+    lacks has none of its cells in place."""
+    found = _tables(output)
+    count = right = 0
+    for table in _tables(reference):
+        texts = {text for text in table.values() if any(char.isalnum() for char in text)}
+
+        def shared(candidate: Cells) -> int:
+            return len(texts & set(candidate.values()))
+
+        match = max(found, key=shared, default={})
+        count += len(table)
+        if shared(match):
+            right += sum(1 for place, text in table.items() if match.get(place) == text)
+    return count, right
+
+
+def _tables(markdown: str) -> list[Cells]:
+    """The tables in Markdown, HTML tables and GFM pipe tables alike, each as the text of the cell
+    that starts at each row and column. A merged cell covers the positions its spans reach, so the
+    cells after it sit where a reader finds them. Inline tags such as uncertain-text marks are
+    dropped, and a line break inside a cell reads as a space."""
+    markdown = _INLINE_TAG.sub("", markdown)
+    parser = _HtmlTables()
+    parser.feed(markdown)
+    parser.close()
+    return parser.tables + _gfm_tables(markdown)
+
+
+def _gfm_tables(markdown: str) -> list[Cells]:
+    found: list[Cells] = []
+    block: list[str] = []
+    for line in [*markdown.splitlines(), ""]:
+        if _GFM_ROW.match(line):
+            block.append(line)
+            continue
+        if len(block) >= 2 and _GFM_SEPARATOR.match(block[1]):
+            rows = [block[0], *block[2:]]
+            found.append(
+                _placed(
+                    [
+                        [TableCell(html.unescape(text.replace("\\|", "|"))) for text in _UNESCAPED_PIPE.split(row.strip())[1:-1]]
+                        for row in rows
+                    ]
+                )
+            )
+        block = []
+    return found
+
+
+class _HtmlTables(HTMLParser):
+    """Collects the HTML tables in a page, cell by cell, with their spans."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tables: list[Cells] = []
+        self._rows: list[list[TableCell]] | None = None
+        self._cell: TableCell | None = None  # the cell being read, its text so far
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "table":
+            self._rows = []
+        elif tag == "tr" and self._rows is not None:
+            self._rows.append([])
+        elif tag in ("td", "th") and self._rows:
+            spans = dict(attrs)
+            self._cell = TableCell("", int(spans.get("rowspan") or 1), int(spans.get("colspan") or 1))
+        elif tag == "br":
+            self.handle_data(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th") and self._cell and self._rows:
+            self._rows[-1].append(self._cell)
+            self._cell = None
+        elif tag == "table" and self._rows is not None:
+            self.tables.append(_placed(self._rows))
+            self._rows = None
+
+    def handle_data(self, data: str) -> None:
+        if self._cell:
+            self._cell = replace(self._cell, text=self._cell.text + data)
+
+
+def _placed(rows: list[list[TableCell]]) -> Cells:
+    """Each cell's text at the row and column it starts at, past the positions merged cells above or before it cover."""
+    placed: Cells = {}
+    covered: set[tuple[int, int]] = set()
+    for row_index, row in enumerate(rows):
+        column = 0
+        for cell in row:
+            while (row_index, column) in covered:
+                column += 1
+            text = unicodedata.normalize("NFC", _LINE_BREAK.sub(" ", cell.text))
+            placed[(row_index, column)] = _WHITESPACE.sub(" ", text).strip()
+            covered.update(
+                (row_index + down, column + across) for down in range(cell.rowspan) for across in range(cell.colspan)
+            )
+            column += cell.colspan
+    return placed
+
+
 @dataclass(frozen=True)
 class PageReport:
     source: str
@@ -253,6 +375,16 @@ class Report:
         """The share of all edits that fall outside uncertain text."""
         edits = sum(page.score.edits for page in self.pages)
         return sum(page.score.unmarked_edits for page in self.pages) / edits if edits else 0.0
+
+    @property
+    def cells(self) -> int:
+        """The cells of all the reference tables."""
+        return sum(page.score.cells for page in self.pages)
+
+    @property
+    def cells_right(self) -> int:
+        """Those of them the outputs hold in the same place, with the same text."""
+        return sum(page.score.cells_right for page in self.pages)
 
     def of_kind(self, kind: PageKind) -> "Report":
         """The report for text pages only, or for OCR pages only."""

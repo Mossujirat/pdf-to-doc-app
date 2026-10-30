@@ -22,3 +22,15 @@
 - **Reduce the watermark's effect before reading,** for example by its colour or lightness, if the cause allows it.
 - **Make the loss visible.** Where the page shows ink but nothing was read, the reader should be told, for example by uncertain text or a placeholder. A new placeholder kind is a glossary change.
 - **Diagonal text itself:** it is not read while text-line orientation is off (see ticket 21).
+
+## Comments
+
+**2026-10-26, from implementing ticket 33 (lines lost on crisp OCR pages)**
+
+- **A lead on the stage.** While checking ticket 33 on the samples, each OCR page was read twice: as rendered, and blurred with a standard deviation of 1.5 pixels. On three of the 110-page contract's scanned pages, the blurred reading had 3, 3 and 2 whole lines more. Checked by eye, those lines lie under a diagonal watermark. So at least there, the detector does not find the lines, or drops them, and a blur brings them back.
+- **Why ticket 33 does not blur scans:**
+  - On the corpus's synthetic scans, the blur raised CER a little, from 0.0072 to 0.0082.
+  - On the samples' other scans, a blurred reading grouped the same text into rows differently, in tables and diagrams.
+
+  Whether the blur, or something aimed at the watermark, should apply to scans is left to this ticket's triage.
+- **The detector's box score is a likely stage.** Ticket 33 found that PaddleOCR drops a region whose mean probability over its enclosing rectangle is under `box_thresh` (0.6). That held for crisp pages; for watermarked scans it is not yet measured.

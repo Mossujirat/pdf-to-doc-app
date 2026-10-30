@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from fake_ocr import FakeEngine
-from pdf_builder import Scan, pdf
+from pdf_builder import Grid, Scan, pdf
 from word_builder import Heading, PageBreak, document
 
 from pdf_to_doc.evaluate_cli import main
@@ -134,6 +134,26 @@ def test_the_command_prints_a_table_and_writes_a_json_report(
     assert (page["source"], page["page"], page["kind"]) == ("contract", 1, "text")
     assert set(page["broken"]) == categories
     assert {"engine", "uncertain", "cer", "thai_cer"} <= set(page)
+
+
+def test_the_command_reports_how_many_cells_each_page_holds_in_place(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = (("งวดที่", "จำนวนเงิน"), ("1", "150,000"), ("2", "250,000"))
+    source = pdf(["ผู้ให้ทุนจ่ายเงินเป็นงวด", Grid(rows=rows, widths=(100, 150))], ["สัญญาให้ทุนโครงการ"])
+    table = "| งวดที่ | จำนวนเงิน |\n| --- | --- |\n| 1 | 150,000 |\n| 2 | 250,000 |"
+    add_document(tmp_path / "corpus", "payments", source, {1: f"ผู้ให้ทุนจ่ายเงินเป็นงวด\n\n{table}", 2: "สัญญาให้ทุนโครงการ"})
+    json_path = tmp_path / "report.json"
+
+    main([str(tmp_path / "corpus"), "--json", str(json_path)])
+
+    header, with_table, without_table, *totals = capsys.readouterr().out.splitlines()
+    assert header.split()[-1] == "cells"
+    assert (with_table.split()[-1], without_table.split()[-1]) == ("6/6", "-")
+    assert totals[0].split()[-1] == "6/6"
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    assert [(page["cells_right"], page["cells"]) for page in report["pages"]] == [(6, 6), (0, 0)]
+    assert (report["total"]["cells_right"], report["total"]["cells"]) == (6, 6)
 
 
 def test_the_command_fails_when_broken_text_exceeds_the_limit(tmp_path: Path) -> None:

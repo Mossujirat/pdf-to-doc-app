@@ -77,6 +77,7 @@ class Cell:
     colspan: int = 1
     rowspan: int = 1
     boxed: bool = True  # False draws the text with no box around it
+    align: Literal["left", "right", "centre"] = "left"  # where each line sits in the cell
 
 
 @dataclass(frozen=True)
@@ -85,18 +86,23 @@ class Grid:
     widths: tuple[float, ...]  # of each column
     # An absolute baseline for the first row; the following lines continue below the table.
     y: float | None = None
+    x: float = LEFT  # where its left edge is
+    # Rows this many points tall, by their number; a row of empty cells a few points tall
+    # draws a double rule. Other rows are as tall as their text.
+    heights: tuple[tuple[int, float], ...] = ()
 
 
 @dataclass(frozen=True)
 class Picture:
     """An image below the line before, `width` by `height` points.
 
-    A photo fills its box with colour. A signature is a scribble in blue ink, a stamp
+    A photo fills its box with colour, and a dark photo is of a building at night: a dark wall
+    with rows of lit windows. A signature is a scribble in blue ink, a stamp
     a red ring and a chart a round pie, each on a transparent ground, as scanned ones
     are pasted in.
     """
 
-    kind: Literal["photo", "signature", "stamp", "chart"]
+    kind: Literal["photo", "dark photo", "signature", "stamp", "chart"]
     width: float
     height: float
     x: float = LEFT
@@ -279,6 +285,11 @@ def _picture(picture: Picture) -> bytes:
     match picture.kind:
         case "photo":
             rgba[...] = np.stack([x * 200 + 30, y * 160 + 60, np.full_like(x, 150), np.full_like(x, 255)], axis=-1)
+        case "dark photo":
+            # Five rows of six windows, each filling two thirds of its share of the wall each way.
+            lit = ((x * 6) % 1 > 1 / 6) & ((x * 6) % 1 < 5 / 6) & ((y * 5) % 1 > 1 / 6) & ((y * 5) % 1 < 5 / 6)
+            grey = np.where(lit, 225, 50)
+            rgba[...] = np.stack([grey, grey, grey, np.full_like(grey, 255)], axis=-1)
         case "signature":
             # Loops along a wavering line, as a pen leaves them.
             t = np.linspace(0, 1, 4000)
@@ -299,7 +310,7 @@ def _picture(picture: Picture) -> bytes:
             rgba[disc] = colours[slices[disc]]
         case _:
             assert_never(picture.kind)
-    if picture.kind == "photo":
+    if picture.kind in ("photo", "dark photo"):
         image = pymupdf.Pixmap(pymupdf.csRGB, width, height, rgba[..., :3].tobytes(), False)
         if picture.cmyk:
             jpeg: bytes = pymupdf.Pixmap(pymupdf.csCMYK, image).tobytes("jpg")
@@ -440,8 +451,46 @@ CELL_PADDING = 6.0
 TAB_GAP = 24.0
 
 
+@dataclass(frozen=True)
+class GridText:
+    """A piece of a grid cell's text, and where it is drawn on the page as shown."""
+
+    text: str
+    x: float
+    baseline: float
+    width: float
+
+
+@dataclass(frozen=True)
+class LaidOutCell:
+    """A grid cell laid out on the page as shown: its box, and the pieces of its text."""
+
+    rect: pymupdf.Rect
+    cell: Cell
+    texts: tuple[GridText, ...]
+
+
+@dataclass(frozen=True)
+class LaidOutGrid:
+    """A ruled table laid out on the page as shown, and the baseline of the line after it."""
+
+    cells: tuple[LaidOutCell, ...]
+    next_baseline: float
+
+
 def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path, invisible: bool) -> float:
     """Draw a ruled table whose first row's text sits on the baseline y; return the next baseline."""
+    laid_out = laid_out_grid(grid, y, font_file)
+    for laid_out_cell in laid_out.cells:
+        if laid_out_cell.cell.boxed:
+            page.draw_rect(laid_out_cell.rect * page.derotation_matrix, color=(0, 0, 0), width=0.5)
+        for text in laid_out_cell.texts:
+            _draw(page, text.x, text.baseline, text.text, font_file, FONT_SIZE, invisible)
+    return laid_out.next_baseline
+
+
+def laid_out_grid(grid: Grid, y: float, font_file: Path = SARABUN) -> LaidOutGrid:
+    """Where a ruled table whose first row's text sits on the baseline y draws its cells and text."""
     placed: list[tuple[int, int, Cell]] = []  # row, column, cell
     covered: set[tuple[int, int]] = set()
     for row_index, row in enumerate(grid.rows):
@@ -460,21 +509,26 @@ def _draw_grid(page: pymupdf.Page, y: float, grid: Grid, font_file: Path, invisi
         if cell.rowspan == 1:
             lines = len(cell.text.splitlines()) or 1
             heights[row_index] = max(heights[row_index], lines * LINE_HEIGHT + CELL_PADDING)
-    columns = _running_sum(LEFT, grid.widths)
+    for row_index, height in grid.heights:
+        heights[row_index] = height
+    columns = _running_sum(grid.x, grid.widths)
     edges = _running_sum(y - FONT_SIZE, heights)
+    cells: list[LaidOutCell] = []
     for row_index, column, cell in placed:
         rect = pymupdf.Rect(
             columns[column], edges[row_index], columns[column + cell.colspan], edges[row_index + cell.rowspan]
         )
-        if cell.boxed:
-            page.draw_rect(rect * page.derotation_matrix, color=(0, 0, 0), width=0.5)
+        texts: list[GridText] = []
         for line_index, text in enumerate(cell.text.splitlines()):
-            x = rect.x0 + 4
-            for piece in text.split("\t"):
+            pieces = text.split("\t")
+            width = sum(_width(piece, font_file, FONT_SIZE) for piece in pieces) + TAB_GAP * (len(pieces) - 1)
+            x = {"left": rect.x0 + 4, "right": rect.x1 - 4 - width, "centre": (rect.x0 + rect.x1 - width) / 2}[cell.align]
+            for piece in pieces:
                 baseline = rect.y0 + 3 + FONT_SIZE + line_index * LINE_HEIGHT
-                _draw(page, x, baseline, piece, font_file, FONT_SIZE, invisible)
+                texts.append(GridText(piece, x, baseline, _width(piece, font_file, FONT_SIZE)))
                 x += _width(piece, font_file, FONT_SIZE) + TAB_GAP
-    return edges[-1] + LINE_HEIGHT + FONT_SIZE
+        cells.append(LaidOutCell(rect, cell, tuple(texts)))
+    return LaidOutGrid(tuple(cells), edges[-1] + LINE_HEIGHT + FONT_SIZE)
 
 
 def _running_sum(start: float, steps: tuple[float, ...] | list[float]) -> list[float]:

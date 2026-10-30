@@ -23,6 +23,9 @@ DIGITS = r"[0-9\u0e50-\u0e59]+"
 # Marks above and below a consonant (mai han-akat, sara i to phinthu,
 # maitaikhu to yamakkan) and sara am. None of them can start a word.
 MARK = r"[\u0e31\u0e33-\u0e3a\u0e47-\u0e4e]"
+# The marks above a consonant: mai han-akat, sara am's nikhahit, sara i to sara uee, and
+# maitaikhu to yamakkan.
+UPPER_MARK = r"[\u0e31\u0e33-\u0e37\u0e47-\u0e4e]"
 _SPACE_BEFORE_MARK = re.compile(rf"(?<={THAI_LETTER})\s+(?={MARK})")
 # Sara aa stored before nikhahit instead of after it.
 _SARA_AA_NIKHAHIT = "\u0e32\u0e4d"

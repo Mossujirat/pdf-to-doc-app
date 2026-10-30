@@ -78,6 +78,8 @@ class _Page(_Event):
     untrusted_text_layer: bool
     placeholders: tuple[PlaceholderKind, ...]
     uncertain: int = Field(ge=0)
+    tables: int = Field(ge=0)
+    incomplete_tables: int = Field(ge=0)
 
 
 class SummaryEvent(_Event):

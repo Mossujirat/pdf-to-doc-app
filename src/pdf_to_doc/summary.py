@@ -4,7 +4,17 @@ from dataclasses import dataclass
 from typing import get_args
 
 from pdf_to_doc.intake import MAX_OUTPUTS
-from pdf_to_doc.model import Document, PageKind, Placeholder, PlaceholderKind, uncertain_text
+from pdf_to_doc.model import (
+    Block,
+    Document,
+    IncompleteTable,
+    PageKind,
+    Placeholder,
+    PlaceholderKind,
+    Table,
+    TableCell,
+    uncertain_text,
+)
 
 _MB = 1024 * 1024
 
@@ -17,6 +27,8 @@ class PageSummary:
     untrusted_text_layer: bool = False
     placeholders: tuple[PlaceholderKind, ...] = ()  # the kind of each placeholder, in reading order
     uncertain: int = 0  # stretches of uncertain text
+    tables: int = 0  # tables that came out as tables, on an OCR page; text pages' are not counted
+    incomplete_tables: int = 0
 
 
 @dataclass(frozen=True)
@@ -38,7 +50,8 @@ class Summary:
     def headline(self, uncertain_marked_as: str | None = None) -> str:
         """One Thai sentence for people: how many pages, how each was read, which were read with
         OCR, which were kept as images if any were, which of those had a text layer that could not be
-        trusted, how many placeholders of each kind stand in for what was not transcribed, how much
+        trusted, how many placeholders of each kind stand in for what was not transcribed, how many
+        tables on OCR pages came out as tables and how many may be incomplete, and where, how much
         text is uncertain and where, and, if they were, what kept images were lowered to.
         `uncertain_marked_as` says how an output marks uncertain text."""
         sentence = (
@@ -59,6 +72,14 @@ class Summary:
         counts = [(Placeholder(kind).name, self.placeholder_count(kind)) for kind in get_args(PlaceholderKind)]
         if any(count for _, count in counts):
             sentence += " ส่วนที่ไม่ได้ถอดเป็นข้อความ: " + ", ".join(f"{name} {count} จุด" for name, count in counts if count)
+        tables = []
+        if made := sum(page.tables for page in self.pages):
+            tables.append(f"เป็นตาราง {made} ตาราง")
+        if incomplete := sum(page.incomplete_tables for page in self.pages):
+            pages = _page_ranges([page.number for page in self.pages if page.incomplete_tables])
+            tables.append(f"อาจไม่สมบูรณ์ {incomplete} ตาราง ในหน้า {pages} ควรตรวจโครงสร้างกับต้นฉบับ")
+        if tables:
+            sentence += " ตารางในหน้าที่อ่านด้วย OCR: " + ", ".join(tables)
         if self.uncertain:
             pages = _page_ranges([page.number for page in self.pages if page.uncertain])
             sentence += f" ข้อความที่ไม่แน่ใจ {self.uncertain} จุด ในหน้า {pages} ควรตรวจกับต้นฉบับ"
@@ -95,9 +116,18 @@ def summarize(document: Document) -> Summary:
                 page.untrusted_text_layer,
                 # A kept page's placeholder is counted as the page kind it stands for.
                 tuple(block.kind for block in page.blocks if isinstance(block, Placeholder) and block.kind != "scan"),
-                sum(len(uncertain_text(block)) for block in page.blocks),
+                sum(len(uncertain_text(part)) for block in page.blocks for part in _parts(block)),
+                sum(isinstance(block, Table) for block in page.blocks) if page.kind == "ocr" else 0,
+                sum(isinstance(block, IncompleteTable) for block in page.blocks),
             )
             for page in document.pages
         ),
         images_lowered_to=document.images_lowered_to,
     )
+
+
+def _parts(block: Block) -> list[Block | TableCell]:
+    """What of the block can hold uncertain text: a table's cells, an incomplete table's rows, or the block itself."""
+    if isinstance(block, Table):
+        return [cell for row in block.rows for cell in row]
+    return list(block.rows) if isinstance(block, IncompleteTable) else [block]

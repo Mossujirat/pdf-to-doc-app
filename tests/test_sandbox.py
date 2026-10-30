@@ -92,9 +92,9 @@ def test_a_mixed_pdf_reports_each_stage_then_the_summary() -> None:
         {
             "event": "summary",
             "pages": [
-                {"number": 1, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": [], "uncertain": 0},
-                {"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": False, "placeholders": [], "uncertain": 0},
-                {"number": 3, "kind": "ocr", "engine": "fake", "untrusted_text_layer": False, "placeholders": [], "uncertain": 0},
+                {"number": 1, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0},
+                {"number": 2, "kind": "ocr", "engine": "fake", "untrusted_text_layer": False, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0},
+                {"number": 3, "kind": "ocr", "engine": "fake", "untrusted_text_layer": False, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0},
             ],
         },
     ]
@@ -109,8 +109,8 @@ def test_a_docx_reports_its_pages_and_placeholders() -> None:
         {
             "event": "summary",
             "pages": [
-                {"number": 1, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": ["image"], "uncertain": 0},
-                {"number": 2, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": [], "uncertain": 0},
+                {"number": 1, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": ["image"], "uncertain": 0, "tables": 0, "incomplete_tables": 0},
+                {"number": 2, "kind": "text", "engine": None, "untrusted_text_layer": False, "placeholders": [], "uncertain": 0, "tables": 0, "incomplete_tables": 0},
             ],
         },
     ]
