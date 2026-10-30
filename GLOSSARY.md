@@ -88,6 +88,10 @@ _Avoid_: image page
 A page whose content is printed a quarter turn from the page, so a reader turns the page to read it, such as a wide table printed across a tall page. A page that the PDF itself turns upright when it is shown is not a sideways page.
 _Avoid_: rotated page, landscape page
 
+**Upside-down page**:
+A page whose content is printed a half turn from the page, so a reader turns the page round to read it, such as a sheet fed into a scanner the wrong way round. A page that the PDF itself turns upright when it is shown is not an upside-down page, nor is an upright page with an upside-down stamp or line on it.
+_Avoid_: rotated page, inverted page
+
 **Column**:
 Text set beside other text on a page, with a clear gap between them, which a reader reads to its end before the text beside it: one of the two columns of a terms-and-conditions page, a panel of addresses beside a letter, or one of several signature blocks side by side. A table's columns are not columns in this sense, nor are labels set apart from their values, as on a form: they are read row by row.
 _Avoid_: text block, side-by-side text

@@ -5,7 +5,7 @@ from typing import Literal
 
 import numpy as np
 import pytest
-from fake_ocr import FakeEngine, Sideways, Boxed, Unsure, marks_over
+from fake_ocr import FakeEngine, Sideways, Boxed, Unsure, UpsideDown, marks_over
 from generate import CRISP_PAGE
 from markdown_reader import page_texts
 from pdf_builder import LEFT, LINE_HEIGHT, TOP, Drawn, Rotated, Scan, Styled, pdf, remapped
@@ -270,6 +270,14 @@ def test_a_sideways_page_reads_as_the_same_page_upright(turn: Literal[90, 270]) 
     assert [page.kind for page in sideways.summary.pages] == ["ocr"]
 
 
+def test_an_upside_down_page_reads_as_the_same_page_upright() -> None:
+    upright = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=FakeEngine(PRICE_SCHEDULE))
+
+    upside_down = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50, upside_down=True)), ocr=FakeEngine(UpsideDown(PRICE_SCHEDULE)))
+
+    assert markdown_pages(upside_down) == markdown_pages(upright)
+
+
 def page_turns(engine: FakeEngine) -> list[int]:
     """How far each image of a whole page that the engine read was turned; crops left out."""
     page = engine.images[0]
@@ -292,6 +300,7 @@ def test_a_sideways_page_is_not_turned_the_wrong_way_when_its_box_reads_as_nothi
 
     convert(pdf(Scan(PRICE_SCHEDULE, dpi=50, sideways=90)), ocr=engine)
 
+    # Nor turned round, as an upside-down page is: its tall boxes would read surely, in the wrong order.
     assert page_turns(engine) == [0]
 
 
@@ -335,6 +344,53 @@ def test_a_header_stamped_over_scans_is_removed_from_a_sideways_page_too(turn: L
     assert first == body[0]
     assert second.startswith(PRICE_SCHEDULE[0])
     assert stamp.text not in second
+
+
+# Upside-down pages: read unsurely, a page is read again turned round, and taken that way
+# when that reads clearly better.
+
+
+def test_an_upright_page_read_surely_is_read_once() -> None:
+    engine = FakeEngine(PRICE_SCHEDULE)
+
+    convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=engine)
+
+    assert page_turns(engine) == [0]
+
+
+def test_an_upright_page_read_unsurely_either_way_is_read_as_it_is() -> None:
+    # Lines the engine cannot make out either way, such as faint handwriting.
+    lines = [Unsure(line) for line in PRICE_SCHEDULE]
+    upright = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=FakeEngine(lines))
+    engine = FakeEngine(lines)
+
+    unsure = convert(pdf(Scan(PRICE_SCHEDULE, dpi=50)), ocr=engine)
+
+    assert page_turns(engine) == [0, 180]
+    assert markdown_pages(unsure) == markdown_pages(upright)
+
+
+def test_an_upside_down_page_with_little_text_is_not_turned() -> None:
+    # Too little to tell which way up it is, as a stamp or a signature alone on a page.
+    engine = FakeEngine(UpsideDown(["ลงชื่อ ผู้รับทุน"]))
+
+    convert(pdf(Scan(["ลงชื่อ ผู้รับทุน"], dpi=50, upside_down=True)), ocr=engine)
+
+    assert page_turns(engine) == [0]
+
+
+def test_a_note_typed_over_an_upside_down_page_comes_out_once_where_it_sits_on_the_page() -> None:
+    # The note is typed upright at the foot of the page as shown, under the turned table.
+    note = Styled("หมายเหตุ ตรวจสอบแล้ว", y=800)
+    misread_note = Styled("หมายเหตุ ตรวจสอบแลว", y=800)
+    engine = FakeEngine(UpsideDown(PRICE_SCHEDULE, shown=[misread_note]))
+
+    result = convert(pdf(Scan(PRICE_SCHEDULE, overlay=[note], dpi=50, upside_down=True)), ocr=engine)
+
+    [page] = markdown_pages(result)
+    assert page.count(note.text) == 1
+    assert misread_note.text not in page
+    assert page.index(PRICE_SCHEDULE[0]) < page.index(PRICE_SCHEDULE[-1]) < page.index(note.text)
 
 
 # Columns: a reader reads each column to its end before the column to its right

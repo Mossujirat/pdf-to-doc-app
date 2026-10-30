@@ -321,9 +321,15 @@ STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร
 
 
 def scanned(
-    lines: Sequence[Line], overlay: list[Line] | None = None, seed: int = 0, sideways: Literal[0, 90, 270] = 0
+    lines: Sequence[Line],
+    overlay: list[Line] | None = None,
+    seed: int = 0,
+    sideways: Literal[0, 90, 270] = 0,
+    upside_down: bool = False,
 ) -> Scan:
-    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways)
+    return Scan(
+        lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways, upside_down=upside_down
+    )
 
 
 SCANNED_DOCUMENTS = (
@@ -873,6 +879,19 @@ TWO_COLUMN_DOCUMENTS = (
     ),
 )
 
+# Upside-down pages, as when a sheet is fed into a scanner the wrong way round. The table fits
+# a page upright, unlike the price schedule, which needs a sheet on its side.
+UPSIDE_DOWN_DOCUMENTS = (
+    SyntheticDocument(
+        name="upside-down-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(lines=scanned([PAYMENT_SCHEDULE], seed=9, upside_down=True), reference=PAYMENT_SCHEDULE_REFERENCE),
+            SyntheticPage(lines=scanned(CLAUSES, seed=10, upside_down=True), reference="".join(CLAUSES)),
+        ),
+    ),
+)
+
 ALL_DOCUMENTS = (
     DOCUMENTS
     + SCANNED_DOCUMENTS
@@ -880,6 +899,7 @@ ALL_DOCUMENTS = (
     + PLACEHOLDER_DOCUMENTS
     + ROTATED_DOCUMENTS
     + SIDEWAYS_DOCUMENTS
+    + UPSIDE_DOWN_DOCUMENTS
     + TWO_COLUMN_DOCUMENTS
     + RULED_TABLE_DOCUMENTS
     + PART_RULED_TABLE_DOCUMENTS

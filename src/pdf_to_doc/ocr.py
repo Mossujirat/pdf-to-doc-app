@@ -69,6 +69,13 @@ _SIDEWAYS = 0.5
 # reading taken for upright was 0.90 sure or more.
 _CLEARLY_BETTER = 0.15
 _READ_UPRIGHT = 0.8
+# A page the engine reads less surely than that may be upside down, if it read this many
+# characters or more: it is read again turned round, and taken that way when that reads
+# clearly better, and surely, as above. Read upside down, pages of synthetic scans, damaged
+# scans and the samples' scans read 0.42 to 0.75 sure, per character, and turned round 0.91
+# or more; the samples' upright scans read 0.87 or more, the damaged ones 0.96. The shortest
+# page read upside down held 26 characters.
+_UPSIDE_DOWN_CHARACTERS = 20
 
 
 @dataclass(frozen=True)
@@ -79,7 +86,7 @@ class PageImage:
     height: int
     dpi: float
     samples: bytes
-    turn: int = 0  # degrees it was turned clockwise from the page as shown: 0, 90 or 270
+    turn: int = 0  # degrees it was turned clockwise from the page as shown: 0, 90, 180 or 270
 
 
 Box = tuple[float, float, float, float]
@@ -127,17 +134,44 @@ def softened(image: PageImage) -> PageImage:
 
 
 def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows) -> PageRows:
-    """The page's rows, read by the engine; a sideways page is turned upright and read again."""
+    """The page's rows, read by the engine; a sideways page is turned upright and read again,
+    and so is an upside-down one (see `_read_upright`)."""
     boxes = engine.read(image, LANGUAGES)
     turn = _sideways_turn(engine, image, boxes)
     if turn:
         image = _turned(image, turn)
         boxes = engine.read(image, LANGUAGES)
+    image, boxes = _read_upright(engine, image, boxes)
     return _ocr_page(boxes, image, text_layer)
 
 
+def _read_upright(engine: OcrEngine, image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[PageImage, tuple[TextBox, ...]]:
+    """The image and what the engine read on it, turned round and read again when the page
+    may be upside down and reads clearly better, and surely, that way. A page read unsurely
+    may be upside down; one read surely, or with little text on it, is taken as it is. So is
+    one whose text still runs down the page, which `_sideways_turn` left as it is: turned
+    round, the engine would read its tall boxes surely, but in the wrong order, unmarked."""
+    as_read = _confidence(boxes)
+    if (
+        as_read >= _READ_UPRIGHT
+        or sum(len(box.text.strip()) for box in boxes) < _UPSIDE_DOWN_CHARACTERS
+        or _runs_down(boxes)
+    ):
+        return image, boxes
+    turned = _turned(image, 180)
+    turned_boxes = engine.read(turned, LANGUAGES)
+    if _clearly_better(_confidence(turned_boxes), as_read):
+        return turned, turned_boxes
+    return image, boxes
+
+
+def _clearly_better(reading: float, other: float) -> bool:
+    """Whether a reading this sure, per character, reads clearly better than the other, and surely."""
+    return reading >= _READ_UPRIGHT and reading - other >= _CLEARLY_BETTER
+
+
 def _turned(image: PageImage, turn: int) -> PageImage:
-    """The image turned `turn` degrees clockwise: 90 or 270."""
+    """The image turned `turn` degrees clockwise: 90, 180 or 270."""
     return _image(np.rot90(_pixels(image), k=-turn // 90), image.dpi, (image.turn + turn) % 360)
 
 
@@ -155,18 +189,27 @@ def _sideways_turn(engine: OcrEngine, image: PageImage, boxes: tuple[TextBox, ..
     wrongly. Reading the box turned that way too would cost more: a crop takes a tenth
     to a quarter of the time a page does.
     """
-    boxes = tuple(box for box in boxes if box.text.strip())
-    tall = [box for box in boxes if _height(box) >= _TALL * _width(box)]
-    if not tall or sum(map(_area, tall)) < _SIDEWAYS * sum(map(_area, boxes)):
+    if not _runs_down(boxes):
         return 0
-    largest = max(tall, key=_area)
+    largest = max(_tall(boxes), key=_area)
     as_read = _confidence((largest,))
     clockwise = _confidence(engine.read(_turned(_crop(image, largest), 90), LANGUAGES))
-    if clockwise >= _READ_UPRIGHT and clockwise - as_read >= _CLEARLY_BETTER:
+    if _clearly_better(clockwise, as_read):
         return 90
-    if as_read >= _READ_UPRIGHT and as_read - clockwise >= _CLEARLY_BETTER:
+    if _clearly_better(as_read, clockwise):
         return 270
     return 0
+
+
+def _runs_down(boxes: tuple[TextBox, ...]) -> bool:
+    """Whether the text runs down the page: its tall boxes hold most of its area."""
+    tall = _tall(boxes)
+    return bool(tall) and sum(map(_area, tall)) >= _SIDEWAYS * sum(map(_area, (box for box in boxes if box.text.strip())))
+
+
+def _tall(boxes: tuple[TextBox, ...]) -> list[TextBox]:
+    """The boxes with text that run down the page."""
+    return [box for box in boxes if box.text.strip() and _height(box) >= _TALL * _width(box)]
 
 
 def _crop(image: PageImage, box: TextBox) -> PageImage:

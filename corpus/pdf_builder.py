@@ -129,6 +129,9 @@ class Scan:
     # A sideways page: the lines are laid out on a landscape sheet, set on the page so
     # that a reader turns the page this many degrees clockwise to read them.
     sideways: Literal[0, 90, 270] = 0
+    # An upside-down page: the lines are set on the page a half turn round, as when a sheet
+    # is fed into a scanner the wrong way round.
+    upside_down: bool = False
     landscape: bool = False  # the page itself is A4 on its side, its lines laid out across it
     searchable: Literal["over", "under"] | None = None  # where its lines are hidden as text, if they are
 
@@ -259,11 +262,12 @@ def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) 
 
 def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
     """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy,
-    turned the other way from how a reader turns a sideways page, and turned back by the page's rotation."""
+    turned the other way from how a reader turns a sideways page, or round if upside down,
+    and turned back by the page's rotation."""
     with pymupdf.open() as paper:
         _draw_lines(_on_its_side(paper) if scan.sideways or scan.landscape else paper.new_page(), scan.lines, font_file)
         zoom = scan.dpi / 72
-        turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - scan.sideways - rotation)
+        turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - scan.sideways - 180 * scan.upside_down - rotation)
         pix = paper[0].get_pixmap(matrix=turn, colorspace=pymupdf.csGRAY)
     pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
     grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0
