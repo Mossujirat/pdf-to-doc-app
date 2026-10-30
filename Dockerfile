@@ -32,6 +32,10 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-install-project
 COPY --from=source /src .
 RUN uv sync --frozen
+# Fetching the models imports the converter, and so OpenCV, which needs these system libraries.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
 # The models, fetched and checked against their pinned hashes.
 RUN PDF_TO_DOC_MODELS=/opt/pdf-to-doc/models .venv/bin/pdf-to-doc-models
 
