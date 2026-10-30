@@ -98,6 +98,12 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
   - a wrapped description, which is one sentence.
 
   Text in a table cell wraps as Word wraps it: the first line fills the cell, and the next word would not fit after it.
+- `clause-references` holds a contract's numbered clauses on a text page, each a list item:
+  - a cross-reference whose clause number wraps onto the next line, which starts no list item;
+  - a clause ending on a full line, before the next;
+  - a clause ending in "ล่วงหน้า", which is no reference.
+
+  The comparison drops list markup, so a false list item scores no worse here; `test_corpus.py` compares this page whole.
 - A page can draw its text as shapes, with no text layer, as some PDF printers write it: `text-drawn-as-shapes`. It holds the same clauses as the second page of `wrong-unicode-map`, with a line marked over its first and last words. Both are OCR pages that are not scans, which the converter renders from the PDF and softens before reading; read crisp, they lose their fifth line.
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.

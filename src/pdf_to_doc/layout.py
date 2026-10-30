@@ -39,6 +39,15 @@ _BARE_PAGE_NUMBER = re.compile(rf"{_DASHES}(?P<page>{_NUMBER})(?:\s*/\s*{_NUMBER
 # letter in brackets, "(ก)" or "ก)", followed by a space. "ก." is left out: it is
 # also how Thai abbreviates ตำบล, อำเภอ and the like.
 _NUMBERED_ITEM = re.compile(rf"^\s*(?:\(?{_NUMBER}(?:\.{_NUMBER})*[.)]|{_NUMBER}(?:\.{_NUMBER})+|\(?{THAI_CONSONANT}\))\s")
+# A word at the end of a row that a number follows as a reference, as in "ตามข้อ / 4.2",
+# seen on a contract exported from Word: the number on the next row carries on the sentence.
+# The words may end another, as in "ตามข้อ" and "หัวข้อ", but not "ทุก", every, which points at
+# no number; "หน้า" must end none, as in "ล่วงหน้า". The English words are their counterparts.
+_REFERENCE_AT_END = re.compile(
+    rf"(?:(?<!ทุก)(?:ข้อ(?:ที่)?|มาตรา|วรรค|หมวด(?:ที่)?|ภาคผนวก|ตารางที่|รูปที่)|(?<!{THAI_LETTER})หน้า"
+    r"|\b(?:clause|section|article|paragraph|item|table|figure|annex|appendix|page|no\.))\s*$",
+    re.IGNORECASE,
+)
 # Symbol and Wingdings fonts, which Word draws bullets with, report their glyphs
 # as Private Use Area characters in this range.
 SYMBOL_FONT_CHARACTERS = f"{chr(0xF000)}-{chr(0xF0FF)}"
@@ -359,7 +368,7 @@ def _wraps(line: CellLine, following: CellLine, cell: RawCell) -> bool:
     return line.x1 - line.x0 + _first_word_width(following) > right - left - 2 * max(padding, 0.0)
 
 
-def _first_word_width(line: CellLine) -> float:
+def _first_word_width(line: CellLine | Row) -> float:
     """How wide the line's first word is, by its share of the line's letters. Marks above and
     below the letters take no room."""
     letters = len(_THAI_MARK.sub("", line.text.strip()))
@@ -555,11 +564,17 @@ def _continues(group: list[Row], row: Row, page: PageRows, right_edge: float, li
 
 
 def _starts_new_item(row: Row, previous: Row, in_list_item: bool, right_edge: float) -> bool:
-    """A bullet always starts an item. A number starts one after another item or after a
-    line that stops short; after a full line it is just a wrapped sentence, as in "2.5 ล้านบาท"."""
+    """A bullet always starts an item. Outside an item, a number starts one after a line that
+    stops short; after a full line it is just a wrapped sentence, as in "2.5 ล้านบาท". Contract
+    clauses often end on a full line, justified, so within an item a number starts the next one
+    all the same. After a word that refers to it, as in "ตามข้อ", on a line the number's first
+    word would not have fitted on, it is the reference's number, even within an item: a short
+    heading such as "ภาคผนวก" is followed by its list."""
     if _BULLET_ITEM.match(row.text):
         return True
     if not _NUMBERED_ITEM.match(row.text):
+        return False
+    if _REFERENCE_AT_END.search(previous.text) and previous.x1 + _first_word_width(row) > right_edge:
         return False
     stops_short = previous.x1 < right_edge - 2 * row.size
     return in_list_item or stops_short

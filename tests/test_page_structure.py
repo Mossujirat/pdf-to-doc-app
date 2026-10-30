@@ -1,7 +1,9 @@
 """Page structure on text pages: page furniture removed, headings and lists kept."""
 
+import pymupdf
+import pytest
 from markdown_reader import page_texts
-from pdf_builder import Line, Spaced, Styled, pdf
+from pdf_builder import FONT_SIZE, LEFT, SARABUN, Line, Spaced, Styled, pdf
 
 from pdf_to_doc import convert
 
@@ -255,6 +257,58 @@ def test_a_wrapped_line_that_starts_with_a_number_carries_on_the_sentence() -> N
     # The line before runs the full width, so the sentence wraps rather than ends.
     assert markdown_pages([FULL_LINE, "2.5 ล้านบาท ภายในปีนี้"]) == [f"{FULL_LINE} 2.5 ล้านบาท ภายในปีนี้"]
     assert markdown_pages([FULL_LINE, "09.00 น. ของวันทำการ"]) == [f"{FULL_LINE} 09.00 น. ของวันทำการ"]
+
+
+def test_a_list_item_whose_last_line_runs_full_is_followed_by_the_next_item() -> None:
+    # Justified clauses of a real contract often end on a full line.
+    pages = markdown_pages([f"1. {FULL_LINE}", "2. ผู้ให้ทุนจะตรวจรายงาน"])
+
+    assert pages == [f"- 1. {FULL_LINE}\n- 2. ผู้ให้ทุนจะตรวจรายงาน"]
+
+
+@pytest.mark.parametrize(
+    ("reference", "number"), [("ตามข้อ", "4.2 ของสัญญานี้"), (" Clause", "4.2 of this agreement")], ids=["ตามข้อ", "Clause"]
+)
+def test_a_clause_number_wrapped_after_its_reference_stays_in_the_list_item(reference: str, number: str) -> None:
+    # As found in a contract exported from Word: the clause's line runs the full width.
+    pages = markdown_pages([f"1. {FULL_LINE}{reference}", number, "2. ผู้ให้ทุนจะตรวจรายงาน"])
+
+    assert pages == [f"- 1. {FULL_LINE}{reference} {number}\n- 2. ผู้ให้ทุนจะตรวจรายงาน"]
+
+
+def test_a_reference_whose_line_stops_short_of_the_next_word_carries_on_the_sentence() -> None:
+    # The line ends two font sizes short of the margin, and the next line's first word, with no
+    # space in it, is far wider: Word wrapped it.
+    reference = "ค่าปรับให้เป็นไปตามข้อ"
+    width = pymupdf.Font(fontfile=str(SARABUN)).text_length(reference, fontsize=FONT_SIZE)
+    right_margin = pymupdf.paper_size("a4")[0] - LEFT
+    lines: list[Line] = [
+        Styled(reference, x=right_margin - 2 * FONT_SIZE - width),
+        Styled("4.2ของสัญญานี้ฉบับนี้"),
+        "2. ผู้ให้ทุนจะตรวจรายงาน",
+    ]
+
+    assert markdown_pages(lines) == [f"{reference} 4.2ของสัญญานี้ฉบับนี้\n\n- 2. ผู้ให้ทุนจะตรวจรายงาน"]
+
+
+def test_a_short_heading_that_ends_in_a_reference_word_is_followed_by_its_list() -> None:
+    # Its line did not wrap: the number after it would have fit.
+    pages = markdown_pages(["ภาคผนวก", "1. แบบฟอร์มรายงาน"])
+
+    assert pages == ["ภาคผนวก\n\n- 1. แบบฟอร์มรายงาน"]
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "ทุกข้อ",  # every clause, which points at none
+        "ล่วงหน้า",  # ends in "หน้า", page, but refers to nothing
+    ],
+)
+def test_a_list_item_ending_in_a_word_that_refers_to_no_number_is_followed_by_the_next_item(ending: str) -> None:
+    pages = markdown_pages([f"1. {FULL_LINE}{ending}", "2. ผู้ให้ทุนจะตรวจรายงาน"])
+
+    assert pages == [f"- 1. {FULL_LINE}{ending}\n- 2. ผู้ให้ทุนจะตรวจรายงาน"]
 
 
 def test_thai_abbreviations_with_a_full_stop_are_not_list_items() -> None:
