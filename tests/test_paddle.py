@@ -1,14 +1,25 @@
 """The PaddleOCR engine on simulated scans and other OCR pages; these tests need the models (`pdf-to-doc-models`)."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal
 
+import cv2
+import numpy as np
+import pymupdf
 import pytest
 from generate import CRISP_PAGE, KAR_AS_KAM, RULED_TABLE_PAGES
 from markdown_reader import page_texts
-from pdf_builder import Drawn, Grid, Line, Scan, pdf, remapped
+from pdf_builder import SARABUN, Drawn, Grid, Line, Scan, pdf, remapped
 
 from pdf_to_doc import convert
+from pdf_to_doc.ocr import LANGUAGES, PageImage, render
+from pdf_to_doc.ocr_models import models_folder
+from pdf_to_doc.paddle import PaddleOcrEngine
 from pdf_to_doc.quality import score_page
+
+CORPUS = Path(__file__).parent.parent / "corpus"
 
 pytestmark = pytest.mark.ocr
 
@@ -117,3 +128,89 @@ def test_a_ruled_table_printed_sideways_comes_out_as_a_table(turn: Literal[90, 2
     score = score_page(page, TIMELINE_REFERENCE)
     assert score.cells_right >= ENOUGH_CELLS * score.cells
     assert score.cer < 0.05
+
+
+def test_a_scan_under_a_dot_pattern_watermark_is_read_again_blurred() -> None:
+    # The pattern's dots join the lines under it into a region the detector drops. Whether a
+    # synthetic page shows that hangs on its text and the pattern's size, and this page is one
+    # that does; the real certificate pages that showed it gained 21 lines once blurred. What
+    # this guards is the reach into PaddleX that finds the dropped regions.
+    engine = PaddleOcrEngine(models_folder())
+    page = dotted_watermark_page()
+    blurred = PageImage(page.width, page.height, page.dpi, cv2.GaussianBlur(pixels(page), (0, 0), WATERMARK_SOFTENING).tobytes())
+
+    with counted(engine) as reads:
+        boxes = engine.read(page, LANGUAGES)
+
+    assert len(reads) == 2
+    assert boxes == engine.read(blurred, LANGUAGES)
+
+
+def test_no_scan_in_the_corpus_is_read_twice() -> None:
+    engine = PaddleOcrEngine(models_folder())
+    scans = [
+        render(page)
+        for path in sorted((CORPUS / "synthetic").glob("*.pdf")) + sorted((CORPUS / "degraded").glob("*.pdf"))
+        for page in pymupdf.open(path).pages()
+        if page.get_images()
+    ]
+
+    with counted(engine) as reads:
+        for scan in scans:
+            engine.read(scan, LANGUAGES)
+
+    assert len(reads) == len(scans) >= 25
+
+
+# How much the engine blurs a scan under such a pattern before reading it again.
+WATERMARK_SOFTENING = 2.0
+
+
+@contextmanager
+def counted(engine: PaddleOcrEngine) -> Iterator[list[int]]:
+    """The PaddleOCR reads the engine makes inside the block, one entry each. How many times
+    the engine reads a page is not part of its interface, so this reaches into it on purpose."""
+    ocr, reads = engine._ocr, []
+    predict = ocr.predict
+
+    def counting(*args: object, **kwargs: object) -> object:
+        reads.append(1)
+        return predict(*args, **kwargs)
+
+    ocr.predict = counting
+    try:
+        yield reads
+    finally:
+        del ocr.predict
+
+
+WATERMARKED_LINES = 57
+
+
+def dotted_watermark_page() -> PageImage:
+    """Lines in 9-point type on a black-and-white scan at 220 dpi, under large diagonal letters
+    filled with a checkerboard of 1-pixel dots, as a certificate scanned in black and white."""
+    dpi = 220
+    with pymupdf.open() as paper:
+        page = paper.new_page()
+        page.insert_font(fontname="sarabun", fontfile=str(SARABUN))
+        for number in range(WATERMARKED_LINES):
+            page.insert_text((60, 90 + number * 12.5), LINES[number % len(LINES)], fontname="sarabun", fontsize=9)
+        scan = page.get_pixmap(matrix=pymupdf.Matrix(dpi / 72, dpi / 72).prerotate(0.3), colorspace=pymupdf.csGRAY)
+    grey = np.frombuffer(scan.samples, np.uint8).reshape(scan.height, scan.width)
+    height, width = grey.shape
+    letters: np.ndarray = np.zeros(grey.shape, np.uint8)
+    font, scale, thickness = cv2.FONT_HERSHEY_DUPLEX, 60 * dpi / 300, int(300 * dpi / 300)
+    (text_width, text_height), _ = cv2.getTextSize("COPY", font, scale, thickness)
+    cv2.putText(letters, "COPY", ((width - text_width) // 2, (height + text_height) // 2), font, scale, (255,), thickness, cv2.LINE_AA)
+    letters = cv2.warpAffine(letters, cv2.getRotationMatrix2D((width // 2, height // 2), 35, 1.0), (width, height))
+    rows, columns = np.indices(grey.shape)
+    ink = (grey < 140) | ((letters > 127) & ((rows + columns) % 2 == 0))
+    black_and_white = pymupdf.Pixmap(pymupdf.csGRAY, width, height, np.where(ink, 0, 255).astype(np.uint8).tobytes(), False)
+    with pymupdf.open() as document:
+        document.new_page().insert_image(pymupdf.paper_rect("a4"), stream=black_and_white.tobytes("png"))
+        return render(document[0])
+
+
+def pixels(image: PageImage) -> np.ndarray:
+    return np.frombuffer(image.samples, np.uint8).reshape(image.height, image.width, 3)
