@@ -11,7 +11,7 @@ from pdf_to_doc.thai import THAI_LETTER, repair
 _THAI = re.compile(THAI_LETTER)
 # Mai yamok (repeat the word) and paiyannoi (abbreviation) are tokens of their
 # own when they follow a word, and no word list has them.
-_NOT_WORDS = f"{chr(0x0E46)}{chr(0x0E2F)}"
+NOT_WORDS = f"{chr(0x0E46)}{chr(0x0E2F)}"
 
 
 def thai_words_in(text: str) -> list[str]:
@@ -27,7 +27,7 @@ def first_word(text: str) -> str:
 
 def in_word_list(word: str) -> bool:
     words = pythainlp_word_list()
-    return word in words or word.strip(_NOT_WORDS) in words
+    return word in words or word.strip(NOT_WORDS) in words
 
 
 def unknown_words(text: str) -> int:
@@ -50,4 +50,4 @@ def unknown_word_spans(text: str) -> tuple[Span, ...]:
 
 
 def _is_thai_word(token: str) -> bool:
-    return bool(_THAI.search(token)) and bool(token.strip(_NOT_WORDS))
+    return bool(_THAI.search(token)) and bool(token.strip(NOT_WORDS))

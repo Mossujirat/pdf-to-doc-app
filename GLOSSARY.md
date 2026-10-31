@@ -41,7 +41,7 @@ _Avoid_: garbled text, ตัวหนังสือขาด (when used loosel
 The order a reader takes a page's text in: from top to bottom, and where text is set in columns, each column to its end before the column to its right. A table, or a list of labels and their values, is read row by row.
 
 **Uncertain text**:
-Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
+Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, a number with letters among its digits or another word or number shaped like a typical misread, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
 _Avoid_: low-quality text, error
 
 **Placeholder**:

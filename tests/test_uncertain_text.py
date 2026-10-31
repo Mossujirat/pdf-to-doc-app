@@ -83,6 +83,70 @@ def test_a_low_confidence_box_is_marked_where_it_was_read_and_nowhere_else() -> 
     ]
 
 
+# Words and numbers shaped like a misread. The engine reads them with confidence, and English
+# words and numbers are not looked up in a word list, so only their shape gives them away.
+
+
+def test_a_number_with_letters_read_in_place_of_its_digits_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["The Buyer shall pay 12,ooo.oo baht, 1O% in advance."]))
+
+    assert markdown_pages(result) == ["The Buyer shall pay <mark>12,ooo.oo</mark> baht, <mark>1O%</mark> in advance."]
+
+
+def test_codes_that_mix_letters_and_digits_are_not_marked() -> None:
+    # Neither a Roman numeral before a clause's number nor a code such as "1O1A" is a misread number.
+    line = "Paper A4, room S1, the 1st B2B order under ISO 9001 after COVID-19, item No.5 at 2.5%, Annex I.2, Part II.3, desk 1O1A."
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_small_letter_read_in_place_of_a_capital_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["Delivered to BKk office of THAlLAND POST."]))
+
+    assert markdown_pages(result) == ["Delivered to <mark>BKk</mark> office of <mark>THAlLAND</mark> POST."]
+
+
+def test_words_written_in_mixed_case_on_purpose_are_not_marked() -> None:
+    # A small o between capitals stands for "of".
+    line = "Dr. Somchai, PhD, of McDonald Ltd sent two PDFs from an iPhone over a 5 GHz link, with the ToRs and the MoU."
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_roman_numeral_with_l_read_in_place_of_i_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["Schedules l, Il and ll form part of this Agreement. Ill health excuses delay."]))
+
+    assert markdown_pages(result) == [
+        "Schedules <mark>l</mark>, <mark>Il</mark> and <mark>ll</mark> form part of this Agreement. Ill health excuses delay."
+    ]
+
+
+def test_an_english_word_read_with_a_thai_look_alike_letter_is_marked() -> None:
+    # The Thai recogniser read s as ร and o as Thai zero.
+    result = convert(scan(), ocr=FakeEngine(["ส่งรายงานเป็นไฟล์ PDF ผ่านระบบ Teamร และ Z๐om"]))
+
+    assert markdown_pages(result) == ["ส่งรายงานเป็นไฟล์ PDF ผ่านระบบ <mark>Teamร</mark> และ <mark>Z๐om</mark>"]
+
+
+def test_a_number_that_mixes_thai_and_arabic_digits_is_marked() -> None:
+    # The engine read the Thai digit ๕ as 5; the year is written in Arabic digits on purpose.
+    result = convert(scan(), ocr=FakeEngine(["ลงวันที่ ๑5 มกราคม 2567 ชำระ ๒๕,๐๐๐ บาท"]))
+
+    assert markdown_pages(result) == ["ลงวันที่ <mark>๑5</mark> มกราคม 2567 ชำระ ๒๕,๐๐๐ บาท"]
+
+
+def test_thai_text_joined_to_an_english_name_on_purpose_is_not_marked() -> None:
+    line = "ลงนามโดยบริษัทABC จำกัด"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
 # The summary
 
 

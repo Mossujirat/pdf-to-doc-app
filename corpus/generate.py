@@ -974,28 +974,49 @@ CONTRACT_LINES = [
     "หลักฐานการจ่ายเงินต้องมีลายมือชื่อผู้รับเงินทุกฉบับ",
     "ในกรณีมีข้อพิพาท ให้ใช้กฎหมายไทยบังคับแก่สัญญานี้",
 ]
+# Amounts, percentages, codes, abbreviations and names, where a misread letter or digit changes
+# the meaning, beside words in mixed case and codes that are right as they stand.
+ENGLISH_CONTRACT_LINES = [
+    "SERVICE AGREEMENT No. SA-2024/0117",
+    "made on 15 March 2024 between ABC Trading Co., Ltd.",
+    "and Dr. Somchai Rattanakul, PhD, of Bangkok, THAILAND.",
+    "The Client shall pay a fee of 125,000.00 baht in total,",
+    "of which 30% is due on signing and 70% on delivery.",
+    "Budget code 6211-0450-B2 covers travel up to 18,500 baht.",
+    "All work shall follow ISO 9001 and the TOR of 2 April 2024.",
+    "Late delivery incurs a fine of 0.1% of the fee per day.",
+    "I, the Consultant, accept the terms of Schedule II.",
+    "This Agreement is governed by the laws of Thailand.",
+]
 # Resolution, grain and skew, from the corpus's own level of damage to a fax-like scan.
 DAMAGE = [(200, 6, 0.4), (150, 18, 0.8), (110, 28, 1.2), (90, 36, 1.5), (75, 45, 1.8)]
 
-DEGRADED_DOCUMENTS = (
-    SyntheticDocument(
-        name="damaged-scans",
+
+def damaged_scans(name: str, lines: list[str], first_seed: int) -> SyntheticDocument:
+    """The lines scanned once at each level of damage, a page each."""
+    return SyntheticDocument(
+        name=name,
         font_file=SARABUN,
         pages=tuple(
             SyntheticPage(
                 # A blank line between lines makes each a paragraph of its own.
                 lines=Scan(
-                    [line for text in CONTRACT_LINES for line in (text, "")],
+                    [line for text in lines for line in (text, "")],
                     dpi=dpi,
                     angle=angle,
                     noise=noise,
-                    seed=10 + level,
+                    seed=first_seed + level,
                 ),
-                reference="\n\n".join(CONTRACT_LINES),
+                reference="\n\n".join(lines),
             )
             for level, (dpi, noise, angle) in enumerate(DAMAGE)
         ),
-    ),
+    )
+
+
+DEGRADED_DOCUMENTS = (
+    damaged_scans("damaged-scans", CONTRACT_LINES, first_seed=10),
+    damaged_scans("damaged-english-scans", ENGLISH_CONTRACT_LINES, first_seed=20),
 )
 
 

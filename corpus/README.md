@@ -116,7 +116,9 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
 
 ## Damaged scans
 
-`degraded/` holds one document, `damaged-scans`. Its five pages are the same twelve contract lines, scanned at rising damage: from the corpus's own 200 dpi with mild grain down to 75 dpi with heavy grain and 1.8° of skew. Each line is a paragraph of its own.
+`degraded/` holds two documents, each of five pages scanned at rising damage: from the corpus's own 200 dpi with mild grain down to 75 dpi with heavy grain and 1.8° of skew. Each line is a paragraph of its own.
+- `damaged-scans`: the same twelve Thai contract lines on every page.
+- `damaged-english-scans`: the same ten English contract lines on every page, with amounts, percentages, codes, abbreviations, names and a Roman numeral, where a misread letter or digit changes the meaning.
 
 OCR is expected to get these pages wrong, so they sit outside the quality gate and outside CI. They are there to measure uncertain-text marking with the harness:
 

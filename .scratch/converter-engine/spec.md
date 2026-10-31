@@ -144,7 +144,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 - **PaddleOCR (default)**
   - Pin paddlepaddle 3.2.2; version 3.3.1 crashed at inference.
-  - Models: PP-OCRv5 mobile detector; the Thai mobile recogniser. It reads English words and digits on the same line correctly, and on the English sample's scans it agrees with the English recogniser on 99.3–99.8% of characters, so the English recogniser is not used (ticket 08).
+  - Models: PP-OCRv5 mobile detector; the Thai mobile recogniser. It reads English words and digits on the same line correctly, and on the English sample's scans it agrees with the English recogniser on 99.3–99.8% of characters, so the English recogniser is not used (ticket 08). On the Thai scans of a real contract, though, it read some English words inside Thai lines with Thai letters that look alike, such as s as ร; uncertain text marks these (ticket 23).
   - Detector input limited to a longest side of 1280 px. Defaults split Thai marks into separate boxes and were far worse: CER 11.8% instead of 4.0%, at four times the time.
   - Orientation and unwarping off.
   - Scanned table structure: found from the rules in the page image, through the OCR engine interface, on every OCR page (spec `.scratch/tables-on-ocr-pages/`). PP-StructureV3 was measured and rejected. A table whose text cannot be placed in its cells with certainty is an incomplete table: its printed lines one by one, after the label `[ตารางอาจไม่สมบูรณ์]`, which is not a placeholder. A table with no rules comes out one line per row, with no label.
@@ -155,12 +155,18 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 
 **Uncertain text** (ticket 11)
 - Only text that OCR read can be uncertain. Text taken from a text layer never is.
-- Two signals mark it, decided with the user on 2026-10-21:
+- Three signals mark it, decided with the user on 2026-10-21 and 2026-10-31:
   - **A Thai word that the word list does not hold.** A misread mark or letter usually leaves one, such as "ผู้อืน" for "ผู้อื่น". The word is marked, not its whole line. This works for any engine, Typhoon included, which gives no confidence at all.
+  - **A word or number shaped like a misread** (ticket 23). English words are not looked up in a word list, since a contract's names, codes and abbreviations would fill it with false alarms. The whole word or number is marked:
+    - a number with letters read in place of its digits, such as "12,ooo.oo": it becomes a number when each o, O, l and I is read as 0 or 1, and S, B and Z between two digits as 5, 8 and 2. A code such as "1O1A" is not, nor a Roman numeral before a clause's number, such as "I.2";
+    - a word in capitals whose every small letter is shaped like its capital, such as "BKk" or "THAlLAND", but not a plural s ("PDFs"), "Hz", or an o between capitals that stands for "of" ("ToR", "MoU");
+    - a word spelt only with l and I that holds an l, such as "Il" for the Roman numeral II, but not "Ill";
+    - a Latin word holding or joined to a single Thai letter or digit, such as "Teamร";
+    - a number in both Thai and Arabic digits, such as "๑5".
   - **A box the engine read with a confidence below 0.85.** The whole box is marked.
 - The confidence alone could not be the signal. PaddleOCR scores a whole line, and one wrong mark barely moves the score. On synthetic scans at six levels of damage, lines with one or two wrong characters scored 0.93–0.96, as did lines with none, while lines read as nonsense scored 0.64–0.75. Catching small misreads by confidence would have meant marking about a third of all text.
 - Neighbouring uncertain words, with only whitespace between them, are marked as one stretch.
-- **Known gap:** a misread that is itself a word is not marked, such as "ที" for "ที่" or "ทาก" for "หาก". Neither are lost digits or punctuation. The harness reports the share of errors left unmarked, so that ticket 17 can measure it on real scans.
+- **Known gap:** a misread that is itself a word is not marked, such as "ที" for "ที่" or "ทาก" for "หาก". Neither are punctuation, a digit read in place of a letter ("Is0" for "ISO"), a change of case that leaves a normal word ("Iso", "NO."), or a number misread as another number: a lost or extra digit, a footnote marker joined to the number before it, "x/y" read as one number, a range that lost its dash. The harness reports the share of errors left unmarked, so that ticket 17 can measure it on real scans.
 - `corpus/degraded/` holds scans damaged on purpose, outside the quality gate, for measuring this with the harness.
 - Handwriting is not transcribed:
   - Where it can be identified, it becomes a placeholder: Typhoon tags it, and it can be an image object on a text page.

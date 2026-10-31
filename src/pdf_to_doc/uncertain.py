@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from pdf_to_doc.misreads import misread_spans
 from pdf_to_doc.model import Span
 from pdf_to_doc.thai import repair
 from pdf_to_doc.words import unknown_word_spans
@@ -29,9 +30,10 @@ def uncertain_spans(text: str, pieces: Sequence[Piece]) -> tuple[Span, ...]:
     """Where a block's text is uncertain, neighbours made one stretch. `pieces` are what
     the text was joined from, in reading order. Only what OCR read can be uncertain:
     - a box read with low confidence, all of it
-    - in any other box, Thai words the word list does not hold, which a misread mark or letter usually leaves
+    - in any other box, Thai words the word list does not hold, which a misread mark or letter usually leaves,
+      and words and numbers shaped like a misread, such as letters among a number's digits
     """
-    unknown = unknown_word_spans(text)
+    doubtful = unknown_word_spans(text) + misread_spans(text)
     spans: list[Span] = []
     for piece, (start, end) in zip(pieces, _places(text, pieces)):
         if piece.confidence is None:
@@ -39,7 +41,7 @@ def uncertain_spans(text: str, pieces: Sequence[Piece]) -> tuple[Span, ...]:
         if piece.confidence < LOW_CONFIDENCE:
             spans.append(_trimmed(text, start, end))
         else:
-            spans += [(max(word_start, start), min(word_end, end)) for word_start, word_end in unknown if word_start < end and start < word_end]
+            spans += [(max(word_start, start), min(word_end, end)) for word_start, word_end in doubtful if word_start < end and start < word_end]
     return _merged(text, spans)
 
 
