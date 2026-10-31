@@ -63,6 +63,14 @@ def test_the_docx_of_each_text_page_of_the_committed_corpus_reads_as_its_referen
     assert len(scored) >= 4
 
 
+def test_a_contracts_list_items_stay_apart_and_a_wrapped_reference_joins_its_sentence() -> None:
+    # The harness drops list markup, so a false list item would score no worse: the page is compared whole.
+    markdown = convert((SYNTHETIC / "clause-references.pdf").read_bytes()).output.decode("utf-8")
+
+    [page] = markdown_page_texts(markdown)
+    assert page == (SYNTHETIC / "clause-references" / reference_file_name(1)).read_text(encoding="utf-8-sig").strip()
+
+
 @pytest.mark.ocr
 def test_paddleocr_reads_the_scanned_pages_of_the_committed_corpus() -> None:
     report = evaluate(SYNTHETIC).of_kind("ocr")

@@ -39,3 +39,15 @@ An account or registry number lands in the wrong text, and a signer's name can b
 **To decide at triage**
 - Which cue to use for each layout, and whether the signature cue is reliable on real signing pages.
 - How the title beside each signature should come out. Today the right-hand signer's title came first on one sample.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.
+
+**2026-10-30, from ticket 31**
+
+- **Text pages too:** a text page that draws these layouts line by line across is read across in the same way (synthetic pages: CER 0.37 with a panel, 0.39 with signature blocks, 0.56 with bank details beside signatories). Ticket 31 gives text pages ticket 18's column finder, so a cue found here can serve both kinds of page.
+- **A real signing page passes the body-text guard:** on the signing page of a research contract among the local samples, the signature blocks' dotted signing lines are long enough that the finder splits the two blocks into columns. Signature blocks with short lines do not pass it.

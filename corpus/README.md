@@ -98,18 +98,27 @@ It draws the PDFs with `pdf_builder.py`, using the fonts in `fonts/`.
   - a wrapped description, which is one sentence.
 
   Text in a table cell wraps as Word wraps it: the first line fills the cell, and the next word would not fit after it.
+- `clause-references` holds a contract's numbered clauses on a text page, each a list item:
+  - a cross-reference whose clause number wraps onto the next line, which starts no list item;
+  - a clause ending on a full line, before the next;
+  - a clause ending in "ล่วงหน้า", which is no reference.
+
+  The comparison drops list markup, so a false list item scores no worse here; `test_corpus.py` compares this page whole.
 - A page can draw its text as shapes, with no text layer, as some PDF printers write it: `text-drawn-as-shapes`. It holds the same clauses as the second page of `wrong-unicode-map`, with a line marked over its first and last words. Both are OCR pages that are not scans, which the converter renders from the PDF and softens before reading; read crisp, they lose their fifth line.
 - A page can hold pictures, drawn from numbers: a photo, a signature in blue ink and a red stamp, the last two on a transparent ground. `placeholders` puts each on a signing page.
 - A page can be stored landscape and turned upright by a page rotation, as some scanners save pages: `rotated-text-pages`, and `rotated-scans`, whose typed notes sit where their position on the stored page would fall over the scan's lines.
 - A sideways page has its content printed on a landscape sheet set a quarter turn on the page, so a reader turns the page to read it: `sideways-scans` holds a price schedule turned each way.
-- `two-column-scans` holds pages set in two columns of body text, read one column after the other: a Thai page and an English page of terms. Its third page is a cover sheet whose labels are set apart from their values, read row by row.
+- An upside-down page has its content printed a half turn round, as when a sheet is fed into a scanner the wrong way round: `upside-down-scans` holds a ruled payment schedule and a page of clauses.
+- `two-column-scans` holds pages set in two columns of body text, read one column after the other: a Thai page and an English page of terms. Its third page is a cover sheet whose labels are set apart from their values, read row by row. `two-column-drawn-across` holds its first page as a text page, drawn line by line across the columns, as some PDF writers draw them.
 - `ruled-table-scans` holds ruled tables on scans, one a page, with text around each: a payment schedule with wrapped cells, a budget with merged cells, a table of dates two rows deep, and the coarse table of `coarse-table`. The rules are found in the scan's image, so each comes out as a table. `ruled-tables-wrong-unicode-map` and `ruled-tables-drawn-as-shapes` hold the same pages on OCR pages that are not scans, whose rules are found in the image rendered from the PDF.
 - The same inputs always give the same bytes.
 - A test fails when the committed files in `synthetic/` or `degraded/` differ from what the generator makes.
 
 ## Damaged scans
 
-`degraded/` holds one document, `damaged-scans`. Its five pages are the same twelve contract lines, scanned at rising damage: from the corpus's own 200 dpi with mild grain down to 75 dpi with heavy grain and 1.8° of skew. Each line is a paragraph of its own.
+`degraded/` holds two documents, each of five pages scanned at rising damage: from the corpus's own 200 dpi with mild grain down to 75 dpi with heavy grain and 1.8° of skew. Each line is a paragraph of its own.
+- `damaged-scans`: the same twelve Thai contract lines on every page.
+- `damaged-english-scans`: the same ten English contract lines on every page, with amounts, percentages, codes, abbreviations, names and a Roman numeral, where a misread letter or digit changes the meaning.
 
 OCR is expected to get these pages wrong, so they sit outside the quality gate and outside CI. They are there to measure uncertain-text marking with the harness:
 

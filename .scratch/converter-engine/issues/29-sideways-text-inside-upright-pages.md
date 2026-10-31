@@ -26,3 +26,8 @@
 
 - **Ticket 14 finds a ruled table's grid in the page image,** and places each OCR box in the cell that holds its centre. A sideways header, once read right, would therefore land in its header cell with no extra work, as long as the header sits in a ruled cell.
 - Until then, its junk reading lands in that cell, marked uncertain.
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

@@ -16,3 +16,10 @@
   - In DOCX, yellow already marks uncertain text, so a highlight needs another colour, or a Word comment.
   - In Markdown, it needs a marking that AI chats read, and that differs from `<mark>`.
 - Where a note's text goes, in reading order or at the end of its page.
+
+## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

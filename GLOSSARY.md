@@ -12,6 +12,10 @@ _Avoid_: input file
 The single structured representation of a source file's content (headings, paragraphs, lists, tables, images and page boundaries) that every output is produced from.
 _Avoid_: intermediate format, AST
 
+**List item**:
+A block of the document model that starts with its own number, letter or bullet, such as a clause of a contract. A number that only carries on a sentence, such as an amount or the clause number a cross-reference points to, wrapped onto a new line, does not start one.
+_Avoid_: clause (for the block), numbered paragraph
+
 **Output**:
 A DOCX or Markdown file produced from the document model.
 
@@ -37,7 +41,7 @@ _Avoid_: garbled text, ตัวหนังสือขาด (when used loosel
 The order a reader takes a page's text in: from top to bottom, and where text is set in columns, each column to its end before the column to its right. A table, or a list of labels and their values, is read row by row.
 
 **Uncertain text**:
-Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
+Text in an output that the converter could not confirm reads correctly, such as an OCR word that is not in the dictionary, a number with letters among its digits or another word or number shaped like a typical misread, or text the OCR engine read with low confidence. It is always marked in the output and counted in the output's summary.
 _Avoid_: low-quality text, error
 
 **Placeholder**:
@@ -83,6 +87,10 @@ _Avoid_: image page
 **Sideways page**:
 A page whose content is printed a quarter turn from the page, so a reader turns the page to read it, such as a wide table printed across a tall page. A page that the PDF itself turns upright when it is shown is not a sideways page.
 _Avoid_: rotated page, landscape page
+
+**Upside-down page**:
+A page whose content is printed a half turn from the page, so a reader turns the page round to read it, such as a sheet fed into a scanner the wrong way round. A page that the PDF itself turns upright when it is shown is not an upside-down page, nor is an upright page with an upside-down stamp or line on it.
+_Avoid_: rotated page, inverted page
 
 **Column**:
 Text set beside other text on a page, with a clear gap between them, which a reader reads to its end before the text beside it: one of the two columns of a terms-and-conditions page, a panel of addresses beside a letter, or one of several signature blocks side by side. A table's columns are not columns in this sense, nor are labels set apart from their values, as on a form: they are read row by row.

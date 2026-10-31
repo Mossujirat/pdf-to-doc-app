@@ -24,6 +24,66 @@ def test_a_word_misread_into_one_that_is_not_in_the_dictionary_is_marked() -> No
     assert markdown_pages(result) == ["ผู้รับทุนต้องไม่โอนสิทธิให้ผู้<mark>อืน</mark>"]
 
 
+def test_short_common_words_beside_a_misread_are_not_marked_with_it() -> None:
+    result = convert(scan(), ocr=FakeEngine(["ย้ายไปที่อืนจะดีกว่า"]))
+
+    assert markdown_pages(result) == ["ย้ายไปที่<mark>อืน</mark>จะดีกว่า"]
+
+
+def test_a_transliterated_word_the_segmenter_cuts_up_is_not_marked() -> None:
+    # The word list lacks "ฟอร์มัล"; joined to "ดีไฮด์", it is a Thai Wikipedia title.
+    line = "กาวไม่ปล่อยสารฟอร์มัลดีไฮด์"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_word_cut_into_pieces_is_marked_whole() -> None:
+    # Not a title, so the reader checks it: all of it, not its unknown pieces "ก", "ลลู" and "ก".
+    result = convert(scan(), ocr=FakeEngine(["การพัฒนาวัสดุลิกโนเซลลูโลสิก"]))
+
+    assert markdown_pages(result) == ["การพัฒนาวัสดุ<mark>ลิกโนเซลลูโลสิก</mark>"]
+
+
+def test_a_letter_in_parentheses_that_lists_items_is_not_marked() -> None:
+    line = "งบประมาณประกอบด้วย (ก) ค่าวัสดุ (ข) ค่าจ้าง"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_an_abbreviation_with_full_stops_is_not_marked() -> None:
+    line = "ผลการตัดสินของ บพข. ถือเป็นที่สิ้นสุด ลงนามโดย ส. ปร.ด. รอง ผพว."
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_list_letter_joined_to_the_word_before_it_is_not_marked() -> None:
+    # OCR lost the space between "ทั้งสิ้น" and the list letter "ข.".
+    line = "งบประมาณทั้งสิ้นข.ส่วนที่บริหาร"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_consonants_ending_a_word_before_a_full_stop_are_not_an_abbreviation() -> None:
+    result = convert(scan(), ocr=FakeEngine(["ใช้งานระบบกข."]))
+
+    assert markdown_pages(result) == ["ใช้งานระบบ<mark>กข</mark>."]
+
+
+def test_na_standing_alone_is_not_marked_but_inside_a_misread_word_is() -> None:
+    # "คุณภาพ" misread as "กุณภาพ" leaves "ณ" as a piece of its own.
+    result = convert(scan(), ocr=FakeEngine(["ทำขึ้น ณ วันที่ 21 ตุลาคม ระบบบริหารกุณภาพ"]))
+
+    assert markdown_pages(result) == ["ทำขึ้น ณ วันที่ 21 ตุลาคม ระบบบริหาร<mark>กุณ</mark>ภาพ"]
+
+
 def test_neighbouring_uncertain_words_are_marked_as_one() -> None:
     # "เดือน ศูนย์" misread as two words that are not words.
     result = convert(scan(), ocr=FakeEngine(["ส่งรายงานทุกหกเคือน ศนย์ตรวจรับแล้ว"]))
@@ -81,6 +141,70 @@ def test_a_low_confidence_box_is_marked_where_it_was_read_and_nowhere_else() -> 
     assert markdown_pages(result) == [
         "- <mark>ส่งรายงานทุกหกเดือนให้ผู้ให้ทุน</mark>ตรวจสอบจนจบโครงการ\n\nข้อ 9 วันที่ <mark>9</mark>"
     ]
+
+
+# Words and numbers shaped like a misread. The engine reads them with confidence, and English
+# words and numbers are not looked up in a word list, so only their shape gives them away.
+
+
+def test_a_number_with_letters_read_in_place_of_its_digits_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["The Buyer shall pay 12,ooo.oo baht, 1O% in advance."]))
+
+    assert markdown_pages(result) == ["The Buyer shall pay <mark>12,ooo.oo</mark> baht, <mark>1O%</mark> in advance."]
+
+
+def test_codes_that_mix_letters_and_digits_are_not_marked() -> None:
+    # Neither a Roman numeral before a clause's number nor a code such as "1O1A" is a misread number.
+    line = "Paper A4, room S1, the 1st B2B order under ISO 9001 after COVID-19, item No.5 at 2.5%, Annex I.2, Part II.3, desk 1O1A."
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_small_letter_read_in_place_of_a_capital_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["Delivered to BKk office of THAlLAND POST."]))
+
+    assert markdown_pages(result) == ["Delivered to <mark>BKk</mark> office of <mark>THAlLAND</mark> POST."]
+
+
+def test_words_written_in_mixed_case_on_purpose_are_not_marked() -> None:
+    # A small o between capitals stands for "of".
+    line = "Dr. Somchai, PhD, of McDonald Ltd sent two PDFs from an iPhone over a 5 GHz link, with the ToRs and the MoU."
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_roman_numeral_with_l_read_in_place_of_i_is_marked() -> None:
+    result = convert(scan(), ocr=FakeEngine(["Schedules l, Il and ll form part of this Agreement. Ill health excuses delay."]))
+
+    assert markdown_pages(result) == [
+        "Schedules <mark>l</mark>, <mark>Il</mark> and <mark>ll</mark> form part of this Agreement. Ill health excuses delay."
+    ]
+
+
+def test_an_english_word_read_with_a_thai_look_alike_letter_is_marked() -> None:
+    # The Thai recogniser read s as ร and o as Thai zero.
+    result = convert(scan(), ocr=FakeEngine(["ส่งรายงานเป็นไฟล์ PDF ผ่านระบบ Teamร และ Z๐om"]))
+
+    assert markdown_pages(result) == ["ส่งรายงานเป็นไฟล์ PDF ผ่านระบบ <mark>Teamร</mark> และ <mark>Z๐om</mark>"]
+
+
+def test_a_number_that_mixes_thai_and_arabic_digits_is_marked() -> None:
+    # The engine read the Thai digit ๕ as 5; the year is written in Arabic digits on purpose.
+    result = convert(scan(), ocr=FakeEngine(["ลงวันที่ ๑5 มกราคม 2567 ชำระ ๒๕,๐๐๐ บาท"]))
+
+    assert markdown_pages(result) == ["ลงวันที่ <mark>๑5</mark> มกราคม 2567 ชำระ ๒๕,๐๐๐ บาท"]
+
+
+def test_thai_text_joined_to_an_english_name_on_purpose_is_not_marked() -> None:
+    line = "ลงนามโดยบริษัทABC จำกัด"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
 
 
 # The summary

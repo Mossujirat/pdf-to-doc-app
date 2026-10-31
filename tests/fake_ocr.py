@@ -4,7 +4,7 @@ crops and turned images of a page as parts of that page."""
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, Grid, Styled, laid_out_grid
 
@@ -66,6 +66,16 @@ class Sideways:
 
 
 @dataclass(frozen=True)
+class UpsideDown:
+    """An upside-down page: its lines lie a half turn round on the sheet, as `pdf_builder` draws
+    an upside-down `Scan`. Its `shown` lines are printed upright on the page as shown."""
+
+    lines: Sequence[Line]
+    shown: Sequence[Line] = ()
+    turn: ClassVar[int] = 180
+
+
+@dataclass(frozen=True)
 class Askew:
     """A page scanned `angle` degrees askew, as `pdf_builder` draws a `Scan` at that angle: the
     image turned, then shrunk to fit the page, about its centre. Like PaddleOCR, the engine
@@ -88,13 +98,14 @@ class FakeEngine:
     Each image of a page as shown starts the next page. Like PaddleOCR, it reads a
     line printed sideways as a tall box, which it turns counter-clockwise before
     reading it: so it reads a sideways page right one way and upside down the other.
+    It reads an upside-down page as it is, but with little confidence.
     Any smaller image is a crop of one of a sideways page's lines: read upright, it
     has the confidence of the least sure of them, and upside down little.
     """
 
     name = "fake"
 
-    def __init__(self, *pages: Sequence[Line] | Sideways | Askew) -> None:
+    def __init__(self, *pages: Sequence[Line] | Sideways | UpsideDown | Askew) -> None:
         self.pages = list(pages)
         self.images: list[PageImage] = []  # every image it was asked to read
 
@@ -105,14 +116,14 @@ class FakeEngine:
         page, page_image = self.pages[len(shown) - 1], shown[-1]
         self.images.append(image)
         # How far the image's text is turned clockwise from upright.
-        off = (image.turn - page.turn) % 360 if isinstance(page, Sideways) else image.turn
+        off = (image.turn - page.turn) % 360 if isinstance(page, (Sideways, UpsideDown)) else image.turn
         if {image.width, image.height} != {page_image.width, page_image.height}:
             if isinstance(page, Sideways) and page.blank_crops:
                 return ()
-            lines = page.lines if isinstance(page, (Sideways, Askew)) else page
+            lines = page.lines if isinstance(page, (Sideways, UpsideDown, Askew)) else page
             upright = min((confidence for _, _, confidence in _laid_out(lines, 1)), default=CONFIDENT)
             return (TextBox("-", (0, 0, image.width, image.height), UPSIDE_DOWN if off else upright),)
-        if isinstance(page, Sideways):
+        if isinstance(page, (Sideways, UpsideDown)):
             return _read(page.lines, off, image) + _read(page.shown, image.turn, image)
         if isinstance(page, Askew):
             return _straightened(_read(page.lines, off, image), page.angle, image)

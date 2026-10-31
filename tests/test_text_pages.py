@@ -1,11 +1,22 @@
 """Text pages: PDF pages whose text layer is converted, through the conversion function only."""
 
+from itertools import zip_longest
 from typing import Literal
 
 import pytest
 from generate import PAYMENT_PAGE, SIGNING_PAGE
 from markdown_reader import page_texts
-from pdf_builder import Rotated, Spaced, pdf
+from pdf_builder import LEFT, LINE_HEIGHT, TOP, Rotated, Spaced, Styled, pdf
+from test_ocr_pages import (
+    ENGLISH_LEFT,
+    ENGLISH_RIGHT,
+    LABELS_AND_VALUES,
+    SHORT_LINES_BESIDE_OTHER_TEXT,
+    THAI_LEFT,
+    THAI_RIGHT,
+    Pieces,
+    on_rows,
+)
 
 from pdf_to_doc import convert
 
@@ -188,3 +199,65 @@ def test_pages_turned_upright_by_a_page_rotation_read_as_they_do_upright(rotatio
     turned = markdown_pages(pdf(Rotated(SIGNING_PAGE, rotation), Rotated(PAYMENT_PAGE, rotation)))
 
     assert turned == upright
+
+
+# Columns: a reader reads each column to its end before the column to its right, whether the
+# PDF draws one column after the other, as Word does, or line by line across the page, as some
+# PDF writers do: the first line of the left column, then the first line of the right, and so on.
+
+
+def two_columns_drawn(left: list[str], right: list[str], *, size: float = 12, across: bool = True) -> list[Styled]:
+    """Two columns, the right one at x 300, drawn a row at a time across them or one after the other."""
+    rows = zip_longest(left, right, fillvalue="")
+    lines = [
+        Styled(text, size=size, x=x, y=TOP + number * LINE_HEIGHT)
+        for number, row in enumerate(rows)
+        for x, text in zip((LEFT, 300), row)
+        if text
+    ]
+    return lines if across else sorted(lines, key=lambda line: line.x)
+
+
+@pytest.mark.parametrize("across", [True, False], ids=["drawn across", "drawn by column"])
+@pytest.mark.parametrize(
+    ("left", "right", "size", "paragraphs"),
+    [
+        (THAI_LEFT, THAI_RIGHT, 12, ["".join(THAI_LEFT), "".join(THAI_RIGHT)]),
+        (ENGLISH_LEFT, ENGLISH_RIGHT, 9.5, [" ".join(ENGLISH_LEFT), " ".join(ENGLISH_RIGHT)]),
+    ],
+    ids=["thai", "english"],
+)
+def test_a_page_set_in_two_columns_is_read_one_column_after_the_other(
+    left: list[str], right: list[str], size: float, paragraphs: list[str], across: bool
+) -> None:
+    source = pdf(two_columns_drawn(left, right, size=size, across=across))
+
+    assert markdown_pages(source) == ["\n\n".join(paragraphs)]
+
+
+def test_a_new_column_drawn_across_starts_a_new_paragraph_even_inside_a_numbered_clause() -> None:
+    # As on an OCR page, or a page drawn one column after the other.
+    left = ["1. ผู้รับทุนตกลงดำเนินการวิจัย", "ตามแผนงานที่ได้รับอนุมัติแล้ว", "2. ผู้ให้ทุนจะจ่ายเงินทุนเป็นงวด"]
+    right = ["ตามความก้าวหน้าของงานทุกงวด", "3. ผู้รับทุนส่งรายงานฉบับสมบูรณ์", "ภายในสามสิบวันหลังจบโครงการ"]
+
+    assert markdown_pages(pdf(two_columns_drawn(left, right))) == [
+        f"- {left[0]}{left[1]}\n- {left[2]}\n\n{right[0]}\n\n- {right[1]}{right[2]}",
+    ]
+
+
+# Labels set apart from their values, as on a form, are drawn line by line across the page too,
+# and read row by row. So are side panels and signature blocks beside other text, for now:
+# their lines are as short as labels' (ticket 32).
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [*LABELS_AND_VALUES.values(), *SHORT_LINES_BESIDE_OTHER_TEXT.values()],
+    ids=[*LABELS_AND_VALUES.keys(), *SHORT_LINES_BESIDE_OTHER_TEXT.keys()],
+)
+def test_text_set_apart_on_rows_that_are_not_columns_is_read_row_by_row(rows: list[Pieces]) -> None:
+    [page] = markdown_pages(pdf(on_rows(rows)))
+
+    printed = [" ".join(text for _, text in row) for row in rows if row]
+    assert [line for line in printed if line not in page] == []
+    assert [page.index(line) for line in printed] == sorted(page.index(line) for line in printed)

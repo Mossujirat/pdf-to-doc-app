@@ -96,3 +96,5 @@ The test corpus and the reference-text format are described in `corpus/README.md
 ## Licence
 
 AGPL-3.0-only (see `LICENSE` and `docs/adr/0002-open-source-under-agpl.md`). The test fonts Sarabun and Niramit are under the SIL Open Font License (`corpus/fonts/`).
+
+To tell a transliterated word or a name from a misread, uncertain-text marking looks words up in the list of Thai Wikipedia titles that PyThaiNLP ships. konbraphat51 prepared the list from a Thai Wikipedia dump of 21 November 2023. It is under the [Creative Commons Attribution-ShareAlike 4.0 licence](https://creativecommons.org/licenses/by-sa/4.0/). Creative Commons has declared that licence one-way compatible with GPLv3, and section 13 of the AGPLv3 allows a work to be combined with GPLv3 material. The converter reads the list from PyThaiNLP unchanged. Its list of common words, which the converter also reads, is CC0.

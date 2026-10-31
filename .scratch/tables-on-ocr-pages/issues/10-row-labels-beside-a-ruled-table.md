@@ -20,3 +20,8 @@ No text is lost, and every cell of the ruled part holds the right number.
 - How to tell row labels from a paragraph that runs beside a table.
 
 ## Comments
+
+**2026-10-30, triage**
+
+- **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
+- Status stays `needs-triage` until then.

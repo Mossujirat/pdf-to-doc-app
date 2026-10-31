@@ -7,6 +7,8 @@ The settings come from the October 2026 benchmark (docs/research):
   still has its boxes straightened (see `_straightened`).
 - The Thai recogniser reads English words and digits on the same line correctly,
   so it serves both languages; the English recogniser cannot read Thai at all.
+- A scan under a fine dot pattern, such as a certificate's watermark, is blurred and
+  read again (see `_watermarked`).
 """
 
 import logging
@@ -14,7 +16,9 @@ import math
 import os
 import warnings
 from pathlib import Path
+from typing import Any
 
+import cv2
 import numpy as np
 
 from pdf_to_doc.ocr import Language, OcrEngine, PageImage, TextBox
@@ -23,6 +27,24 @@ from pdf_to_doc.ocr_models import DETECTOR, THAI_RECOGNISER, model_path, models_
 _DETECTOR_LONGEST_SIDE = 1280
 # Only boxes at least this many times as wide as tall show the slant of the text.
 _SLANT_SHOWING_RATIO = 3
+# The detector scores each region it finds, and drops those under this score unread.
+_BOX_THRESHOLD = 0.6
+# Shrunk without smoothing, the dots of a fine dot pattern over a scan, such as a
+# certificate's watermark scanned in black and white, turn into blobs like text. They join
+# lines to each other and to the pattern, and the regions they make score under the
+# threshold, so whole lines are dropped. Such a page shows a dropped region taller than
+# this many of the page's lines and wider than this share of the page. On a 110-page
+# contract's scans, 5 of the 7 watermarked pages showed one, and so did an ID card copy
+# with a line written across it; none of the samples' 101 other scans, nor any of the
+# corpus's, did. Blurred, the 2 pages missed would have gained 1 line and none.
+_WATERMARK_LINES = 3
+_WATERMARK_WIDTH = 0.25
+# Such a page is blurred by this much, in pixels, before it is read again, so the dots
+# turn grey: the pages that showed the sign gained 21 lines and lost 3. Blurred by 1.5,
+# as a crisp page is (see `ocr.softened`), they gained 12.
+_WATERMARK_SOFTENING = 2.0
+# Any region the detector finds scores above this: a score of 0 means "the default".
+_EVERY_REGION = 0.01
 # How many CPU threads OCR uses, when this environment variable is set. PaddleOCR
 # otherwise starts 10, whatever the CPUs, and under a 4-CPU limit that read a page
 # almost three times slower (ADR 0004); the sandbox sets it to its CPU limit.
@@ -69,16 +91,68 @@ class PaddleOcrEngine:
             text_det_limit_type="max",
             text_det_limit_side_len=_DETECTOR_LONGEST_SIDE,
             device="cpu",
+            text_det_box_thresh=_BOX_THRESHOLD,
             **({} if threads is None else {"cpu_threads": threads}),
         )
+        self._regions: list[tuple[np.ndarray, float]] = []
+        _keep_every_region(self._ocr, self._regions)
 
     def read(self, image: PageImage, languages: tuple[Language, ...]) -> tuple[TextBox, ...]:
         rgb = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, 3)
+        try:
+            boxes = self._read_once(rgb, image)
+            if _watermarked(self._regions, image.width):
+                boxes = self._read_once(cv2.GaussianBlur(rgb, (0, 0), _WATERMARK_SOFTENING), image)
+            return boxes
+        finally:
+            self._regions.clear()
+
+    def _read_once(self, rgb: np.ndarray, image: PageImage) -> tuple[TextBox, ...]:
         [result] = self._ocr.predict(np.ascontiguousarray(rgb[:, :, ::-1]))  # PaddleOCR takes BGR
         boxes = _straightened([np.asarray(polygon, dtype=float) for polygon in result["rec_polys"]], image)
         return tuple(
             TextBox(text, box, float(score)) for text, score, box in zip(result["rec_texts"], result["rec_scores"], boxes)
         )
+
+
+def _keep_every_region(ocr: Any, found: list[tuple[np.ndarray, float]]) -> None:
+    """Have the detector also put in `found` every region it finds on the image it reads,
+    with its score, before it drops those that score low. Its probability map is made once
+    either way; only finding the regions on it runs twice. On the corpus's scans, both runs
+    took 25 ms a page at most, of a read that took 1.4 s.
+
+    This reaches into PaddleX: `paddleocr` is pinned, and `uv.lock` holds PaddleX at the
+    version this was written for. The new step holds `found`, not the engine, so the engine
+    and its predictors are freed as soon as it is dropped."""
+    detector = ocr.paddlex_pipeline._pipeline.text_det_model
+    drop_low = detector.post_op
+
+    def post_op(preds, shapes, *, thresh, box_thresh, unclip_ratio):  # type: ignore[no-untyped-def]
+        [polygons], [scores] = drop_low(preds, shapes, thresh=thresh, box_thresh=_EVERY_REGION, unclip_ratio=unclip_ratio)
+        found[:] = [(np.asarray(polygon, dtype=float), float(score)) for polygon, score in zip(polygons, scores)]
+        return drop_low(preds, shapes, thresh=thresh, box_thresh=box_thresh, unclip_ratio=unclip_ratio)
+
+    detector.post_op = post_op
+
+
+def _watermarked(regions: list[tuple[np.ndarray, float]], width: int) -> bool:
+    """Whether the detector dropped a region much taller than the page's lines and wide
+    across the page, as it does where a fine dot pattern joins lines together."""
+    heights = [_extent(polygon, 1) for polygon, score in regions if score >= _BOX_THRESHOLD]
+    if not heights:
+        return False
+    line = float(np.median(heights))
+    return any(
+        score < _BOX_THRESHOLD
+        and _extent(polygon, 1) > _WATERMARK_LINES * line
+        and _extent(polygon, 0) > _WATERMARK_WIDTH * width
+        for polygon, score in regions
+    )
+
+
+def _extent(polygon: np.ndarray, axis: int) -> float:
+    """How far a polygon reaches across (axis 0) or down (axis 1) the image."""
+    return float(polygon[:, axis].max() - polygon[:, axis].min())
 
 
 def _straightened(polygons: list[np.ndarray], image: PageImage) -> list[tuple[float, float, float, float]]:

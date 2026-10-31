@@ -226,6 +226,32 @@ DOCUMENTS = (
         ),
     ),
     SyntheticDocument(
+        name="clause-references",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    "ข้อกำหนดการจ่ายเงิน",
+                    # A cross-reference whose number wraps onto the next line is no clause; a
+                    # clause after one that ends on a full line is.
+                    "1. ผู้รับทุนต้องชำระค่าปรับเป็นรายวันในอัตราที่ได้กำหนดไว้แล้วตามข้อ",
+                    "4.2 ของสัญญานี้",
+                    "2. ผู้ให้ทุนตกลงจ่ายเงินสนับสนุนโครงการวิจัยนี้รวมทั้งสิ้นเป็นเงินจำนวน",
+                    # "ล่วงหน้า" ends in "หน้า", page, but refers to nothing.
+                    "3. ผู้รับทุนต้องแจ้งการเปลี่ยนแปลงให้ทราบล่วงหน้า",
+                    "4. ผู้ให้ทุนจะตรวจรับงานภายในสามสิบวัน",
+                ],
+                reference=(
+                    "ข้อกำหนดการจ่ายเงิน\n\n"
+                    "- 1. ผู้รับทุนต้องชำระค่าปรับเป็นรายวันในอัตราที่ได้กำหนดไว้แล้วตามข้อ 4.2 ของสัญญานี้\n"
+                    "- 2. ผู้ให้ทุนตกลงจ่ายเงินสนับสนุนโครงการวิจัยนี้รวมทั้งสิ้นเป็นเงินจำนวน\n"
+                    "- 3. ผู้รับทุนต้องแจ้งการเปลี่ยนแปลงให้ทราบล่วงหน้า\n"
+                    "- 4. ผู้ให้ทุนจะตรวจรับงานภายในสามสิบวัน"
+                ),
+            ),
+        ),
+    ),
+    SyntheticDocument(
         name="tables",
         font_file=SARABUN,
         pages=(
@@ -295,9 +321,15 @@ STAMP = Styled("เอกสารปกปิด ห้ามเผยแพร
 
 
 def scanned(
-    lines: Sequence[Line], overlay: list[Line] | None = None, seed: int = 0, sideways: Literal[0, 90, 270] = 0
+    lines: Sequence[Line],
+    overlay: list[Line] | None = None,
+    seed: int = 0,
+    sideways: Literal[0, 90, 270] = 0,
+    upside_down: bool = False,
 ) -> Scan:
-    return Scan(lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways)
+    return Scan(
+        lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways, upside_down=upside_down
+    )
 
 
 SCANNED_DOCUMENTS = (
@@ -765,17 +797,23 @@ COVER_SHEET = [
 ]
 
 
-def column_lines(columns: Sequence[list[list[str]]], xs: Sequence[float], size: float, pitch: float) -> list[Line]:
-    """Each column's paragraphs line under line from the same top, a blank line between them."""
-    lines: list[Line] = []
-    for x, paragraphs in zip(xs, columns, strict=True):
+def column_lines(
+    columns: Sequence[list[list[str]]], xs: Sequence[float], size: float, pitch: float, *, across: bool = False
+) -> list[Line]:
+    """Each column's paragraphs line under line from the same top, a blank line between them.
+    Drawn one column after the other, as Word draws them, or with `across`, a row at a time
+    across the columns, as some PDF writers do."""
+    placed: list[tuple[int, int, Styled]] = []  # each line's row, its column, and the line
+    for column, (x, paragraphs) in enumerate(zip(xs, columns, strict=True)):
         slot = 0
         for paragraph in paragraphs:
             for text in paragraph:
-                lines.append(Styled(text, size=size, x=x, y=150 + slot * pitch))
+                placed.append((slot, column, Styled(text, size=size, x=x, y=150 + slot * pitch)))
                 slot += 1
             slot += 1
-    return lines
+    if across:
+        placed.sort(key=lambda line: line[:2])
+    return [line for _, _, line in placed]
 
 
 TWO_COLUMN_DOCUMENTS = (
@@ -823,6 +861,35 @@ TWO_COLUMN_DOCUMENTS = (
             ),
         ),
     ),
+    # The scans' first page as a text page, drawn line by line across its columns.
+    SyntheticDocument(
+        name="two-column-drawn-across",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=[
+                    Styled(THAI_COLUMNS_TITLE, size=18, bold=True, y=95, centered=True),
+                    *column_lines(THAI_COLUMNS, xs=(72, 311), size=14, pitch=21, across=True),
+                ],
+                reference="\n\n".join(
+                    [THAI_COLUMNS_TITLE, *("".join(paragraph) for column in THAI_COLUMNS for paragraph in column)]
+                ),
+            ),
+        ),
+    ),
+)
+
+# Upside-down pages, as when a sheet is fed into a scanner the wrong way round. The table fits
+# a page upright, unlike the price schedule, which needs a sheet on its side.
+UPSIDE_DOWN_DOCUMENTS = (
+    SyntheticDocument(
+        name="upside-down-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(lines=scanned([PAYMENT_SCHEDULE], seed=9, upside_down=True), reference=PAYMENT_SCHEDULE_REFERENCE),
+            SyntheticPage(lines=scanned(CLAUSES, seed=10, upside_down=True), reference="".join(CLAUSES)),
+        ),
+    ),
 )
 
 ALL_DOCUMENTS = (
@@ -832,6 +899,7 @@ ALL_DOCUMENTS = (
     + PLACEHOLDER_DOCUMENTS
     + ROTATED_DOCUMENTS
     + SIDEWAYS_DOCUMENTS
+    + UPSIDE_DOWN_DOCUMENTS
     + TWO_COLUMN_DOCUMENTS
     + RULED_TABLE_DOCUMENTS
     + PART_RULED_TABLE_DOCUMENTS
@@ -906,28 +974,49 @@ CONTRACT_LINES = [
     "หลักฐานการจ่ายเงินต้องมีลายมือชื่อผู้รับเงินทุกฉบับ",
     "ในกรณีมีข้อพิพาท ให้ใช้กฎหมายไทยบังคับแก่สัญญานี้",
 ]
+# Amounts, percentages, codes, abbreviations and names, where a misread letter or digit changes
+# the meaning, beside words in mixed case and codes that are right as they stand.
+ENGLISH_CONTRACT_LINES = [
+    "SERVICE AGREEMENT No. SA-2024/0117",
+    "made on 15 March 2024 between ABC Trading Co., Ltd.",
+    "and Dr. Somchai Rattanakul, PhD, of Bangkok, THAILAND.",
+    "The Client shall pay a fee of 125,000.00 baht in total,",
+    "of which 30% is due on signing and 70% on delivery.",
+    "Budget code 6211-0450-B2 covers travel up to 18,500 baht.",
+    "All work shall follow ISO 9001 and the TOR of 2 April 2024.",
+    "Late delivery incurs a fine of 0.1% of the fee per day.",
+    "I, the Consultant, accept the terms of Schedule II.",
+    "This Agreement is governed by the laws of Thailand.",
+]
 # Resolution, grain and skew, from the corpus's own level of damage to a fax-like scan.
 DAMAGE = [(200, 6, 0.4), (150, 18, 0.8), (110, 28, 1.2), (90, 36, 1.5), (75, 45, 1.8)]
 
-DEGRADED_DOCUMENTS = (
-    SyntheticDocument(
-        name="damaged-scans",
+
+def damaged_scans(name: str, lines: list[str], first_seed: int) -> SyntheticDocument:
+    """The lines scanned once at each level of damage, a page each."""
+    return SyntheticDocument(
+        name=name,
         font_file=SARABUN,
         pages=tuple(
             SyntheticPage(
                 # A blank line between lines makes each a paragraph of its own.
                 lines=Scan(
-                    [line for text in CONTRACT_LINES for line in (text, "")],
+                    [line for text in lines for line in (text, "")],
                     dpi=dpi,
                     angle=angle,
                     noise=noise,
-                    seed=10 + level,
+                    seed=first_seed + level,
                 ),
-                reference="\n\n".join(CONTRACT_LINES),
+                reference="\n\n".join(lines),
             )
             for level, (dpi, noise, angle) in enumerate(DAMAGE)
         ),
-    ),
+    )
+
+
+DEGRADED_DOCUMENTS = (
+    damaged_scans("damaged-scans", CONTRACT_LINES, first_seed=10),
+    damaged_scans("damaged-english-scans", ENGLISH_CONTRACT_LINES, first_seed=20),
 )
 
 
