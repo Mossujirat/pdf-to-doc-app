@@ -63,7 +63,7 @@ def unknown_word_spans(text: str) -> tuple[Span, ...]:
     return tuple(
         _with_its_syllables(tokens, index)
         for index in unknown
-        if index not in known and not _written_so_on_purpose(text, tokens[index])
+        if index not in known and not _written_so_on_purpose(text, tokens, index)
     )
 
 
@@ -99,18 +99,22 @@ def _in_a_title(text: str, tokens: list[_Token], index: int) -> range:
     return range(0)
 
 
-def _written_so_on_purpose(text: str, token: _Token) -> bool:
+def _written_so_on_purpose(text: str, tokens: list[_Token], index: int) -> bool:
     """Whether a token the word list lacks is:
     - the one-letter word "ณ", standing alone, as in "ณ วันที่"; inside a word it is more likely a
       misread, as in "กุณภาพ" for "คุณภาพ"
-    - a letter that lists an item, such as "(ก)"
+    - a letter that lists an item, such as "(ก)", or "ข." after a word the word list holds, which
+      OCR read without the space between them, as in "ทั้งสิ้นข."
     - in an abbreviation, consonants before a full stop, such as "บพข." or "ผพว.", which the
       tokenizer cuts as "ผ" + "พว."; not the end of a word, as "กข" in "ระบบกข."
     """
+    token = tokens[index]
     start, end = token.start, token.end
     if token.text == _NA and (start == 0 or text[start - 1].isspace()) and (end == len(text) or text[end].isspace()):
         return True
     if _CONSONANT.fullmatch(token.text) and text[:start].endswith("(") and text[end:].startswith(")"):
+        return True
+    if _CONSONANT.fullmatch(token.text) and text[end:].startswith(".") and index > 0 and in_word_list(tokens[index - 1].text):
         return True
     if not _CONSONANTS.fullmatch(token.text):
         return False

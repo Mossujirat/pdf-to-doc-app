@@ -119,7 +119,9 @@ Estimate for the whole file: about half the marks on correct text go, and about 
 
 **After code review:**
 - **Common words stand apart.** At first every syllable of one consonant was pulled in, so "ที่อืนจะ" was marked whole. The older tests now expect "ผู้<mark>อืน</mark>" again, as before this ticket.
-- **An abbreviation does not end a word.** "กข" in "ระบบกข." was taken for an abbreviation, as would a misread ending a sentence, such as "ธนาคร." for "ธนาคาร.". The cost: on the checked marks, two list letters that OCR joined to the word before them, "ทั้งสิ้นข.", stay marked.
+- **An abbreviation does not end a word.** "กข" in "ระบบกข." was taken for an abbreviation, as would a misread ending a sentence, such as "ธนาคร." for "ธนาคาร.".
+  - At first this left marked two list letters that OCR had joined to the word before them, "ทั้งสิ้นข." and "โครงการข.", the only two in the file.
+  - A single consonant before a full stop is now accepted after a word the word list holds. "ระบบกข." and "ธนาคร." stay marked.
 - **Smaller fixes:**
   - the tokens are a small named type, so they are not confused with the OCR pieces in `uncertain.py`;
   - PyThaiNLP's own cache of the titles is used;
@@ -133,12 +135,13 @@ Estimate for the whole file: about half the marks on correct text go, and about 
 | Marks set by an unknown Thai word alone | 996 | 770 |
 | Labelled sample, correct text marked | 46 of 200 | 18: 28 unmarked |
 | Labelled sample, misreads unmarked | | none |
-| 40 checked marks the plan unmarks | | 36 unmarked; among them "บพย." for "บพข.", as expected, and the borderline "ทรอนิกส์" |
+| 40 checked marks the plan unmarks | | 38 unmarked; among them "บพย." for "บพข.", as expected, and the borderline "ทรอนิกส์" |
 
-Four of the 40 checked marks stay marked:
-- "กุณภาพ";
-- a "ณ" that OCR joined to the next word;
-- the two joined list letters.
+Two of the 40 checked marks stay marked: "กุณภาพ", and a "ณ" that OCR joined to the next word.
+
+**Left for ticket 35,** which needs the same table of Thai letters that look alike:
+- "บพย." for "บพข." goes unmarked;
+- "กุณภาพ" is marked as "กุณ", not as the whole word.
 
 From the sample, about 1 mark in 11 now falls on correct text, against nearly 1 in 4 before. The sample comes from this one file, and Claude labelled it.
 
@@ -147,7 +150,7 @@ From the sample, about 1 mark in 11 now falls on correct text, against nearly 1 
 - On `corpus/degraded` every page gives the same report as before, and the Thai page's marks are the same.
 
 **Run:**
-- pytest: 689 passed, 1 skipped;
+- pytest: 689 passed, 1 skipped; after the list-letter fix, 690;
 - `pytest -m ocr`: 27 passed;
 - mypy clean.
 

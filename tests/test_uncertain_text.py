@@ -62,6 +62,15 @@ def test_an_abbreviation_with_full_stops_is_not_marked() -> None:
     assert markdown_pages(result) == [line]
 
 
+def test_a_list_letter_joined_to_the_word_before_it_is_not_marked() -> None:
+    # OCR lost the space between "ทั้งสิ้น" and the list letter "ข.".
+    line = "งบประมาณทั้งสิ้นข.ส่วนที่บริหาร"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
 def test_consonants_ending_a_word_before_a_full_stop_are_not_an_abbreviation() -> None:
     result = convert(scan(), ocr=FakeEngine(["ใช้งานระบบกข."]))
 
