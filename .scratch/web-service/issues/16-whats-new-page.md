@@ -98,3 +98,15 @@
 - **The wording** was approved by the user, as a first pass ("เบื้องต้นโอเคแล้ว"), after the code review's fixes.
 - **The deploy warning's third case:** `scripts/deploy.sh check f56f38c d1dc102`, where `releases.py` changes, does not warn. All three cases now behave as the ticket asks.
 - **Numbers misread as other numbers:** the user chose to open converter-engine 37 for them, and they are now the ninth known limitation.
+
+**2026-11-02, deployed**
+
+With the user's approval of each step:
+1. **PR #20** (the page) and **PR #21** (the release of 2 November) merged, with CI passing, so `main` is at `c109ac0`.
+2. **Before the deploy:** no conversion was waiting or running. The counters since the deploy of 31 October showed 1 conversion finished (34 OCR pages) and 35 uploads refused as from another site; they start again at this deploy.
+3. **Staging:** `scripts/deploy.sh staging main` built `c109ac0` and passed every smoke-test check: both corpus files at CER 0 in Markdown and DOCX, 2.9 s and 1.4 s per OCR page, every restriction of the sandbox in place, no sandbox left behind.
+4. **Production:** `scripts/deploy.sh` passed the staging check and recreated the web app and the launcher; the Tailscale container was left running. Production runs `c109ac0`.
+5. **Checked through Funnel's public address:** `/health` answers `ok`; `/source-code` opens `c109ac0`; `/whats-new` shows the 9 known limitations and the releases of 2 November, 31 October and 22 October, the newest marked ล่าสุด; the footer links to it. The checkout on `gmt` has no changes.
+6. **Staging stopped,** its record `refs/staging/passed` at `c109ac0`.
+
+**On the way:** this machine lost TCP over the tailnet after its network changed (`tailscale ping` answered, ssh timed out). The user restarted Tailscale here, and ssh came back. The public site stayed up throughout.
