@@ -40,7 +40,7 @@
   - converter-engine 35: a Thai misread that happens to be a real word is not marked.
 
   Check each against its ticket before writing it; drop any that a release has fixed.
-- [ ] **Wording:** Claude drafts every item from the tickets and PRs; the user approves the wording before staging.
+- [x] **Wording:** Claude drafts every item from the tickets and PRs; the user approves the wording before staging.
 
 ## The rules for later releases
 
@@ -92,3 +92,9 @@
 - **Watermarks in two places:** the limitation now says the watermark's own slanted text is not read, so it no longer reads as contradicting the release.
 - **Still open, for the user:** numbers misread as other numbers (a lost or extra digit) are not marked, and no open ticket stands for them, so they are not a known limitation yet.
 - **The wording box** stays unticked until the user approves the wording, before staging.
+
+**2026-11-02, after the commit**
+
+- **The wording** was approved by the user, as a first pass ("เบื้องต้นโอเคแล้ว"), after the code review's fixes.
+- **The deploy warning's third case:** `scripts/deploy.sh check f56f38c d1dc102`, where `releases.py` changes, does not warn. All three cases now behave as the ticket asks.
+- **Numbers misread as other numbers:** the user chose to open converter-engine 37 for them, and they are now the ninth known limitation.

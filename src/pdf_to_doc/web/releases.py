@@ -73,6 +73,10 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/35-thai-misreads-that-are-real-words.md",),
     ),
     KnownLimitation(
+        "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่น เช่น หลักหายหรือหลักเกิน ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
+        ("converter-engine/issues/37-numbers-misread-as-other-numbers.md",),
+    ),
+    KnownLimitation(
         "ตารางที่ตีเส้นเฉพาะช่องตัวเลข เช่น ตารางงบประมาณ ชื่อรายการจะแยกออกมาอยู่นอกตาราง ต้องจับคู่กับแถวเอง",
         ("tables-on-ocr-pages/issues/10-row-labels-beside-a-ruled-table.md",),
     ),
