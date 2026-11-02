@@ -33,6 +33,7 @@ from pdf_to_doc.web.bot_check import CLOUDFLARE, TOKEN_FIELD, BotCheck
 from pdf_to_doc.web.client_ip import ClientIp
 from pdf_to_doc.web.conversions import AlreadyConverting, Clock, Conversion, Conversions, HeldOutputsFull, QueueFull
 from pdf_to_doc.web.launcher import LauncherSandbox
+from pdf_to_doc.web.releases import KNOWN_LIMITATIONS, RELEASES
 from pdf_to_doc.web.sandboxes import LocalSandbox, Sandbox
 from pdf_to_doc.web.settings import Misconfigured, Settings, from_environment
 from pdf_to_doc.web.statistics import PORT as STATISTICS_PORT
@@ -178,6 +179,10 @@ def create_app(
     @app.get("/privacy")
     async def privacy() -> HTMLResponse:
         return HTMLResponse(pages.privacy(settings.keep_for, settings.pages_per_day, COOKIE, _DAY))
+
+    @app.get("/whats-new")
+    async def whats_new() -> HTMLResponse:
+        return HTMLResponse(pages.whats_new(RELEASES, KNOWN_LIMITATIONS))
 
     @app.get("/source-code")
     async def source_code() -> RedirectResponse:

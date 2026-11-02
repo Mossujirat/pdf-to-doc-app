@@ -8,6 +8,8 @@ what the visitor can do next. A step that changes is tinted for a moment (`stati
 """
 
 import math
+from collections.abc import Sequence
+from datetime import date
 from html import escape
 
 from pdf_to_doc.intake import MAX_BYTES, MAX_PAGES, PasswordRequired
@@ -19,6 +21,7 @@ from pdf_to_doc.validation import MIN_DICTIONARY_SHARE, MIN_WORDS_TO_JUDGE
 from pdf_to_doc.web.bot_check import ACTION, SCRIPT
 from pdf_to_doc.web.conversions import Conversion
 from pdf_to_doc.web.protocol import RefusalEvent
+from pdf_to_doc.web.releases import KnownLimitation, Release
 from pdf_to_doc.web.upload import KEEP_IMAGES_FIELD, KEEP_IMAGES_VALUES
 
 _MB = 1024 * 1024
@@ -28,6 +31,11 @@ _ISSUES = f"{_REPOSITORY}/issues"  # where problems are reported
 # Who runs the service, as the privacy page names them for the PDPA.
 _OPERATOR = "Sujirat Attawibulkul"
 _CONTACT = "sujirat.attawibulkul@gmail.com"
+_RELEASES_SHOWN = 3  # on the what's-new page, the latest
+_THAI_MONTHS = (
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+)  # fmt: skip
 
 # Icons, drawn in one stroke weight. They are decoration beside words that say the same.
 _SVG = (
@@ -415,6 +423,40 @@ def privacy(keep_for: float, pages_per_day: int, cookie: str, cookie_lasts: floa
     )
 
 
+def whats_new(releases: Sequence[Release], limitations: Sequence[KnownLimitation]) -> str:
+    """The what's-new page: the known limitations as they are now, left out when there are none,
+    then what the latest releases improved, newest first, the newest marked as such. `releases`
+    are newest first."""
+    limits = ""
+    if limitations:
+        items = "\n".join(f"<li>{escape(limitation.text)}</li>" for limitation in limitations)
+        limits = f'\n<h2>ข้อจำกัดที่ควรรู้</h2>\n<ul class="points">\n{items}\n</ul>\n'
+    shown = []
+    for place, release in enumerate(releases[:_RELEASES_SHOWN]):
+        latest = ' <span class="chip">ล่าสุด</span>' if place == 0 else ""
+        items = "\n".join(f"<li>{escape(improvement)}</li>" for improvement in release.improvements)
+        shown.append(
+            f'<h2 class="release"><time datetime="{release.went_live.isoformat()}">{_thai_date(release.went_live)}</time>'
+            f'{latest}</h2>\n<ul class="points">\n{items}\n</ul>'
+        )
+    return _page(
+        f"มีอะไรใหม่ {_NAME}",
+        f"""<article class="card prose" aria-labelledby="whats-new-title">
+<h1 class="status" id="whats-new-title">มีอะไรใหม่</h1>
+<p class="message">สิ่งที่{_NAME}ทำได้ดีขึ้นในแต่ละรอบที่ปรับปรุง และสิ่งที่ยังทำไม่ได้ ซึ่งควรเทียบกับต้นฉบับเอง</p>
+{limits}
+{"\n\n".join(shown)}
+
+<div class="actions"><a class="button button--primary" href="/">กลับไปแปลงไฟล์</a></div>
+</article>""",
+    )
+
+
+def _thai_date(day: date) -> str:
+    """The day as Thai readers write it, in the Buddhist era: 31 ตุลาคม 2569."""
+    return f"{day.day} {_THAI_MONTHS[day.month - 1]} {day.year + 543}"
+
+
 def status(conversion: Conversion, place: int | None) -> str:
     """What the conversion is doing, or how it ended, in a few words. `place` is a waiting
     conversion's place in the queue. The tab's title shows it too."""
@@ -713,8 +755,8 @@ def _hours(seconds: float) -> int:
 
 def _page(title: str, body: str) -> str:
     """A page under the top bar, which carries the name and the one-line claim, and over the
-    footer, which links to the privacy page, to the source the server runs (AGPL), and to where
-    problems are reported."""
+    footer, which links to the privacy page, to the source the server runs (AGPL), to what is
+    new, and to where problems are reported."""
     return f"""<!doctype html>
 <html lang="th">
 <head>
@@ -743,6 +785,7 @@ def _page(title: str, body: str) -> str:
 <ul class="footer-links">
 <li><a href="/privacy">นโยบายความเป็นส่วนตัว</a></li>
 <li><a href="/source-code">ซอร์สโค้ด</a></li>
+<li><a href="/whats-new">มีอะไรใหม่</a></li>
 <li><a href="{_ISSUES}">แจ้งปัญหา</a></li>
 </ul>
 </div>

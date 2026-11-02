@@ -3,7 +3,7 @@
 #   scripts/deploy.sh staging BRANCH     # staging: run origin/BRANCH in /srv/pdf-to-doc-staging, then the smoke test
 #   scripts/deploy.sh staging --stop     # stop staging
 #   scripts/deploy.sh                    # production: fast-forward /srv/pdf-to-doc to the checked origin/main, (re)build
-#   scripts/deploy.sh check A B          # only print whether commits A and B differ in files the server uses
+#   scripts/deploy.sh check A B          # only print whether commits A and B differ in files the server uses, and in the what's-new page
 #   BRANCH=x scripts/deploy.sh           # production deploys origin/x instead of origin/main
 # A production deploy first checks that the files the server uses are what staging last ran and
 # passed its smoke test with. DEPLOY_WITHOUT_STAGING=1 skips that check: for hotfixes and rollbacks only.
@@ -27,11 +27,22 @@ server_diff() {  # the files the server uses that differ between commits $1 and 
   git -c core.quotepath=false diff --name-only "$1" "$2" -- . "${SERVER_UNUSED[@]}"
 }
 
+# The what's-new page's content: a release visitors can tell apart from the one before gets an entry.
+RELEASES=src/pdf_to_doc/web/releases.py
+
+release_notice() {  # warn, never refuse, when going from $1 to $2 changes files the server uses but not $RELEASES
+  if [ -n "$(server_diff "$1" "$2")" ] && git diff --quiet "$1" "$2" -- "$RELEASES"; then
+    echo "warning: files the server uses change, but $RELEASES does not."
+    echo "  If visitors will see the change, add its release there before staging (docs/DEPLOY.md)."
+  fi
+}
+
 check() {  # check A B: print whether the files the server uses differ; exit 1 when they do. Changes nothing.
   local a b files
   a=$(git rev-parse -q --verify "$1^{commit}") || { echo "unknown commit: $1"; exit 2; }
   b=$(git rev-parse -q --verify "$2^{commit}") || { echo "unknown commit: $2"; exit 2; }
   files=$(server_diff "$a" "$b")
+  release_notice "$a" "$b"
   if [ -z "$files" ]; then
     echo "same: no file the server uses differs between $1 and $2"
   else
@@ -60,6 +71,17 @@ staging_check() {  # refuse (exit 1) unless commit $1 has the same server-used f
   echo "staging check passed: staging last passed with $(git rev-parse --short "$staged") and the same server files"
 }
 
+production_notice() {  # release_notice from what production runs to commit $1; a failure to tell only warns
+  local running
+  running=$(ssh -n "$HOST" "git -C $PRODUCTION_DIR rev-parse -q --verify HEAD || echo none") || running=none
+  if [[ "$running" =~ ^[0-9a-f]{40}$ ]] &&
+     { git cat-file -e "$running^{commit}" 2>/dev/null || git fetch -q origin "$running" 2>/dev/null; }; then
+    release_notice "$running" "$1"
+  else
+    echo "warning: cannot tell what production runs; check by hand that $RELEASES has this release, if visitors will see it"
+  fi
+}
+
 local_checks() {  # $1 = branch about to be deployed
   # ssh hands its arguments to gmt's shell, so only plain branch names may travel there.
   [[ "$1" =~ ^[A-Za-z0-9._/-]+$ && "$1" != -* ]] || { echo "refusing branch name '$1': use letters, digits, . _ / -"; exit 2; }
@@ -79,6 +101,7 @@ production() {
   else
     staging_check "$target"
   fi
+  production_notice "$target"
   # gmt merges exactly the commit checked here, even if origin/$branch moves on in the meantime.
   ssh "$HOST" bash -s -- "$PRODUCTION_DIR" "$branch" "$target" <<'REMOTE'
 set -euo pipefail

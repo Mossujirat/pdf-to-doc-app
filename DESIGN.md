@@ -311,10 +311,14 @@ Soft, generous rounding that grows with the size of the surface: 0.5rem miniatur
 - The privacy policy: a card (`.card.prose`) with the page title as its Headline `h1`, a Body large opening, then sections under `h2` in Title, 1rem above.
 - Lists use the Contract Green dots of the home page's points, in Ink, not muted.
 - It ends with the date it was last changed, in muted Body, and one primary way back.
+- The what's-new page (`/whats-new`) is the same card. Under its opening:
+  - **ข้อจำกัดที่ควรรู้:** an `h2` and a list of the known limitations as they are now. It is left out when there are none. It is plain, not amber: it is about what the converter cannot do, not about text to check.
+  - **The latest three releases,** newest first. Each is an `h2` holding its date in Thai, in the Buddhist era ("31 ตุลาคม 2569", a `time`), then a list of what improved. The newest carries a plain chip, ล่าสุด, beside its date.
+  - The words are plain Thai for readers with no technical background: no ticket or PR numbers, and ไฟล์ Word, not DOCX.
 
 ### Footer
 - On every page, under a 1px Hairline rule, in the 72rem container: the name and its licence on the left, in a muted Label.
-- On the right, three links: นโยบายความเป็นส่วนตัว, ซอร์สโค้ด (to `/source-code`, which opens the repository at the commit the server runs) and แจ้งปัญหา (GitHub Issues).
+- On the right, four links: นโยบายความเป็นส่วนตัว, ซอร์สโค้ด (to `/source-code`, which opens the repository at the commit the server runs), มีอะไรใหม่ (the what's-new page) and แจ้งปัญหา (GitHub Issues). Nothing else links to the what's-new page: no banner, no popup.
 - Each link is at least 44 px tall. On a phone the links wrap under the name.
 
 ### Chips

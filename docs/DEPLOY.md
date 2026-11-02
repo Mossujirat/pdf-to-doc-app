@@ -130,11 +130,17 @@ To stop it: `ssh gmt 'crontab -l | grep -v watch-tailscale.sh | crontab -'`.
 
 Push first: `gmt` pulls from GitHub.
 
+**Before staging, write the release** in `src/pdf_to_doc/web/releases.py`, if visitors will be able to tell the change apart from what production runs (a **release**, in `GLOSSARY.md`). The what's-new page (`/whats-new`) shows it.
+- Date it the day it goes to production. If the deploy moves to another day, correct the date and run staging again.
+- Write what improved in plain Thai, for readers with no technical background. The operator approves the wording.
+- A ticket the release closes that stands behind a known limitation: drop the limitation, and list the fix. `tests/test_web_whats_new.py` fails while a known limitation names a ticket that is done.
+- A change to the server alone, or a hotfix visitors cannot see, gets no entry.
+
 **The machine that deploys** must be in the tailnet, with Tailscale's "Use Tailscale DNS settings" on (`tailscale set --accept-dns=true`). The smoke test reaches staging by its name, which only Tailscale's DNS knows.
 
 ```bash
 scripts/deploy.sh staging <branch>    # build and start staging at origin/<branch>, then run the smoke test
-scripts/deploy.sh check <A> <B>       # whether two commits differ in files the server uses (changes nothing)
+scripts/deploy.sh check <A> <B>       # whether two commits differ in files the server uses, and in the release (changes nothing)
 scripts/deploy.sh                     # production: origin/main, if staging passed with the same server files
 scripts/deploy.sh staging --stop      # stop staging
 ```
@@ -150,7 +156,8 @@ scripts/deploy.sh staging --stop      # stop staging
   - `docs/`, `.scratch/`, `.claude/`, `.impeccable/`, `.github/`, `tests/`, `corpus/`, `scripts/`
   - Markdown files at the top level
 - `DEPLOY_WITHOUT_STAGING=1 scripts/deploy.sh` skips that check, for hotfixes only.
-- It refuses a commit behind what production runs. A rollback is a revert on `main`, deployed like any change.
+- It refuses a commit behind what production runs. A rollback is a revert on `main`, deployed like any change. The revert takes the release it undoes off the what's-new page.
+- It warns, and goes on, when the files the server uses differ from what production runs but `releases.py` does not: a reminder to write the release, which a hotfix may need none of.
 
 **Running conversions:** a deploy recreates the launcher, which cancels the conversions running. Their pages say that they ended, and nothing of them is left.
 - **Sandboxes left behind:** the new launcher removes any sandbox of its environment as it starts.

@@ -1127,8 +1127,16 @@ form.inline {
   overflow-wrap: anywhere;
 }
 
-/* The footer of every page: the privacy page, the source the server runs, and where to report
-   a problem. */
+/* A release on the what's-new page: its date, with the newest one's chip beside it. */
+.prose .release {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+/* The footer of every page: the privacy page, the source the server runs, what is new, and
+   where to report a problem. */
 .footer {
   border-top: 1px solid var(--line);
 }
