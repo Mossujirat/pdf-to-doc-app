@@ -74,7 +74,9 @@ The service makes two promises, with equal weight:
 
 **How it works:** the home page explains what the converter does with a file, in six rows with pictures, under "ข้างในทำอะไรกับไฟล์ของคุณ" (ticket 12). Its facts are the converter's as it is.
 
-**Privacy and source:** the privacy page (`/privacy`, ticket 13) names the operator and the contact, and says what becomes of a file, of an address and of the one cookie, what Cloudflare's bot check sees, and the visitor's rights under the PDPA. Every page's footer links to it, to the source at the commit the server runs (AGPL), and to GitHub Issues.
+**Privacy and source:** the privacy page (`/privacy`, ticket 13) names the operator and the contact, and says what becomes of a file, of an address and of the one cookie, what Cloudflare's bot check sees, and the visitor's rights under the PDPA. Every page's footer links to it, to the source at the commit the server runs (AGPL), to the what's-new page, and to GitHub Issues.
+
+**What's new:** a page (`/whats-new`) lists, in plain Thai, what each of the latest three releases improved, under the known limitations as they are now: what the converter still gets wrong without saying so in its outputs. A visitor who had a poor result before learns whether to try again, and what to check.
 
 ## Brand Commitments
 
