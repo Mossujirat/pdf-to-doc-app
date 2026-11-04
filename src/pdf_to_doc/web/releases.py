@@ -65,8 +65,12 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/26-ticked-boxes-are-lost.md",),
     ),
     KnownLimitation(
-        "ลายเซ็นหลายชุดที่วางเรียงกัน หรือแถบข้อความข้างจดหมาย บนหน้าสแกน ถูกอ่านปนกับข้อความข้างๆ ชื่อกับตำแหน่งของผู้ลงนามอาจจับคู่ผิด",
-        ("converter-engine/issues/32-short-line-columns-on-ocr-pages.md",),
+        "แถบข้อความข้างจดหมายที่ตัวอักษรขนาดเท่าเนื้อความ และเลขบัญชีที่วางข้างรายชื่อผู้ลงนาม บนหน้าสแกน"
+        " ยังถูกอ่านปนกับข้อความข้างๆ เลขบัญชีอาจไปอยู่ผิดที่",
+        (
+            "converter-engine/issues/39-bank-details-beside-signatories.md",
+            "converter-engine/issues/41-side-panels-in-the-bodys-own-type.md",
+        ),
     ),
     KnownLimitation(
         "ข้อความที่เขียนเฉียงบนหน้าสแกน เช่น ตัวลายน้ำเอง หรือข้อความที่เขียนคร่อมสำเนาบัตรประชาชน ไม่ถูกอ่าน",

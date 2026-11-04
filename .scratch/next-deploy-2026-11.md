@@ -33,6 +33,8 @@ Each is its own task: `/grill-with-docs` if anything is still open, then `/imple
 
 - **37,** 2026-11-04, on `fix/number-misread-rules`. Its known limitation now says what is left, worded with the user. A draft line for the release, to approve at the deploy: "ตัวเลขในหน้าสแกนที่อ่านผิดจนเป็นไปไม่ได้มีสีเหลืองบอกแล้ว ได้แก่ จำนวนเงินที่จุลภาคคั่นไม่ลงตัวทีละสามหลัก ปีในวันที่ที่เหลือสามหลัก และวันที่ที่เดือนนั้นไม่มี".
 - **24,** 2026-11-04, on `fix/pictures-on-drawn-pages`, branched from 37's. Its known limitation stays for ticket 38, as worded. A draft line for the release: "ไฟล์ PDF ที่ตัวหนังสือเป็นลายเส้น ไม่ใช่ภาพสแกน (เช่นไฟล์ที่สั่งพิมพ์ออกมาเป็น PDF) มีป้ายบอกลายเซ็น ตราประทับ และรูปภาพในข้อความแล้ว และลายเซ็นย่อที่ท้ายทุกหน้าไม่ติดมาเป็นตัวอักษรมั่วอีก".
+- **32,** 2026-11-04, on `fix/signature-blocks-and-side-panels`, branched from 24's. Its known limitation now names what is left (tickets 39 and 41), worded with the user. A draft line for the release: "ลายเซ็นหลายชุดที่วางเรียงกันบนหน้าสแกน อ่านทีละชุดแล้ว ชื่อผู้ลงนามอยู่กับตำแหน่งของตัวเอง และแถบที่อยู่ข้างจดหมายที่ตัวอักษรเล็กกว่าเนื้อความ อ่านต่อท้ายจดหมาย ไม่ปนกับเนื้อความอีก".
+- **Split off on the way:** 41, side panels in the body's own type.
 
 ## Split off in triage
 

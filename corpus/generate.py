@@ -844,6 +844,33 @@ def column_lines(
     return [line for _, _, line in placed]
 
 
+SIGNING_CLOSE = "คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว จึงลงลายมือชื่อไว้เป็นสำคัญ"
+# Each row: the signer's block on the left, the witness's beside it.
+SIGNATURE_GRID = [
+    ("ลงชื่อ ผู้ให้ทุน", "ลงชื่อ พยานผู้ให้ทุน"),
+    ("(นางสาวสมหญิง รักดี)", "(นายสมศักดิ์ มีสุข)"),
+    ("ผู้อำนวยการหน่วยบริหารทุน", "นักวิเคราะห์โครงการ"),
+    ("ลงชื่อ ผู้รับทุน", "ลงชื่อ พยานผู้รับทุน"),
+    ("(นายสมชาย ใจดี)", "(นางสาวสมใจ ดีมาก)"),
+    ("คณบดีคณะวิศวกรรมศาสตร์", "หัวหน้าโครงการ"),
+]
+PANEL_LETTER = [
+    "บริษัทขอแจ้งให้ทราบว่าได้รับเอกสารประกอบการเสนอราคา",
+    "ของท่านครบถ้วนแล้ว และจะแจ้งผลการพิจารณาให้ทราบ",
+    "ภายในสามสิบวันนับแต่วันที่ได้รับหนังสือฉบับนี้",
+    "หากมีข้อสงสัยโปรดติดต่อเจ้าหน้าที่ตามที่อยู่ด้านข้าง",
+    "จึงเรียนมาเพื่อโปรดทราบและขอขอบคุณมาในโอกาสนี้",
+]
+# The sender's offices and bank account, set small at the letter's edge.
+SIDE_PANEL = [
+    "สำนักงานใหญ่",
+    "เลขที่ 99 ถนนพหลโยธิน",
+    "กรุงเทพมหานคร 10400",
+    "โทร 02 123 4567",
+    "ธนาคารกรุงไทย สาขาสีลม",
+    "บัญชี 123-4-56789-0",
+]
+
 TWO_COLUMN_DOCUMENTS = (
     SyntheticDocument(
         name="two-column-scans",
@@ -886,6 +913,45 @@ TWO_COLUMN_DOCUMENTS = (
                     seed=13,
                 ),
                 reference=f"{COVER_SHEET_INTRO}\n\n" + "\n".join(f"{label} {value}" for label, value in COVER_SHEET),
+            ),
+        ),
+    ),
+    # Short lines beside other text (ticket 32): signature blocks two rows deep, signers beside
+    # their witnesses with no blank line between, and a letter with a panel in smaller type beside it.
+    SyntheticDocument(
+        name="short-line-columns-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        Styled(SIGNING_CLOSE, size=14, y=TOP),
+                        *(
+                            Styled(text, size=14, x=x, y=TOP + 2 * 21 + row * 21)
+                            for row, pair in enumerate(SIGNATURE_GRID)
+                            for x, text in zip((72, 320), pair)
+                        ),
+                    ],
+                    seed=14,
+                ),
+                reference="\n\n".join(
+                    [SIGNING_CLOSE]
+                    + [
+                        " ".join(pair[column] for pair in SIGNATURE_GRID[first : first + 3])
+                        for first in (0, 3)
+                        for column in (0, 1)
+                    ]
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        *(Styled(line, size=14, y=TOP + number * 21) for number, line in enumerate(PANEL_LETTER)),
+                        *(Styled(line, size=9, x=440, y=TOP + number * 12.5) for number, line in enumerate(SIDE_PANEL)),
+                    ],
+                    seed=15,
+                ),
+                reference="".join(PANEL_LETTER) + "\n\n" + "\n".join(SIDE_PANEL),
             ),
         ),
     ),

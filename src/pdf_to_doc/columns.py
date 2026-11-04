@@ -2,13 +2,15 @@
 which find them among the engine's boxes, and text pages, among the text layer's rows (see
 `in_reading_order`)."""
 
+import math
 import re
+from bisect import bisect
 from dataclasses import dataclass, replace
 from itertools import combinations
 from statistics import median
 from typing import Protocol
 
-from pdf_to_doc.layout import PageRows, Row
+from pdf_to_doc.layout import SIGNATURE_LINE, PageRows, Row
 from pdf_to_doc.thai import DIGITS
 
 Box = tuple[float, float, float, float]
@@ -36,6 +38,27 @@ _BODY_LINE = 24
 _LINED_UP = 0.5
 # Boxes whose centres are closer than this share of a box height sit on one printed line.
 _SAME_LINE = 0.5
+# A side panel beside body text is a column too, though its lines are as short as labels':
+# narrower than the body, and set in smaller type, its boxes at most this share as tall at the
+# median. The 110-page sample contract's panel was 0.53 as tall as its body; the test fixtures'
+# 9 points beside 12, 0.75.
+_SMALLER_TYPE = 0.85
+# The body beside a panel runs to at least this many lines: two, on a form's heading, did not.
+_BODY_LINES = 3
+# And its lines and the body's mostly keep apart: fewer than this share of the panel's lines
+# share a baseline with a body line, and not every body line shares one with a panel line. Labels
+# and values share their rows' baselines, however small the values; on synthetic scans, 41 to 47%
+# of a smaller panel's lines did (ticket 18). On the 110-page sample contract, columns of smaller
+# type without the rest were tables set apart without rules.
+_ON_SHARED_LINES = 0.75
+# Lines share a baseline when their centres are closer than this share of a box height: lines of
+# two sizes on one baseline are, as are the lines that `_SAME_LINE` groups, more loosely, into one
+# printed line; lines a line of the smaller type apart are not.
+_SAME_BASELINE = 0.25
+# Signature blocks side by side are found by their rows to sign on (see `_signature_blocks`): a
+# signing word, or a box that opens with "By:", as English signature blocks name their signer.
+# "By:" is not a row to sign on for placeholders: "Photo by" beside a picture is no signature.
+_SIGNED_BY = re.compile(r"\s*by\s*:", re.IGNORECASE)
 
 
 class Placed(Protocol):
@@ -51,12 +74,19 @@ class Placed(Protocol):
 def reading_parts[P: Placed](boxes: tuple[P, ...], unit: float) -> list[tuple[P, ...]]:
     """The boxes in the parts a reader reads one after the other: down the page, and where
     it is set in columns of body text, each column to its end before the one to its right,
-    each column read the same way in turn. Text without columns is one part. Distances are
-    measured in `unit`, the height of a usual line's box."""
+    each column read the same way in turn. Signature blocks side by side are read one block
+    after the other, and a side panel beside body text after it. Text without columns is one
+    part. Distances are measured in `unit`, the height of a usual line's box."""
     found: list[tuple[P, ...]] = []
     run: list[P] = []  # bands not set in columns, read as one part
     for region in _regions(boxes, unit):
         columns = _text_columns(region, unit)
+        if not columns and (signing := _signature_blocks(region)):
+            above, blocks, after = signing
+            found += [part for part in (tuple(run + above), *blocks) if part]
+            run = after
+            continue
+        columns = columns or _panel_columns(region, unit)
         if not columns:
             run += region
             continue
@@ -147,10 +177,102 @@ def _under_the_longest[P: Placed](columns: list[tuple[P, ...]], band: tuple[P, .
 
 def _text_columns[P: Placed](boxes: tuple[P, ...], unit: float) -> list[tuple[P, ...]]:
     """The boxes' columns, left to right, when they are set in columns of body text; otherwise none."""
+    columns = _lined_up_columns(boxes, unit)
+    return columns if all(map(_body_text, columns)) else []
+
+
+def _lined_up_columns[P: Placed](boxes: tuple[P, ...], unit: float) -> list[tuple[P, ...]]:
+    """The boxes' columns, left to right, when there are two or more and each is lined up; otherwise none."""
     columns = _columns(boxes, unit)
-    if len(columns) > 1 and all(_body_text(column) and _lined_up(column, unit) for column in columns):
-        return columns
-    return []
+    return columns if len(columns) > 1 and all(_lined_up(column, unit) for column in columns) else []
+
+
+def _signature_blocks[P: Placed](band: tuple[P, ...]) -> tuple[list[P], list[tuple[P, ...]], list[P]] | None:
+    """Signature blocks side by side in the band, what lies above them, and what follows them; None
+    when it holds none.
+
+    A row of blocks starts at each printed line that opens with a row to sign on and holds another,
+    each in a box of its own, and runs to the next. A line that opens otherwise, as a table's
+    header row with two signing columns does, starts none. Its blocks are read left to right, a
+    row of blocks after the one above, so that each signer stays beside the witness set beside them.
+    Each block takes the boxes whose centres lie from its signing word to the next one's. Stamps and
+    signatures that OCR reads as text overlap the gaps between blocks, and rows of blocks follow one
+    another without a gap, so the gaps between them are no clear gutters. Body text in one box that
+    runs across a block's start, below the blocks, ends them: it and what follows it are no block's.
+    """
+    lines = printed_lines(band)
+    rows = [signs for line in lines if len(signs := _signing_boxes(line)) >= 2 and signs[0] is line[0]]
+    if not rows:
+        return None
+    tops = [min(box.box[1] for box in signs) for signs in rows]
+    starts = [[sign.box[0] for sign in signs[1:]] for signs in rows]
+    end = min(
+        (
+            box.box[1]
+            for box in band
+            if _centre(box) > tops[0] and _body_text((box,)) and _across(box, starts[bisect(tops, _centre(box)) - 1])
+        ),
+        default=math.inf,
+    )
+    above: list[P] = []
+    after: list[P] = []
+    blocks: list[list[list[P]]] = [[[] for _ in signs] for signs in rows]
+    for box in band:
+        row = bisect(tops, _centre(box)) - 1
+        if row < 0:
+            above.append(box)
+        elif _centre(box) >= end:
+            after.append(box)
+        else:
+            blocks[row][bisect(starts[row], (box.box[0] + box.box[2]) / 2)].append(box)
+    return above, [tuple(block) for row_blocks in blocks for block in row_blocks if block], after
+
+
+def _across(box: Placed, starts: list[float]) -> bool:
+    """Whether the box runs across where one of the blocks starts, by a box height or more each way.
+    A block's own lines may start a little left of its signing word: the five-page sample's by 3
+    pixels."""
+    reach = _height(box)
+    return any(box.box[0] + reach < start < box.box[2] - reach for start in starts)
+
+
+def _signing_boxes[P: Placed](line: list[P]) -> list[P]:
+    """The boxes of a printed line that hold a row to sign on, left to right: a signing word, or
+    "By:" before the signer's name, as English agreements set it."""
+    return [box for box in line if SIGNATURE_LINE.search(box.text) or _SIGNED_BY.match(box.text)]
+
+
+def _panel_columns[P: Placed](boxes: tuple[P, ...], unit: float) -> list[tuple[P, ...]]:
+    """The boxes' columns, left to right, when they are body text and a side panel set in smaller
+    type beside it; otherwise none. Unlike columns of body text, they never take in the band below
+    them (see `_more_of`)."""
+    columns = _lined_up_columns(boxes, unit)
+    return columns if columns and _set_in_smaller_type(columns) else []
+
+
+def _set_in_smaller_type[P: Placed](columns: list[tuple[P, ...]]) -> bool:
+    """Whether the columns are body text and a side panel beside it: two columns, one of body text of
+    a few lines at least, the other narrower and set in smaller type, their lines mostly apart (see
+    `_ON_SHARED_LINES`). Tables set apart without rules have more columns, or none of body text."""
+    if len(columns) != 2:
+        return False
+    for panel, body in (columns, columns[::-1]):
+        smaller = median(map(_height, panel)) <= _SMALLER_TYPE * median(map(_height, body))
+        narrower = _right(panel) - _left(panel) < _right(body) - _left(body)
+        if smaller and narrower and len(printed_lines(body)) >= _BODY_LINES and _body_text(body):
+            return _on_shared_baselines(printed_lines(panel), body) < _ON_SHARED_LINES and (
+                _on_shared_baselines(printed_lines(body), panel) < 1
+            )
+    return False
+
+
+def _on_shared_baselines[P: Placed](lines: list[list[P]], beside: tuple[P, ...]) -> float:
+    """The share of the lines that share a baseline with a box beside them."""
+    return sum(any(_on_one_baseline(line[0], box) for box in beside) for line in lines) / len(lines)
+
+
+def _on_one_baseline(box: Placed, other: Placed) -> bool:
+    return abs(_centre(box) - _centre(other)) <= _SAME_BASELINE * _height(box)
 
 
 def _gutters[P: Placed](columns: list[tuple[P, ...]]) -> list[tuple[float, float]]:

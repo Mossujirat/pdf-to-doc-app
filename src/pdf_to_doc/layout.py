@@ -65,7 +65,7 @@ _BACKGROUND_ROWS = 3
 # A row to sign on: "ลงชื่อ ........", "ลายมือชื่อ", or the English word "Signature". On an OCR
 # page the Thai words may have lost their mai ek, the commonest misread: "ลงชือ". Not any mark,
 # or "ลงช่อง" ("in the box") would count.
-_SIGNATURE_LINE = re.compile(r"ลงชื่?อ|ลายมือชื่?อ|\bsignature\b", re.IGNORECASE)
+SIGNATURE_LINE = re.compile(r"ลงชื่?อ|ลายมือชื่?อ|\bsignature\b", re.IGNORECASE)
 # A signature is at most this share of the page's width and height. On the sample
 # contracts the largest was 199 pt wide and 118 pt tall.
 _SIGNATURE_MAX_WIDTH = 0.4
@@ -273,7 +273,7 @@ def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
         image.x1 - image.x0 <= _SIGNATURE_MAX_WIDTH * page.width
         and image.bottom - image.top <= _SIGNATURE_MAX_HEIGHT * page.height
     )
-    if small and any(_SIGNATURE_LINE.search(row.text) and _next_to(image, row) for row in page.rows):
+    if small and any(SIGNATURE_LINE.search(row.text) and _next_to(image, row) for row in page.rows):
         return Placeholder("signature", image.kept_image)
     return Placeholder("image", image.kept_image)
 

@@ -20,3 +20,7 @@
 - Whether it is a known limitation of its own on the what's-new page.
 
 ## Comments
+
+**2026-11-04, from ticket 32**
+
+- **A known limitation,** together with ticket 41, worded with the user: "แถบข้อความข้างจดหมายที่ตัวอักษรขนาดเท่าเนื้อความ และเลขบัญชีที่วางข้างรายชื่อผู้ลงนาม บนหน้าสแกน ยังถูกอ่านปนกับข้อความข้างๆ เลขบัญชีอาจไปอยู่ผิดที่".
