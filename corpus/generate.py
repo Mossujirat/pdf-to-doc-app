@@ -19,6 +19,7 @@ from pdf_builder import (
     SARABUN,
     TOP,
     Cell,
+    CheckBox,
     Drawn,
     Grid,
     Line,
@@ -27,10 +28,12 @@ from pdf_builder import (
     Scan,
     Spaced,
     Styled,
+    laid_out_grid,
     pdf,
     remapped,
 )
 
+from pdf_to_doc.check_boxes import EMPTY, TICKED
 from pdf_to_doc.quality import reference_file_name
 
 SYNTHETIC = Path(__file__).parent / "synthetic"
@@ -871,6 +874,47 @@ SIDE_PANEL = [
     "บัญชี 123-4-56789-0",
 ]
 
+# A form's choices, each after a check box, ticked or not (ticket 26): a row's label, then each
+# box and the choice it qualifies, as (box's x, ticked, choice's x, choice).
+CHOICE_ROWS = [
+    ("ประเภทโครงการ", [(190, True, 210, "โครงการเดี่ยว"), (300, False, 320, "ชุดโครงการ")]),
+    ("ระยะเวลาโครงการ", [(190, False, 210, "12 เดือน"), (300, True, 320, "18 เดือน")]),
+    ("สถานะวิสาหกิจ", [(190, True, 210, "วิสาหกิจขนาดกลางและขนาดย่อม")]),
+]
+# The rights to each result of a project shared out by ticks in a ruled table, as the sample
+# contract does it: which party owns each.
+RIGHTS_HEADER = ("ผลงาน", "ผู้ให้ทุน", "ผู้รับทุน")
+RIGHTS = [("ต้นแบบกาวชีวภาพ", False, True), ("สูตรกาวชีวภาพ", True, True), ("กระบวนการผลิต", True, False)]
+
+
+def form_with_choices() -> list[Line]:
+    """The choice rows, 28 points apart, their text in 14 points and their boxes two thirds as tall as a line."""
+    lines: list[Line] = []
+    for row, (label, choices) in enumerate(CHOICE_ROWS):
+        y = TOP + row * 28
+        lines.append(Styled(label, size=14, y=y))
+        for box_x, ticked, x, choice in choices:
+            lines += [CheckBox(box_x, y, "tick" if ticked else "none", size=14), Styled(choice, size=14, x=x, y=y)]
+    return lines
+
+
+def rights_table() -> list[Line]:
+    """The rights table, with a box in the middle of each of its parties' cells."""
+    grid = Grid(rows=(RIGHTS_HEADER, *((result, "", "") for result, _, _ in RIGHTS)), widths=(220, 90, 90), y=TOP)
+    cells = [cell.rect for cell in laid_out_grid(grid, TOP).cells]
+    boxes: list[Line] = [
+        CheckBox(rect.x0 + rect.width / 2 - 8, rect.y0 + rect.height / 2 + 8, "tick" if ticked else "none", size=16)
+        for row, (_, *owners) in enumerate(RIGHTS, start=1)
+        for column, ticked in enumerate(owners, start=1)
+        for rect in [cells[row * len(RIGHTS_HEADER) + column]]
+    ]
+    return [grid, *boxes]
+
+
+def mark(ticked: bool) -> str:
+    return TICKED if ticked else EMPTY
+
+
 TWO_COLUMN_DOCUMENTS = (
     SyntheticDocument(
         name="two-column-scans",
@@ -952,6 +996,30 @@ TWO_COLUMN_DOCUMENTS = (
                     seed=15,
                 ),
                 reference="".join(PANEL_LETTER) + "\n\n" + "\n".join(SIDE_PANEL),
+            ),
+        ),
+    ),
+    # Check boxes on scans, ticked or not, which OCR reads no text in (ticket 26).
+    SyntheticDocument(
+        name="check-box-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(form_with_choices(), seed=16),
+                reference="\n\n".join(
+                    " ".join([label, *(f"{mark(ticked)} {choice}" for _, ticked, _, choice in choices)])
+                    for label, choices in CHOICE_ROWS
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(rights_table(), seed=17),
+                reference="\n".join(
+                    [
+                        "| " + " | ".join(RIGHTS_HEADER) + " |",
+                        "| --- | --- | --- |",
+                        *(f"| {result} | {mark(funder)} | {mark(recipient)} |" for result, funder, recipient in RIGHTS),
+                    ]
+                ),
             ),
         ),
     ),

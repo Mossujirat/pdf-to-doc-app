@@ -185,6 +185,12 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 - An image inside a table cell is placed right after the table.
 - The summary counts placeholders by kind.
 
+**Check boxes** (ticket 26)
+- On OCR pages, a check box comes out as ☒ when ticked and ☐ when empty, in both outputs, where it sits: before the choice it qualifies, or in its table cell. It is text, not a placeholder: the choice is what the page says.
+- OCR reads no text in a box, so boxes are found in the page image: a small square, two thirds of a line's height or so, closed by straight rules meeting at its corners, with clear paper either side of it. A box with ink inside is ticked; one with only a speck in it is ticked and uncertain text. A square holding a block of ink, as a QR code's corners do, is no box.
+- The engine's own reading of a box or its tick ("V", "√") gives way to it. Where the engine took a box into the text beside it, its text is cut where a word starts nearest the box.
+- Text pages need nothing: Word exports check boxes as characters, which their text layer holds.
+
 **Document model** (ADR 0003)
 - **Block kinds:**
   - headings with a level

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import ClassVar, Literal
 
-from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, Grid, Picture, Styled, laid_out_grid, laid_out_picture
+from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, CheckBox, Grid, Picture, Styled, laid_out_grid, laid_out_picture
 
 from pdf_to_doc.ocr import Box, Language, PageImage, TextBox, turned_box
 
@@ -48,7 +48,7 @@ def marks_over(baseline: float, x: float, text: str = "ญ ญ") -> Boxed:
     return Boxed(text, x, baseline - 1.25 * FONT_SIZE, baseline - 0.8 * FONT_SIZE)
 
 
-Line = str | Styled | Grid | Picture | Unsure | Boxed
+Line = str | Styled | Grid | Picture | CheckBox | Unsure | Boxed
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,8 @@ class FakeEngine:
 
     A line is a string, or a `Styled` line with its own size and position; an
     empty string leaves a blank line. Either can be `Unsure`. A `Picture` gives no box,
-    but takes up its room, as `pdf_builder` draws it. A `Grid` gives a box
+    but takes up its room, as `pdf_builder` draws it; a `CheckBox` gives none either, as
+    PaddleOCR reads none in one, or a box with no text. A `Grid` gives a box
     for each piece of text in its cells, as `pdf_builder` draws them in Sarabun, padded
     so that it reaches over the rules beside the text. A box is as tall as a real
     detector draws it, about one and a half times the font size.
@@ -179,6 +180,8 @@ def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float
             continue
         if isinstance(line, Picture):
             _, baseline = laid_out_picture(line, baseline)
+            continue
+        if isinstance(line, CheckBox):
             continue
         styled = line if isinstance(line, Styled) else Styled(line)
         baseline = styled.y if styled.y is not None else baseline

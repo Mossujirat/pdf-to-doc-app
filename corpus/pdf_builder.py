@@ -115,7 +115,22 @@ class Picture:
     cmyk: bool = False  # a photo stored as a CMYK JPEG, as printers' files hold them
 
 
-Line = str | Spaced | Styled | Grid | Picture
+CheckMark = Literal["tick", "none", "smudge", "block"]
+
+
+@dataclass(frozen=True)
+class CheckBox:
+    """A check box drawn as a square outline, `size` points a side, its foot on the baseline `y`,
+    from `x`. A tick is drawn as a pen leaves one, a smudge as a speck of ink, and a block as a QR
+    code's corner holds one. It takes up no line."""
+
+    x: float
+    y: float
+    mark: CheckMark = "tick"
+    size: float = 12
+
+
+Line = str | Spaced | Styled | Grid | Picture | CheckBox
 
 
 @dataclass(frozen=True)
@@ -221,6 +236,9 @@ def _draw_lines(
         if isinstance(line, Grid):
             y = _draw_grid(page, line.y if line.y is not None else y, line, font_file, invisible)
             continue
+        if isinstance(line, CheckBox):
+            _draw_check_box(pictures_on or page, line)
+            continue
         if isinstance(line, Picture):
             top, after = laid_out_picture(line, y)
             box = pymupdf.Rect(line.x, top, line.x + line.width, top + line.height)
@@ -237,6 +255,23 @@ def _draw_lines(
         elif line:
             _draw(page, LEFT, y, line, font_file, FONT_SIZE, invisible)
         y += LINE_HEIGHT
+
+
+def _draw_check_box(page: pymupdf.Page, box: CheckBox) -> None:
+    """The box's square, and its mark: a tick from its lower left to its upper right, or a speck."""
+    left, bottom = box.x, box.y
+    square = pymupdf.Rect(left, bottom - box.size, left + box.size, bottom)
+    page.draw_rect(square * page.derotation_matrix, color=(0, 0, 0), width=0.8)
+    if box.mark == "tick":
+        points = [(0.2, 0.55), (0.42, 0.8), (0.85, 0.2)]
+        corners = [pymupdf.Point(left + across * box.size, bottom - box.size + down * box.size) for across, down in points]
+        page.draw_polyline([point * page.derotation_matrix for point in corners], color=(0, 0, 0), width=0.12 * box.size)
+    elif box.mark == "block":
+        block = pymupdf.Rect(left + 0.15 * box.size, bottom - 0.85 * box.size, left + 0.85 * box.size, bottom - 0.15 * box.size)
+        page.draw_rect(block * page.derotation_matrix, color=None, fill=(0, 0, 0))
+    elif box.mark == "smudge":
+        centre = pymupdf.Point(left + 0.6 * box.size, bottom - 0.35 * box.size)
+        page.draw_circle(centre * page.derotation_matrix, 0.06 * box.size, color=(0, 0, 0), fill=(0, 0, 0))
 
 
 def laid_out_picture(picture: Picture, baseline: float) -> tuple[float, float]:

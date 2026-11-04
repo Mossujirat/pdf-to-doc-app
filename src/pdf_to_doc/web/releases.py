@@ -61,10 +61,6 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/22-page-furniture-on-scans.md",),
     ),
     KnownLimitation(
-        "เครื่องหมายติ๊กในช่องบนหน้าสแกนหายไป จึงไม่รู้ว่าเลือกข้อไหนไว้ ดูจากต้นฉบับ",
-        ("converter-engine/issues/26-ticked-boxes-are-lost.md",),
-    ),
-    KnownLimitation(
         "แถบข้อความข้างจดหมายที่ตัวอักษรขนาดเท่าเนื้อความ และเลขบัญชีที่วางข้างรายชื่อผู้ลงนาม บนหน้าสแกน"
         " ยังถูกอ่านปนกับข้อความข้างๆ เลขบัญชีอาจไปอยู่ผิดที่",
         (
