@@ -62,8 +62,10 @@ _HEADING_MAX_ROWS = 2
 # An image with this many rows of text printed over it is the page behind the text,
 # as on a scan made searchable, or a watermark: not a picture of its own.
 _BACKGROUND_ROWS = 3
-# A row to sign on: "ลงชื่อ ........", "ลายมือชื่อ", or the English word "Signature".
-_SIGNATURE_LINE = re.compile(r"ลงชื่อ|ลายมือชื่อ|\bsignature\b", re.IGNORECASE)
+# A row to sign on: "ลงชื่อ ........", "ลายมือชื่อ", or the English word "Signature". On an OCR
+# page the Thai words may have lost their mai ek, the commonest misread: "ลงชือ". Not any mark,
+# or "ลงช่อง" ("in the box") would count.
+_SIGNATURE_LINE = re.compile(r"ลงชื่?อ|ลายมือชื่?อ|\bsignature\b", re.IGNORECASE)
 # A signature is at most this share of the page's width and height. On the sample
 # contracts the largest was 199 pt wide and 118 pt tall.
 _SIGNATURE_MAX_WIDTH = 0.4
@@ -162,7 +164,7 @@ class PlacedIncompleteTable:
 
 @dataclass(frozen=True)
 class PlacedImage:
-    """An image drawn on a text page, and where it sits."""
+    """An image drawn on a text page, or on an OCR page that is not a scan, and where it sits."""
 
     x0: float
     top: float

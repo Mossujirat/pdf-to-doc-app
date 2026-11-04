@@ -451,6 +451,22 @@ SIGNATURE_LINE = "ลงชื่อ ...........................................
 # A signature whose foot runs over the signature line after it.
 SIGNATURE = Picture("signature", 140, 45, x=130, overlap=14)
 
+# A signing page as a PDF printer draws it, its signature over the signer's name: PaddleOCR reads
+# a long line of dots as a dot or two (ticket 18), which this page is not here to measure.
+SIGNED_LINE = "ลงชื่อ นายสมชาย ใจดี ผู้ให้ทุน"
+DRAWN_SIGNING_LINES: list[Line] = [
+    *CLAUSES, "", Picture("photo", 120, 70), "", SIGNATURE, SIGNED_LINE, "", Picture("stamp", 70, 70, x=330)
+]
+DRAWN_SIGNING_REFERENCE = "".join(CLAUSES) + f"\n\n[รูปภาพ]\n\n[ลายเซ็น]\n\n{SIGNED_LINE}\n\n[ตราประทับ]"
+
+
+def initialled(foot: tuple[float, float]) -> SyntheticPage:
+    """A page drawn as shapes with initials at its foot, which the hand moves a little from page to page."""
+    x, y = foot
+    lines: list[Line] = [Styled(CLAUSES[0], y=160), *CLAUSES[1:], Picture("signature", 66, 17, x=x, y=y)]
+    return SyntheticPage(lines=Drawn(lines), reference="".join(CLAUSES))
+
+
 PLACEHOLDER_DOCUMENTS = (
     # A signing page: a picture, a signature on its signature line, and a stamp.
     SyntheticDocument(
@@ -470,6 +486,18 @@ PLACEHOLDER_DOCUMENTS = (
                 ],
                 reference="".join(CLAUSES) + f"\n\n[รูปภาพ]\n\n[ลายเซ็น]\n\n{SIGNATURE_LINE}\n\n[ตราประทับ]",
             ),
+        ),
+    ),
+    # A PDF printer drew the text as shapes and kept the pictures as images: the signing page,
+    # and pages initialled at the foot. OCR reads the text; the pictures are placeholders, and
+    # the initials page furniture.
+    SyntheticDocument(
+        name="pictures-on-drawn-pages",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(lines=Drawn(DRAWN_SIGNING_LINES), reference=DRAWN_SIGNING_REFERENCE),
+            initialled((478, 766)),
+            initialled((469, 759)),
         ),
     ),
 )

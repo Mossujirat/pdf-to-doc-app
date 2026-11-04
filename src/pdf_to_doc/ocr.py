@@ -13,7 +13,7 @@ import pymupdf
 
 from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
-from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedIncompleteTable, PlacedTable, RawCell, Row
+from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedImage, PlacedIncompleteTable, PlacedTable, RawCell, Row
 from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import Piece
 from pdf_to_doc.words import unknown_words
@@ -325,8 +325,15 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         if len(parts) > 1 and part_rows:
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
+    pictures = tuple(_turned_image(picture, image.turn, text_layer) for picture in text_layer.images)
     return PageRows(
-        rows=tuple(rows), width=width, height=height, tables=tables, incomplete_tables=incomplete_tables, kind="ocr"
+        rows=tuple(rows),
+        width=width,
+        height=height,
+        tables=tables,
+        incomplete_tables=incomplete_tables,
+        images=pictures,
+        kind="ocr",
     )
 
 
@@ -519,6 +526,12 @@ def _turned_row(row: Row, turn: int, page: PageRows) -> Row:
     """Where the row lies once the page is turned `turn` degrees clockwise."""
     x0, y0, x1, y1 = turned_box((row.x0, row.y0, row.x1, row.y1), turn, page.width, page.height)
     return replace(row, x0=x0, y0=y0, x1=x1, y1=y1)
+
+
+def _turned_image(image: PlacedImage, turn: int, page: PageRows) -> PlacedImage:
+    """Where the image lies once the page is turned `turn` degrees clockwise, beside the rows read on it."""
+    x0, top, x1, bottom = turned_box((image.x0, image.top, image.x1, image.bottom), turn, page.width, page.height)
+    return replace(image, x0=x0, top=top, x1=x1, bottom=bottom)
 
 
 def _placed(row: Row, across: float, down: float) -> Row:

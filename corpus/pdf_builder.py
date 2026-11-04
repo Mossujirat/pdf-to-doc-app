@@ -203,8 +203,15 @@ def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Pat
     return data
 
 
-def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invisible: bool = False) -> None:
-    """Draw the lines top to bottom, as text no one sees if `invisible`, as OCR software hides its text."""
+def _draw_lines(
+    page: pymupdf.Page,
+    lines: Sequence[Line],
+    font_file: Path,
+    invisible: bool = False,
+    pictures_on: pymupdf.Page | None = None,
+) -> None:
+    """Draw the lines top to bottom, as text no one sees if `invisible`, as OCR software hides its text.
+    Pictures go on `pictures_on`, if given, at the same place."""
     y: float = TOP
     for line in lines:
         if isinstance(line, Styled):
@@ -215,10 +222,11 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invi
             y = _draw_grid(page, line.y if line.y is not None else y, line, font_file, invisible)
             continue
         if isinstance(line, Picture):
-            top = line.y if line.y is not None else y - FONT_SIZE
+            top, after = laid_out_picture(line, y)
             box = pymupdf.Rect(line.x, top, line.x + line.width, top + line.height)
-            page.insert_image(box * page.derotation_matrix, stream=_picture(line), rotate=(page.rotation + line.turn) % 360)
-            y = top + line.height + LINE_HEIGHT - line.overlap
+            on = pictures_on or page
+            on.insert_image(box * on.derotation_matrix, stream=_picture(line), rotate=(on.rotation + line.turn) % 360)
+            y = after
             continue
         if isinstance(line, Spaced):
             x: float = LEFT
@@ -229,6 +237,12 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invi
         elif line:
             _draw(page, LEFT, y, line, font_file, FONT_SIZE, invisible)
         y += LINE_HEIGHT
+
+
+def laid_out_picture(picture: Picture, baseline: float) -> tuple[float, float]:
+    """Where a picture drawn after the line on `baseline` has its top, and the baseline of the line after it."""
+    top = picture.y if picture.y is not None else baseline - FONT_SIZE
+    return top, top + picture.height + LINE_HEIGHT - picture.overlap
 
 
 def _on_its_side(doc: pymupdf.Document) -> pymupdf.Page:
@@ -251,9 +265,11 @@ def _noise(across: int, seed: int) -> pymupdf.Pixmap:
 
 
 def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
-    """The lines drawn as text on a page of their own, turned into paths by way of SVG, and placed on `page`."""
+    """The lines drawn as text on a page of their own, turned into paths by way of SVG, and placed on `page`.
+    Pictures are images on `page`, as a PDF printer keeps them: the trip through SVG would lose their
+    transparent ground."""
     with pymupdf.open() as paper:
-        _draw_lines(paper.new_page(), lines, font_file)
+        _draw_lines(paper.new_page(), lines, font_file, pictures_on=page)
         svg = paper[0].get_svg_image(text_as_path=True)
     with pymupdf.open(stream=svg.encode("utf-8"), filetype="svg") as drawing:
         with pymupdf.open("pdf", drawing.convert_to_pdf()) as shapes:
