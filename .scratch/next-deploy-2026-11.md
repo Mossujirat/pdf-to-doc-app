@@ -2,9 +2,9 @@
 
 **Decided:** 2026-11-03, by the user, in triage.
 
-**Status:** planned. Nothing started.
+**Status:** deployed 2026-11-04. Production runs `6467c4f`: PR #23 (the four tickets) and PR #24 (the release).
 
-**Production:** `c109ac0`, deployed 2026-11-02. The previous round is recorded in `.scratch/next-deploy.md`.
+**Production before this round:** `c109ac0`, deployed 2026-11-02. The previous round is recorded in `.scratch/next-deploy.md`.
 
 ## To finish before the deploy
 
@@ -60,3 +60,7 @@ Each is its own task: `/grill-with-docs` if anything is still open, then `/imple
 - **The release entry** goes into `releases.py` before staging, dated the deploy day, with the Thai wording approved by the user (`docs/DEPLOY.md`).
 - **Through staging and its gate,** with the steps shown to the user and approved first.
 - **Checks still open from the launch:** a file near 50 MB through Funnel; Funnel on IPv6.
+
+## Deployed
+
+**2026-11-04:** PR #23 merged, then PR #24 with the release entry, as worded and approved by the user. Staging passed its smoke test at `6467c4f` (CER 0.000 on both corpus files, 2.3 and 1.4 s per OCR page); production runs `6467c4f`, and its `/health`, what's-new page and `/source-code` answer as they should. The two checks still open from the launch stay open.
