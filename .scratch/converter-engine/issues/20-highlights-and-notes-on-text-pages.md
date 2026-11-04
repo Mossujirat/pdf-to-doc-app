@@ -23,3 +23,8 @@
 
 - **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
 - Status stays `needs-triage` until then.
+
+**2026-11-03, triage**
+
+- **One piece of work with ticket 36,** highlights on scans, done together in a later round: both need the same way to show a highlight in each output.
+- **Not in this round** (37, 24, 26, 32).

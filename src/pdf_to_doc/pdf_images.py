@@ -3,6 +3,8 @@ images kept, it also makes the images outputs show: a kept page as it is shown, 
 as itself."""
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
@@ -42,10 +44,36 @@ def placed_images(blocks: list[dict[str, Any]], keep: bool = False) -> tuple[Pla
             continue
         x0, top, x1, bottom = block["bbox"]
         width, height = x1 - x0, bottom - top
-        if min(width, height) >= _SMALLEST_PICTURE:
+        if _a_picture(width, height):
             kept_image = _kept_picture(block) if keep else None
             images.append(PlacedImage(x0, top, x1, bottom, _stamp_like(block, width / height), kept_image))
     return tuple(images)
+
+
+def _a_picture(width: float, height: float) -> bool:
+    """Whether an image this size on the page is a picture, not a rule, a bullet or an ornament."""
+    return min(width, height) >= _SMALLEST_PICTURE
+
+
+@contextmanager
+def pictures_hidden(page: pymupdf.Page) -> Iterator[pymupdf.Page]:
+    """The page, in a document of its own, with the images `placed_images` takes for pictures
+    hidden, so that OCR does not read their ink as text. Each is redacted with its images alone,
+    inline ones too: what the page draws over them, such as a signing line under a signature,
+    still shows."""
+    with pymupdf.open() as copy:
+        copy.insert_pdf(page.parent, from_page=page.number, to_page=page.number)
+        hidden = copy[0]
+        for info in hidden.get_image_info():
+            x0, top, x1, bottom = info["bbox"]
+            if _a_picture(x1 - x0, bottom - top):
+                hidden.add_redact_annot(pymupdf.Rect(info["bbox"]))
+        hidden.apply_redactions(
+            images=pymupdf.mupdf.PDF_REDACT_IMAGE_REMOVE,
+            graphics=pymupdf.mupdf.PDF_REDACT_LINE_ART_NONE,
+            text=pymupdf.mupdf.PDF_REDACT_TEXT_NONE,
+        )
+        yield hidden
 
 
 def kept_page(page: pymupdf.Page) -> KeptImage:

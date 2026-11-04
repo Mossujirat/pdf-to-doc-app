@@ -133,7 +133,7 @@ Push first: `gmt` pulls from GitHub.
 **Before staging, write the release** in `src/pdf_to_doc/web/releases.py`, if visitors will be able to tell the change apart from what production runs (a **release**, in `GLOSSARY.md`). The what's-new page (`/whats-new`) shows it.
 - Date it the day it goes to production. If the deploy moves to another day, correct the date and run staging again.
 - Write what improved in plain Thai, for readers with no technical background. The operator approves the wording.
-- A ticket the release closes that stands behind a known limitation: drop the limitation, and list the fix. `tests/test_web_whats_new.py` fails while a known limitation names a ticket that is done.
+- A ticket the release closes that stands behind a known limitation: drop the limitation, and list the fix. If another open ticket still stands behind it, as when a fix covers only part of the gap, reword the limitation to say what is left instead of dropping it. `tests/test_web_whats_new.py` fails while a known limitation names a ticket that is done.
 - A change to the server alone, or a hotfix visitors cannot see, gets no entry.
 
 **The machine that deploys** must be in the tailnet, with Tailscale's "Use Tailscale DNS settings" on (`tailscale set --accept-dns=true`). The smoke test reaches staging by its name, which only Tailscale's DNS knows.

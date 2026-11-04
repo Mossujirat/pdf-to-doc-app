@@ -2,10 +2,12 @@
 
 A page whose text layer is there but cannot be trusted is also an OCR page. With images
 kept, a scan is kept as an image of the page instead, and not read at all. An OCR page
-that is not a scan is rendered from the PDF, crisp, and softened before it is read.
+that is not a scan, such as a page a PDF printer drew as shapes, is rendered from the PDF,
+crisp, and softened before it is read; its pictures are hidden from OCR and become
+placeholders, or are kept, as on a text page.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 import numpy as np
@@ -13,10 +15,10 @@ import numpy.typing as npt
 import pymupdf
 
 from pdf_to_doc.columns import in_reading_order
-from pdf_to_doc.layout import EDGE_BAND, PageRows, Row, body_text_share, page_blocks
+from pdf_to_doc.layout import EDGE_BAND, PageRows, PlacedImage, Row, body_text_share, page_blocks
 from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
-from pdf_to_doc.ocr import OcrEngine, read_page, render, softened
-from pdf_to_doc.pdf_images import kept_page
+from pdf_to_doc.ocr import OcrEngine, PageImage, read_page, render, softened
+from pdf_to_doc.pdf_images import kept_page, pictures_hidden
 from pdf_to_doc.pdf_text import kept_pictures, text_rows
 from pdf_to_doc.progress import Progress
 from pdf_to_doc.validation import trusted
@@ -32,9 +34,17 @@ _OCR_MAX_TEXT_SHARE = 0.05
 # pixel lighter than this grey level counts as blank paper.
 _DRAWN_ZOOM = 50 / 72
 _BLANK = 245
-# A page that needs OCR is a scan when at least this share of what its body shows
-# outside its text lies in its images. Text drawn as shapes lies outside them.
+# A page that needs OCR is a scan when at least this share of what its body shows outside
+# its text lies in a picture of a page: an image covering at least this share of the body.
+# Text drawn as shapes lies outside it, and so do the signatures and stamps of a signing
+# page, small however much of its ink they hold. On the sample contracts, a scan's image
+# covered 0.42 of its body at least, and a picture on a page drawn as shapes 0.01 at most.
 _SCAN_INK_IN_IMAGES = 0.5
+_PICTURE_OF_A_PAGE = 0.25
+# A page that shows nothing but pictures, but for this share of its ink, is one too, as a logo
+# alone on a page. On the sample contracts, a scan's images held all of its ink, and a page
+# drawn as shapes held 8% of it in pictures at most.
+_NOTHING_BUT_PICTURES = 0.98
 # A scan made searchable hides the text of its picture: drawn invisible, or under an
 # opaque image drawn after it. Text is under an image when this share of its box lies
 # in the image's, nearly all, as a glyph's box reaches a little past what it draws; a row
@@ -76,15 +86,19 @@ def read_pdf(
         kept[index] = kept_page(pages[index])
         # The scan behind its text is the page itself, not a picture on it.
         rows[index] = replace(rows[index], images=(), kind="kept")
+    ocr_pages = [index for index, kind in enumerate(kinds) if kind == "ocr"]
+    for index in ocr_pages:
+        if index not in crisp:
+            # A scan's images are its picture of a page, which OCR reads.
+            rows[index] = replace(rows[index], images=())
     if keep_images:
-        # Pictures on a text page are kept as themselves.
-        with_pictures = [index for index, kind in enumerate(kinds) if kind == "text" and rows[index].images]
+        # Pictures on a text page, or on an OCR page that is not a scan, are kept as themselves.
+        with_pictures = [index for index, kind in enumerate(kinds) if kind != "kept" and rows[index].images]
         for index in with_pictures:
             rows[index] = replace(rows[index], images=kept_pictures(pages[index]))
     text_pages = [index for index, kind in enumerate(kinds) if kind == "text"]
     for index in text_pages:
         rows[index] = in_reading_order(rows[index])
-    ocr_pages = [index for index, kind in enumerate(kinds) if kind == "ocr"]
     engines: dict[int, str] = {}
     # The engine lives only as long as this call: an engine holds what it last read.
     engine: OcrEngine | None = None
@@ -92,8 +106,7 @@ def read_pdf(
         progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         if engine is None:
             engine = ocr()
-        image = render(pages[index])
-        rows[index] = read_page(engine, softened(image) if index in crisp else image, rows[index])
+        rows[index] = read_page(engine, _page_image(pages[index], rows[index], index in crisp), rows[index])
         engines[index] = engine.name
     return Document(
         pages=tuple(
@@ -108,6 +121,18 @@ def read_pdf(
             for index, blocks in enumerate(page_blocks(rows))
         )
     )
+
+
+def _page_image(page: pymupdf.Page, rows: PageRows, crisp: bool) -> PageImage:
+    """The image of an OCR page for the engine to read. One that is not a scan is rendered from
+    the PDF, crisp, so it is softened, and its pictures are hidden: they are pictures, as on a
+    text page, not text."""
+    if not crisp:
+        return render(page)
+    if not rows.images:
+        return softened(render(page))
+    with pictures_hidden(page) as hidden:
+        return softened(render(hidden))
 
 
 def _kind(page: pymupdf.Page, rows: PageRows, untrusted: bool, keep_images: bool) -> PageKind:
@@ -127,7 +152,7 @@ def _is_scan(page: pymupdf.Page, rows: PageRows) -> bool:
     is one too, and so is a scan whose text layer cannot be trusted."""
     shown = _shown(page, rows)
     inked = _ink_needing_ocr(page, shown)
-    return inked is not None and _in_images(inked, shown)
+    return inked is not None and _in_a_picture_of_a_page(inked, shown)
 
 
 def _ink_needing_ocr(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_] | None:
@@ -194,16 +219,25 @@ def _ink_beyond_text(page: pymupdf.Page, rows: PageRows) -> npt.NDArray[np.bool_
     return inked
 
 
-def _in_images(inked: npt.NDArray[np.bool_], rows: PageRows) -> bool:
+def _in_a_picture_of_a_page(inked: npt.NDArray[np.bool_], rows: PageRows) -> bool:
     """Whether what the body shows outside the text, as `_ink_beyond_text` found it, lies mostly in
-    the page's images: a picture of a page, unlike text drawn as shapes. A page that shows nothing
-    but a picture, such as a logo alone, counts as one too: its image is all there is to keep."""
-    pictured = np.zeros_like(inked)
-    for image in rows.images:
+    a picture of a page, unlike text drawn as shapes and the pictures beside it. A page that shows
+    nothing but pictures, such as a logo alone, counts as one too: its image is all there is to keep."""
+    ink = _body(inked)
+    body_area = ink.size
+    pictured = _body(_pictured(inked.shape, rows.images))
+    of_a_page = [image for image in rows.images if _body(_pictured(inked.shape, (image,))).sum() >= _PICTURE_OF_A_PAGE * body_area]
+    in_a_page = (ink & _body(_pictured(inked.shape, of_a_page))).sum()
+    return bool(in_a_page >= _SCAN_INK_IN_IMAGES * ink.sum() or (ink & pictured).sum() >= _NOTHING_BUT_PICTURES * ink.sum())
+
+
+def _pictured(shape: tuple[int, ...], images: Sequence[PlacedImage]) -> npt.NDArray[np.bool_]:
+    """Which pixels of a low-resolution render of the page, as `_ink_beyond_text` makes it, the images cover."""
+    pictured = np.zeros(shape, dtype=np.bool_)
+    for image in images:
         top, bottom, left, right = (int(edge * _DRAWN_ZOOM) for edge in (image.top, image.bottom, image.x0, image.x1))
         pictured[top : bottom + 1, left : right + 1] = True
-    ink = _body(inked)
-    return bool((ink & _body(pictured)).sum() >= _SCAN_INK_IN_IMAGES * ink.sum())
+    return pictured
 
 
 def _body(pixels: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:

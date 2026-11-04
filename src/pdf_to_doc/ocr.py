@@ -2,6 +2,8 @@
 an engine reads into rows that page layout treats like rows of a text layer."""
 
 import re
+import unicodedata
+from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from statistics import median
@@ -11,12 +13,13 @@ import cv2
 import numpy as np
 import pymupdf
 
+from pdf_to_doc.check_boxes import EMPTY, TICKED, CheckBox, check_boxes
 from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
-from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedIncompleteTable, PlacedTable, RawCell, Row
+from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedImage, PlacedIncompleteTable, PlacedTable, RawCell, Row
 from pdf_to_doc.thai import UPPER_MARK
-from pdf_to_doc.uncertain import Piece
-from pdf_to_doc.words import unknown_words
+from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece
+from pdf_to_doc.words import unknown_words, word_starts
 
 Language = Literal["th", "en"]
 LANGUAGES: tuple[Language, ...] = ("th", "en")
@@ -76,6 +79,18 @@ _READ_UPRIGHT = 0.8
 # or more; the samples' upright scans read 0.87 or more, the damaged ones 0.96. The shortest
 # page read upside down held 26 characters.
 _UPSIDE_DOWN_CHARACTERS = 20
+# How sure a check box found in the image is: as sure as can be, or unsure, below the confidence
+# under which a box's text is uncertain (`uncertain.LOW_CONFIDENCE`), so that it is marked.
+_SURE_CHECK_BOX = 1.0
+_UNSURE_CHECK_BOX = LOW_CONFIDENCE / 2
+# The engine's reading of a check box: a box of text lying this share or more on a check box. When
+# it reads a tick, as PaddleOCR read some as "V" or "√", it gives way to the check box; when it
+# reads a digit or a letter, the square is a box a character is written in, and no check box.
+_ON_A_CHECK_BOX = 0.5
+_TICK_READINGS = frozenset("VvXx×√✓✔/口ロ□")
+# The engine's box is cut around a check box it took in at a word's start no more than this many
+# characters from where the check box lies: the box itself stands where a character or two would.
+_CUT_REACH = 3
 
 
 @dataclass(frozen=True)
@@ -275,6 +290,7 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
     unit = median(map(_height, texts)) if texts else 0.0
+    texts = _with_check_boxes(texts, check_boxes(_pixels(image), unit) if texts else [])
     rules = ruled_tables(_pixels(image), unit) if texts else Rules()
     layer_rows = [_LayerRow.of(row, on_image, scale) for row, on_image in kept]
     in_cells, outside = _in_cells([*texts, *layer_rows], rules.grids)
@@ -325,9 +341,72 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         if len(parts) > 1 and part_rows:
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
+    pictures = tuple(_turned_image(picture, image.turn, text_layer) for picture in text_layer.images)
     return PageRows(
-        rows=tuple(rows), width=width, height=height, tables=tables, incomplete_tables=incomplete_tables, kind="ocr"
+        rows=tuple(rows),
+        width=width,
+        height=height,
+        tables=tables,
+        incomplete_tables=incomplete_tables,
+        images=pictures,
+        kind="ocr",
     )
+
+
+def _with_check_boxes(texts: list[TextBox], found: list[CheckBox]) -> list[TextBox]:
+    """The boxes the engine read, with each check box found in the image as a box of its own: ☒ when
+    ticked and ☐ when empty, uncertain when it is unsure whether ticked, or where it stands in the
+    text around it. The engine's own reading of a check box or its tick gives way to it, and one of
+    a character makes it no check box (see `_ON_A_CHECK_BOX`)."""
+    readings = {id(check_box): [text for text in texts if _overlap(text.box, check_box.box) >= _ON_A_CHECK_BOX * _area(text)] for check_box in found}
+    found = [check_box for check_box in found if all(_a_tick(text.text) for text in readings[id(check_box)])]
+    taken = {id(text) for check_box in found for text in readings[id(check_box)]}
+    kept = [text for text in texts if id(text) not in taken]
+    marks = []
+    for check_box in found:
+        placed = True
+        cut: list[TextBox] = []
+        for text in kept:
+            pieces = _split_around(text, check_box.box)
+            placed = placed and pieces is not None
+            cut += pieces if pieces is not None else [text]
+        kept = cut
+        sure = check_box.sure and placed
+        marks.append(TextBox(TICKED if check_box.ticked else EMPTY, check_box.box, _SURE_CHECK_BOX if sure else _UNSURE_CHECK_BOX))
+    return kept + marks
+
+
+def _a_tick(text: str) -> bool:
+    """Whether the engine's reading of a check box is of a tick, or of nothing."""
+    return all(character in _TICK_READINGS for character in text.strip())
+
+
+def _split_around(text: TextBox, box: Box) -> list[TextBox] | None:
+    """The engine's box cut around a check box it took in, as PaddleOCR takes a box into the text
+    beside it and drops it: cut where a word starts, nearest the share of its characters that lie
+    left of the check box, and set either side of it, without a tick it read there. Where that is the
+    start or the end of the text, it is moved clear of the check box, which then comes before or
+    after it. As it is when it does not reach over the check box; None when no word starts near."""
+    x0, y0, x1, y1 = text.box
+    if not (x0 < box[2] and box[0] < x1 and y0 < (box[1] + box[3]) / 2 < y1):
+        return [text]
+    shown = [index for index, character in enumerate(text.text) if not unicodedata.combining(character)]
+    before = (box[0] - x0) / (x1 - x0) * len(shown)
+    cuts = {0, len(text.text), *word_starts(text.text)}
+    cut = min(cuts, key=lambda place: abs(bisect_left(shown, place) - before))
+    if abs(bisect_left(shown, cut) - before) > _CUT_REACH:
+        return None
+    left = text.text[:cut].rstrip().rstrip("".join(_TICK_READINGS)).rstrip()
+    right = text.text[cut:].lstrip().lstrip("".join(_TICK_READINGS)).lstrip()
+    return [
+        *([TextBox(left, (x0, y0, min(x1, box[0]), y1), text.confidence)] if left else []),
+        *([TextBox(right, (max(x0, box[2]), y0, x1, y1), text.confidence)] if right else []),
+    ]
+
+
+def _overlap(box: Box, other: Box) -> float:
+    """The area two boxes share."""
+    return max(0.0, min(box[2], other[2]) - max(box[0], other[0])) * max(0.0, min(box[3], other[3]) - max(box[1], other[1]))
 
 
 def _without_stray_marks(boxes: Sequence[TextBox], unit: float) -> list[TextBox]:
@@ -519,6 +598,12 @@ def _turned_row(row: Row, turn: int, page: PageRows) -> Row:
     """Where the row lies once the page is turned `turn` degrees clockwise."""
     x0, y0, x1, y1 = turned_box((row.x0, row.y0, row.x1, row.y1), turn, page.width, page.height)
     return replace(row, x0=x0, y0=y0, x1=x1, y1=y1)
+
+
+def _turned_image(image: PlacedImage, turn: int, page: PageRows) -> PlacedImage:
+    """Where the image lies once the page is turned `turn` degrees clockwise, beside the rows read on it."""
+    x0, top, x1, bottom = turned_box((image.x0, image.top, image.x1, image.bottom), turn, page.width, page.height)
+    return replace(image, x0=x0, top=top, x1=x1, bottom=bottom)
 
 
 def _placed(row: Row, across: float, down: float) -> Row:

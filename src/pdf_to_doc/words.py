@@ -39,6 +39,15 @@ def first_word(text: str) -> str:
     return next(iter(word_tokenize(text.strip(), engine="newmm", keep_whitespace=False)), "")
 
 
+def word_starts(text: str) -> list[int]:
+    """Where in the text each of its words starts, as the tokenizer cuts them, spaces included."""
+    starts, position = [], 0
+    for token in word_tokenize(text, engine="newmm", keep_whitespace=True):
+        starts.append(position)
+        position += len(token)
+    return starts
+
+
 def in_word_list(word: str) -> bool:
     words = pythainlp_word_list()
     return word in words or word.strip(NOT_WORDS) in words

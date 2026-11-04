@@ -441,6 +441,15 @@ def test_no_picture_is_shown_for_page_furniture_a_letterhead_behind_text_or_a_ru
     assert pictures_in(keep_images(source).outputs["docx"]) == []
 
 
+def test_pictures_on_a_page_drawn_as_shapes_are_shown_as_themselves_as_on_a_text_page() -> None:
+    lines: list[str | Picture] = [*CLAUSES, Picture("photo", 120, 80), "", SIGNATURE, SIGNATURE_LINE, "", Picture("stamp", 70, 70)]
+
+    result = convert(pdf(Drawn(lines)), to={"markdown", "docx"}, ocr=FakeEngine(lines), keep_images=True)
+
+    assert [page.kind for page in result.summary.pages] == ["ocr"]
+    assert [(image.width, image.height) for image in pictures_in(result.outputs["docx"])] == [(120, 80), (140, 45), (70, 70)]
+
+
 def test_the_markdown_of_pictures_is_the_same_with_kept_images() -> None:
     source = pdf([*CLAUSES, Picture("photo", 120, 80), "", SIGNATURE, SIGNATURE_LINE, "", Picture("stamp", 70, 70)])
 

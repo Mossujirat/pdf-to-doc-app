@@ -11,10 +11,16 @@ from test_ocr_pages import (
     ENGLISH_LEFT,
     ENGLISH_RIGHT,
     LABELS_AND_VALUES,
+    LETTER,
+    PANEL,
     SHORT_LINES_BESIDE_OTHER_TEXT,
+    SIGN_IN_SHEET,
+    SIGNATURE_BLOCKS,
     THAI_LEFT,
     THAI_RIGHT,
     Pieces,
+    assert_read_one_after_the_other,
+    beside_a_letter,
     on_rows,
 )
 
@@ -245,15 +251,32 @@ def test_a_new_column_drawn_across_starts_a_new_paragraph_even_inside_a_numbered
     ]
 
 
+# Signature blocks side by side, and a side panel set in smaller type, drawn line by line across
+# the page, are read one column after the other, as on an OCR page (ticket 32).
+
+
+def test_signature_blocks_drawn_across_are_read_one_block_after_the_other() -> None:
+    [page] = markdown_pages(pdf(on_rows(SIGNATURE_BLOCKS)))
+
+    assert_read_one_after_the_other(page, [[row[block][1] for row in SIGNATURE_BLOCKS] for block in range(3)])
+
+
+def test_a_side_panel_in_smaller_type_drawn_across_is_read_after_the_letter_beside_it() -> None:
+    [page] = markdown_pages(pdf(beside_a_letter(9)))
+
+    assert_read_one_after_the_other(page, [LETTER, PANEL])
+
+
 # Labels set apart from their values, as on a form, are drawn line by line across the page too,
-# and read row by row. So are side panels and signature blocks beside other text, for now:
-# their lines are as short as labels' (ticket 32).
+# and read row by row. So are a side panel in the letter's own type and bank details beside the
+# signatories: their lines share baselines with the text beside them, as labels' do (tickets 41, 39).
+# So is a table whose header has two signing columns.
 
 
 @pytest.mark.parametrize(
     "rows",
-    [*LABELS_AND_VALUES.values(), *SHORT_LINES_BESIDE_OTHER_TEXT.values()],
-    ids=[*LABELS_AND_VALUES.keys(), *SHORT_LINES_BESIDE_OTHER_TEXT.keys()],
+    [*LABELS_AND_VALUES.values(), *SHORT_LINES_BESIDE_OTHER_TEXT.values(), SIGN_IN_SHEET],
+    ids=[*LABELS_AND_VALUES.keys(), *SHORT_LINES_BESIDE_OTHER_TEXT.keys(), "a sign-in sheet with two signing columns"],
 )
 def test_text_set_apart_on_rows_that_are_not_columns_is_read_row_by_row(rows: list[Pieces]) -> None:
     [page] = markdown_pages(pdf(on_rows(rows)))

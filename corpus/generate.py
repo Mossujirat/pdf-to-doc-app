@@ -19,6 +19,7 @@ from pdf_builder import (
     SARABUN,
     TOP,
     Cell,
+    CheckBox,
     Drawn,
     Grid,
     Line,
@@ -27,10 +28,12 @@ from pdf_builder import (
     Scan,
     Spaced,
     Styled,
+    laid_out_grid,
     pdf,
     remapped,
 )
 
+from pdf_to_doc.check_boxes import EMPTY, TICKED
 from pdf_to_doc.quality import reference_file_name
 
 SYNTHETIC = Path(__file__).parent / "synthetic"
@@ -451,6 +454,22 @@ SIGNATURE_LINE = "ลงชื่อ ...........................................
 # A signature whose foot runs over the signature line after it.
 SIGNATURE = Picture("signature", 140, 45, x=130, overlap=14)
 
+# A signing page as a PDF printer draws it, its signature over the signer's name: PaddleOCR reads
+# a long line of dots as a dot or two (ticket 18), which this page is not here to measure.
+SIGNED_LINE = "ลงชื่อ นายสมชาย ใจดี ผู้ให้ทุน"
+DRAWN_SIGNING_LINES: list[Line] = [
+    *CLAUSES, "", Picture("photo", 120, 70), "", SIGNATURE, SIGNED_LINE, "", Picture("stamp", 70, 70, x=330)
+]
+DRAWN_SIGNING_REFERENCE = "".join(CLAUSES) + f"\n\n[รูปภาพ]\n\n[ลายเซ็น]\n\n{SIGNED_LINE}\n\n[ตราประทับ]"
+
+
+def initialled(foot: tuple[float, float]) -> SyntheticPage:
+    """A page drawn as shapes with initials at its foot, which the hand moves a little from page to page."""
+    x, y = foot
+    lines: list[Line] = [Styled(CLAUSES[0], y=160), *CLAUSES[1:], Picture("signature", 66, 17, x=x, y=y)]
+    return SyntheticPage(lines=Drawn(lines), reference="".join(CLAUSES))
+
+
 PLACEHOLDER_DOCUMENTS = (
     # A signing page: a picture, a signature on its signature line, and a stamp.
     SyntheticDocument(
@@ -470,6 +489,18 @@ PLACEHOLDER_DOCUMENTS = (
                 ],
                 reference="".join(CLAUSES) + f"\n\n[รูปภาพ]\n\n[ลายเซ็น]\n\n{SIGNATURE_LINE}\n\n[ตราประทับ]",
             ),
+        ),
+    ),
+    # A PDF printer drew the text as shapes and kept the pictures as images: the signing page,
+    # and pages initialled at the foot. OCR reads the text; the pictures are placeholders, and
+    # the initials page furniture.
+    SyntheticDocument(
+        name="pictures-on-drawn-pages",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(lines=Drawn(DRAWN_SIGNING_LINES), reference=DRAWN_SIGNING_REFERENCE),
+            initialled((478, 766)),
+            initialled((469, 759)),
         ),
     ),
 )
@@ -816,6 +847,74 @@ def column_lines(
     return [line for _, _, line in placed]
 
 
+SIGNING_CLOSE = "คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว จึงลงลายมือชื่อไว้เป็นสำคัญ"
+# Each row: the signer's block on the left, the witness's beside it.
+SIGNATURE_GRID = [
+    ("ลงชื่อ ผู้ให้ทุน", "ลงชื่อ พยานผู้ให้ทุน"),
+    ("(นางสาวสมหญิง รักดี)", "(นายสมศักดิ์ มีสุข)"),
+    ("ผู้อำนวยการหน่วยบริหารทุน", "นักวิเคราะห์โครงการ"),
+    ("ลงชื่อ ผู้รับทุน", "ลงชื่อ พยานผู้รับทุน"),
+    ("(นายสมชาย ใจดี)", "(นางสาวสมใจ ดีมาก)"),
+    ("คณบดีคณะวิศวกรรมศาสตร์", "หัวหน้าโครงการ"),
+]
+PANEL_LETTER = [
+    "บริษัทขอแจ้งให้ทราบว่าได้รับเอกสารประกอบการเสนอราคา",
+    "ของท่านครบถ้วนแล้ว และจะแจ้งผลการพิจารณาให้ทราบ",
+    "ภายในสามสิบวันนับแต่วันที่ได้รับหนังสือฉบับนี้",
+    "หากมีข้อสงสัยโปรดติดต่อเจ้าหน้าที่ตามที่อยู่ด้านข้าง",
+    "จึงเรียนมาเพื่อโปรดทราบและขอขอบคุณมาในโอกาสนี้",
+]
+# The sender's offices and bank account, set small at the letter's edge.
+SIDE_PANEL = [
+    "สำนักงานใหญ่",
+    "เลขที่ 99 ถนนพหลโยธิน",
+    "กรุงเทพมหานคร 10400",
+    "โทร 02 123 4567",
+    "ธนาคารกรุงไทย สาขาสีลม",
+    "บัญชี 123-4-56789-0",
+]
+
+# A form's choices, each after a check box, ticked or not (ticket 26): a row's label, then each
+# box and the choice it qualifies, as (box's x, ticked, choice's x, choice).
+CHOICE_ROWS = [
+    ("ประเภทโครงการ", [(190, True, 210, "โครงการเดี่ยว"), (300, False, 320, "ชุดโครงการ")]),
+    ("ระยะเวลาโครงการ", [(190, False, 210, "12 เดือน"), (300, True, 320, "18 เดือน")]),
+    ("สถานะวิสาหกิจ", [(190, True, 210, "วิสาหกิจขนาดกลางและขนาดย่อม")]),
+]
+# The rights to each result of a project shared out by ticks in a ruled table, as the sample
+# contract does it: which party owns each.
+RIGHTS_HEADER = ("ผลงาน", "ผู้ให้ทุน", "ผู้รับทุน")
+RIGHTS = [("ต้นแบบกาวชีวภาพ", False, True), ("สูตรกาวชีวภาพ", True, True), ("กระบวนการผลิต", True, False)]
+
+
+def form_with_choices() -> list[Line]:
+    """The choice rows, 28 points apart, their text in 14 points and their boxes two thirds as tall as a line."""
+    lines: list[Line] = []
+    for row, (label, choices) in enumerate(CHOICE_ROWS):
+        y = TOP + row * 28
+        lines.append(Styled(label, size=14, y=y))
+        for box_x, ticked, x, choice in choices:
+            lines += [CheckBox(box_x, y, "tick" if ticked else "none", size=14), Styled(choice, size=14, x=x, y=y)]
+    return lines
+
+
+def rights_table() -> list[Line]:
+    """The rights table, with a box in the middle of each of its parties' cells."""
+    grid = Grid(rows=(RIGHTS_HEADER, *((result, "", "") for result, _, _ in RIGHTS)), widths=(220, 90, 90), y=TOP)
+    cells = [cell.rect for cell in laid_out_grid(grid, TOP).cells]
+    boxes: list[Line] = [
+        CheckBox(rect.x0 + rect.width / 2 - 8, rect.y0 + rect.height / 2 + 8, "tick" if ticked else "none", size=16)
+        for row, (_, *owners) in enumerate(RIGHTS, start=1)
+        for column, ticked in enumerate(owners, start=1)
+        for rect in [cells[row * len(RIGHTS_HEADER) + column]]
+    ]
+    return [grid, *boxes]
+
+
+def mark(ticked: bool) -> str:
+    return TICKED if ticked else EMPTY
+
+
 TWO_COLUMN_DOCUMENTS = (
     SyntheticDocument(
         name="two-column-scans",
@@ -858,6 +957,69 @@ TWO_COLUMN_DOCUMENTS = (
                     seed=13,
                 ),
                 reference=f"{COVER_SHEET_INTRO}\n\n" + "\n".join(f"{label} {value}" for label, value in COVER_SHEET),
+            ),
+        ),
+    ),
+    # Short lines beside other text (ticket 32): signature blocks two rows deep, signers beside
+    # their witnesses with no blank line between, and a letter with a panel in smaller type beside it.
+    SyntheticDocument(
+        name="short-line-columns-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        Styled(SIGNING_CLOSE, size=14, y=TOP),
+                        *(
+                            Styled(text, size=14, x=x, y=TOP + 2 * 21 + row * 21)
+                            for row, pair in enumerate(SIGNATURE_GRID)
+                            for x, text in zip((72, 320), pair)
+                        ),
+                    ],
+                    seed=14,
+                ),
+                reference="\n\n".join(
+                    [SIGNING_CLOSE]
+                    + [
+                        " ".join(pair[column] for pair in SIGNATURE_GRID[first : first + 3])
+                        for first in (0, 3)
+                        for column in (0, 1)
+                    ]
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        *(Styled(line, size=14, y=TOP + number * 21) for number, line in enumerate(PANEL_LETTER)),
+                        *(Styled(line, size=9, x=440, y=TOP + number * 12.5) for number, line in enumerate(SIDE_PANEL)),
+                    ],
+                    seed=15,
+                ),
+                reference="".join(PANEL_LETTER) + "\n\n" + "\n".join(SIDE_PANEL),
+            ),
+        ),
+    ),
+    # Check boxes on scans, ticked or not, which OCR reads no text in (ticket 26).
+    SyntheticDocument(
+        name="check-box-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(form_with_choices(), seed=16),
+                reference="\n\n".join(
+                    " ".join([label, *(f"{mark(ticked)} {choice}" for _, ticked, _, choice in choices)])
+                    for label, choices in CHOICE_ROWS
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(rights_table(), seed=17),
+                reference="\n".join(
+                    [
+                        "| " + " | ".join(RIGHTS_HEADER) + " |",
+                        "| --- | --- | --- |",
+                        *(f"| {result} | {mark(funder)} | {mark(recipient)} |" for result, funder, recipient in RIGHTS),
+                    ]
+                ),
             ),
         ),
     ),

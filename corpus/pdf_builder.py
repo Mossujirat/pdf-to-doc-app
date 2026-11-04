@@ -115,7 +115,22 @@ class Picture:
     cmyk: bool = False  # a photo stored as a CMYK JPEG, as printers' files hold them
 
 
-Line = str | Spaced | Styled | Grid | Picture
+CheckMark = Literal["tick", "none", "smudge", "block"]
+
+
+@dataclass(frozen=True)
+class CheckBox:
+    """A check box drawn as a square outline, `size` points a side, its foot on the baseline `y`,
+    from `x`. A tick is drawn as a pen leaves one, a smudge as a speck of ink, and a block as a QR
+    code's corner holds one. It takes up no line."""
+
+    x: float
+    y: float
+    mark: CheckMark = "tick"
+    size: float = 12
+
+
+Line = str | Spaced | Styled | Grid | Picture | CheckBox
 
 
 @dataclass(frozen=True)
@@ -203,8 +218,15 @@ def pdf(*pages: Sequence[Line] | Scan | Rotated | Drawn | Pasted, font_file: Pat
     return data
 
 
-def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invisible: bool = False) -> None:
-    """Draw the lines top to bottom, as text no one sees if `invisible`, as OCR software hides its text."""
+def _draw_lines(
+    page: pymupdf.Page,
+    lines: Sequence[Line],
+    font_file: Path,
+    invisible: bool = False,
+    pictures_on: pymupdf.Page | None = None,
+) -> None:
+    """Draw the lines top to bottom, as text no one sees if `invisible`, as OCR software hides its text.
+    Pictures go on `pictures_on`, if given, at the same place."""
     y: float = TOP
     for line in lines:
         if isinstance(line, Styled):
@@ -214,11 +236,15 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invi
         if isinstance(line, Grid):
             y = _draw_grid(page, line.y if line.y is not None else y, line, font_file, invisible)
             continue
+        if isinstance(line, CheckBox):
+            _draw_check_box(pictures_on or page, line)
+            continue
         if isinstance(line, Picture):
-            top = line.y if line.y is not None else y - FONT_SIZE
+            top, after = laid_out_picture(line, y)
             box = pymupdf.Rect(line.x, top, line.x + line.width, top + line.height)
-            page.insert_image(box * page.derotation_matrix, stream=_picture(line), rotate=(page.rotation + line.turn) % 360)
-            y = top + line.height + LINE_HEIGHT - line.overlap
+            on = pictures_on or page
+            on.insert_image(box * on.derotation_matrix, stream=_picture(line), rotate=(on.rotation + line.turn) % 360)
+            y = after
             continue
         if isinstance(line, Spaced):
             x: float = LEFT
@@ -229,6 +255,29 @@ def _draw_lines(page: pymupdf.Page, lines: Sequence[Line], font_file: Path, invi
         elif line:
             _draw(page, LEFT, y, line, font_file, FONT_SIZE, invisible)
         y += LINE_HEIGHT
+
+
+def _draw_check_box(page: pymupdf.Page, box: CheckBox) -> None:
+    """The box's square, and its mark: a tick from its lower left to its upper right, or a speck."""
+    left, bottom = box.x, box.y
+    square = pymupdf.Rect(left, bottom - box.size, left + box.size, bottom)
+    page.draw_rect(square * page.derotation_matrix, color=(0, 0, 0), width=0.8)
+    if box.mark == "tick":
+        points = [(0.2, 0.55), (0.42, 0.8), (0.85, 0.2)]
+        corners = [pymupdf.Point(left + across * box.size, bottom - box.size + down * box.size) for across, down in points]
+        page.draw_polyline([point * page.derotation_matrix for point in corners], color=(0, 0, 0), width=0.12 * box.size)
+    elif box.mark == "block":
+        block = pymupdf.Rect(left + 0.15 * box.size, bottom - 0.85 * box.size, left + 0.85 * box.size, bottom - 0.15 * box.size)
+        page.draw_rect(block * page.derotation_matrix, color=None, fill=(0, 0, 0))
+    elif box.mark == "smudge":
+        centre = pymupdf.Point(left + 0.6 * box.size, bottom - 0.35 * box.size)
+        page.draw_circle(centre * page.derotation_matrix, 0.06 * box.size, color=(0, 0, 0), fill=(0, 0, 0))
+
+
+def laid_out_picture(picture: Picture, baseline: float) -> tuple[float, float]:
+    """Where a picture drawn after the line on `baseline` has its top, and the baseline of the line after it."""
+    top = picture.y if picture.y is not None else baseline - FONT_SIZE
+    return top, top + picture.height + LINE_HEIGHT - picture.overlap
 
 
 def _on_its_side(doc: pymupdf.Document) -> pymupdf.Page:
@@ -251,9 +300,11 @@ def _noise(across: int, seed: int) -> pymupdf.Pixmap:
 
 
 def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) -> None:
-    """The lines drawn as text on a page of their own, turned into paths by way of SVG, and placed on `page`."""
+    """The lines drawn as text on a page of their own, turned into paths by way of SVG, and placed on `page`.
+    Pictures are images on `page`, as a PDF printer keeps them: the trip through SVG would lose their
+    transparent ground."""
     with pymupdf.open() as paper:
-        _draw_lines(paper.new_page(), lines, font_file)
+        _draw_lines(paper.new_page(), lines, font_file, pictures_on=page)
         svg = paper[0].get_svg_image(text_as_path=True)
     with pymupdf.open(stream=svg.encode("utf-8"), filetype="svg") as drawing:
         with pymupdf.open("pdf", drawing.convert_to_pdf()) as shapes:

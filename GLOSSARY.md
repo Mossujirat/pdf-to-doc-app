@@ -100,6 +100,10 @@ _Avoid_: text block, side-by-side text
 An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.
 _Avoid_: figure
 
+**Check box**:
+A small printed square beside a choice on a form or in a table, which a person ticks or crosses to make that choice. Outputs show whether it is ticked, before the text it qualifies; a tick the converter cannot confirm is uncertain text.
+_Avoid_: tick box, checkbox (as one word)
+
 ## Web service
 
 **Release**:
@@ -107,5 +111,5 @@ A production deploy that changes what visitors get, in a conversion's outputs or
 _Avoid_: version, update
 
 **Known limitation**:
-Something the converter still gets wrong without saying so in its outputs, such as content left out or text read across, with neither uncertain text nor a placeholder to warn the reader. Each one stands for an open ticket, and the release that closes the ticket drops it.
+Something the converter still gets wrong without saying so in its outputs, such as content left out or text read across, with neither uncertain text nor a placeholder to warn the reader. Each one stands for one or more open tickets, and the release that closes the last of them drops it.
 _Avoid_: known issue, caveat

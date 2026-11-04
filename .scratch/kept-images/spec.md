@@ -94,7 +94,7 @@ There is no option for both images and OCR text. The command line takes `--keep-
   - With it off, every output is the same, byte for byte, as without this feature.
   - The CLI's flag is `--keep-images`.
   - It is chosen once per source file. It has no effect on a DOCX source.
-- **Only scans and pictures on text pages change.** Pages whose text is drawn as shapes, and text pages whose text layer cannot be trusted, are read with OCR either way. Pictures on OCR pages stay out of scope (ticket 24).
+- **Only scans and pictures on text pages change.** Pages whose text is drawn as shapes, and text pages whose text layer cannot be trusted, are read with OCR either way. Pictures on OCR pages were left to ticket 24, which since 2026-11-04 keeps the pictures of an OCR page that is not a scan as themselves too, as on a text page.
 
 ### Which pages are kept
 
@@ -105,6 +105,7 @@ The converter first reads each page as it does today: the text layer's rows, the
   - A scan pasted at half the size of a Word page is still a scan: what the page shows lies in it, though it covers half the body. (Changed at ticket 01 from "its images together cover most of the page's body".)
   - A page that shows nothing but a picture, such as a logo alone, is kept too (decided with the user on 2026-10-24). Its image is all there is to keep, and OCR would read the picture as nonsense.
   - The exact share is the implementer's. Set it on synthetic pages, then check it on the samples during /implement if the user allows.
+  - **Since ticket 24 (2026-11-04),** the ink must lie in a picture of a page, an image covering a quarter of the body or more, or else nearly all of it in pictures. A signing page drawn as shapes, whose signatures, stamps and photo hold most of its ink, is not a scan. On the samples, a scan's image covered 0.42 of its body at least.
 - **A searchable scan.** By today's rule it is a text page, read from its text layer, but that text is hidden: drawn before an image that covers it, or drawn invisible.
   - PyMuPDF's bounding-box log records what the page draws, in order. It shows text drawn under an image (`fill-text` before `fill-image`) and invisible text (`ignore-text`). Checked on synthetic pages with PyMuPDF 1.28.2.
   - A page whose visible text lies over a background image, such as a letterhead, stays a text page.

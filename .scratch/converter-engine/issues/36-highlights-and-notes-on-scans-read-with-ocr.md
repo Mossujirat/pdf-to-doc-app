@@ -16,3 +16,8 @@
 - How a highlight shows: in DOCX, yellow already marks uncertain text; in Markdown, `<mark>` already marks it too.
 
 ## Comments
+
+**2026-11-03, triage**
+
+- **One piece of work with ticket 20,** done together in a later round: both need the same way to show a highlight in each output.
+- **Not in this round** (37, 24, 26, 32). Status stays `needs-triage` until then.

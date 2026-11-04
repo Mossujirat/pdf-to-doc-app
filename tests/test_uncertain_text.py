@@ -199,6 +199,54 @@ def test_a_number_that_mixes_thai_and_arabic_digits_is_marked() -> None:
     assert markdown_pages(result) == ["ลงวันที่ <mark>๑5</mark> มกราคม 2567 ชำระ ๒๕,๐๐๐ บาท"]
 
 
+def test_an_amount_whose_comma_groups_are_not_three_digits_is_marked() -> None:
+    # An extra digit in "1,234.00" and a lost one in "12,500.00".
+    result = convert(scan(), ocr=FakeEngine(["ภาษี 1,2345.00 บาท จากยอด 12,50.00 บาท"]))
+
+    assert markdown_pages(result) == ["ภาษี <mark>1,2345.00</mark> บาท จากยอด <mark>12,50.00</mark> บาท"]
+
+
+def test_amounts_grouped_in_threes_and_numbers_listed_with_commas_are_not_marked() -> None:
+    line = "ยอด 1,234,567.89 บาท งวดละ ๑๒,๕๐๐ บาท ตามข้อ 1,2 และ 3 อัตรา 2.5 ข้อ 4.1.2"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
+def test_a_year_that_lost_a_digit_is_marked() -> None:
+    line = "ทำ ณ วันที่ 15 มีนาคม 256 ภายในปีงบประมาณ พ.ศ.๒๕๖ ถึง ค.ศ. 202 หรือวันที่ 1 เดือนเมษายน 256"
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [
+        "ทำ ณ วันที่ 15 มีนาคม <mark>256</mark> ภายในปีงบประมาณ พ.ศ.<mark>๒๕๖</mark> ถึง ค.ศ. <mark>202</mark>"
+        " หรือวันที่ 1 เดือนเมษายน <mark>256</mark>"
+    ]
+
+
+def test_a_day_the_month_does_not_have_is_marked() -> None:
+    # "๑๕" read as "65"; "20" read as "30".
+    result = convert(scan(), ocr=FakeEngine(["ลงวันที่ 65 มีนาคม 2567 ส่งงาน 30 กุมภาพันธ์ 2568 หรือ 31 ก.ย. 68"]))
+
+    assert markdown_pages(result) == [
+        "ลงวันที่ <mark>65</mark> มีนาคม 2567 ส่งงาน <mark>30</mark> กุมภาพันธ์ 2568 หรือ <mark>31</mark> ก.ย. 68"
+    ]
+
+
+def test_dates_that_can_be_are_not_marked() -> None:
+    # A budget sheet's amounts beside a month, a year before one, and a number before an agency
+    # abbreviated like a month (ก.พ., ก.พ.ร.) are not part of a date.
+    line = (
+        "ลงวันที่ ๒๙ กุมภาพันธ์ ๒๕๖๗ ถึง 31 ธ.ค. 67 และ 1 January 2025 งวดมกราคม 500 บาท ปี 2567 มีนาคม 120"
+        " ตามข้อ 31 ก.พ.ร. และหนังสือที่ 45 ก.พ. กำหนด"
+    )
+
+    result = convert(scan(), ocr=FakeEngine([line]))
+
+    assert markdown_pages(result) == [line]
+
+
 def test_thai_text_joined_to_an_english_name_on_purpose_is_not_marked() -> None:
     line = "ลงนามโดยบริษัทABC จำกัด"
 

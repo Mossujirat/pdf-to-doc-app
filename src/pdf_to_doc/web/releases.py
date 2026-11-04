@@ -54,19 +54,19 @@ KNOWN_LIMITATIONS = (
     ),
     KnownLimitation(
         'ลายเซ็น ตราประทับ และรูปภาพบนหน้าสแกน ไม่มีป้ายบอกในข้อความ จึงดูไม่ออกว่าเอกสารลงนามแล้ว ถ้าต้องการเห็น เลือก "เก็บหน้าสแกนเป็นภาพ"',
-        ("converter-engine/issues/24-pictures-on-ocr-pages-that-are-not-scans.md",),
+        ("converter-engine/issues/38-pictures-inside-scans.md",),
     ),
     KnownLimitation(
         "เลขหน้า หัวกระดาษ และท้ายกระดาษของหน้าสแกนยังติดมาในเนื้อหา ลบออกเองก่อนใช้",
         ("converter-engine/issues/22-page-furniture-on-scans.md",),
     ),
     KnownLimitation(
-        "เครื่องหมายติ๊กในช่องบนหน้าสแกนหายไป จึงไม่รู้ว่าเลือกข้อไหนไว้ ดูจากต้นฉบับ",
-        ("converter-engine/issues/26-ticked-boxes-are-lost.md",),
-    ),
-    KnownLimitation(
-        "ลายเซ็นหลายชุดที่วางเรียงกัน หรือแถบข้อความข้างจดหมาย บนหน้าสแกน ถูกอ่านปนกับข้อความข้างๆ ชื่อกับตำแหน่งของผู้ลงนามอาจจับคู่ผิด",
-        ("converter-engine/issues/32-short-line-columns-on-ocr-pages.md",),
+        "แถบข้อความข้างจดหมายที่ตัวอักษรขนาดเท่าเนื้อความ และเลขบัญชีที่วางข้างรายชื่อผู้ลงนาม บนหน้าสแกน"
+        " ยังถูกอ่านปนกับข้อความข้างๆ เลขบัญชีอาจไปอยู่ผิดที่",
+        (
+            "converter-engine/issues/39-bank-details-beside-signatories.md",
+            "converter-engine/issues/41-side-panels-in-the-bodys-own-type.md",
+        ),
     ),
     KnownLimitation(
         "ข้อความที่เขียนเฉียงบนหน้าสแกน เช่น ตัวลายน้ำเอง หรือข้อความที่เขียนคร่อมสำเนาบัตรประชาชน ไม่ถูกอ่าน",
@@ -77,8 +77,9 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/35-thai-misreads-that-are-real-words.md",),
     ),
     KnownLimitation(
-        "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่น เช่น หลักหายหรือหลักเกิน ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
-        ("converter-engine/issues/37-numbers-misread-as-other-numbers.md",),
+        "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่นแต่ยังดูเป็นตัวเลขปกติ เช่น จำนวนเงินที่หลักเกินแต่จุลภาคยังอยู่ถูกที่"
+        " หรือวันที่ที่กลายเป็นอีกวันหนึ่ง ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
+        ("converter-engine/issues/40-number-misreads-left-after-37.md",),
     ),
     KnownLimitation(
         "ตารางที่ตีเส้นเฉพาะช่องตัวเลข เช่น ตารางงบประมาณ ชื่อรายการจะแยกออกมาอยู่นอกตาราง ต้องจับคู่กับแถวเอง",

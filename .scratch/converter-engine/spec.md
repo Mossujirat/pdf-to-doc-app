@@ -166,22 +166,30 @@ Where the converter cannot confirm that it read text correctly, it marks that te
     - a word in capitals whose every small letter is shaped like its capital, such as "BKk" or "THAlLAND", but not a plural s ("PDFs"), "Hz", or an o between capitals that stands for "of" ("ToR", "MoU");
     - a word spelt only with l and I that holds an l, such as "Il" for the Roman numeral II, but not "Ill";
     - a Latin word holding or joined to a single Thai letter or digit, such as "Teamร";
-    - a number in both Thai and Arabic digits, such as "๑5".
+    - a number in both Thai and Arabic digits, such as "๑5";
+    - an amount whose commas do not part it in threes, such as "1,2345.00" or "5,00.000" (ticket 37). A group of four digits or more after a comma always counts; one of one or two counts only in an amount, with decimals or another group of three, since "1,2" may list two clauses;
+    - a date that cannot be (ticket 37): a year of three digits, or of five or more, after พ.ศ., ค.ศ. or ปีงบประมาณ, or after a day and its month; or a day its month does not have, such as "39 พฤษภาคม" or "30 กุมภาพันธ์". Only the year or the day is marked. A month counts as part of a date only after a day, since a budget sheet sets amounts after full months, and an abbreviated month only with a year after it, since abbreviated months also name agencies (ก.พ.).
   - **A box the engine read with a confidence below 0.85.** The whole box is marked.
 - The confidence alone could not be the signal. PaddleOCR scores a whole line, and one wrong mark barely moves the score. On synthetic scans at six levels of damage, lines with one or two wrong characters scored 0.93–0.96, as did lines with none, while lines read as nonsense scored 0.64–0.75. Catching small misreads by confidence would have meant marking about a third of all text.
 - Neighbouring uncertain words, with only whitespace between them, are marked as one stretch.
-- **Known gap:** a misread that is itself a word is not marked, such as "ที" for "ที่" or "ทาก" for "หาก" (ticket 35). Neither are punctuation, a digit read in place of a letter ("Is0" for "ISO"), a change of case that leaves a normal word ("Iso", "NO."), or a number misread as another number: a lost or extra digit, a footnote marker joined to the number before it, "x/y" read as one number, a range that lost its dash. The harness reports the share of errors left unmarked, so that ticket 17 can measure it on real scans.
+- **Known gap:** a misread that is itself a word is not marked, such as "ที" for "ที่" or "ทาก" for "หาก" (ticket 35). Neither are punctuation, a digit read in place of a letter ("Is0" for "ISO"), a change of case that leaves a normal word ("Iso", "NO."), or a number misread as another number that still looks like one: a lost or extra digit where the commas still fall in threes, a valid day read as another, a footnote marker joined to the number before it, "x/y" read as one number, a range that lost its dash (ticket 40). The harness reports the share of errors left unmarked, so that ticket 17 can measure it on real scans.
 - `corpus/degraded/` holds scans damaged on purpose, outside the quality gate, for measuring this with the harness.
 - Handwriting is not transcribed:
   - Where it can be identified, it becomes a placeholder: Typhoon tags it, and it can be an image object on a text page.
   - Otherwise, low-confidence handwriting becomes uncertain text, never silent output.
 
 **Placeholders** (ticket 09)
-- Images on text pages become placeholders where they sit in reading order. OCR pages are images themselves and get none.
+- Images on text pages become placeholders where they sit in reading order. A scan is an image itself, and its pictures are part of it, so it gets none. An OCR page that is not a scan, such as a page a PDF printer drew as shapes, keeps its pictures as images of their own: they become placeholders by the same rules, and are hidden from the page image OCR reads, so that their ink is not read as text (ticket 24). On such a page the signing word beside a signature comes from OCR, so a misread one gives an image placeholder in place of a signature.
 - A round coloured mark is a stamp, wherever it is pressed. A small image on a row to sign on ("ลงชื่อ", "ลายมือชื่อ", "Signature") is a signature. Anything else is an image: the converter does not guess.
 - Not placeholders: images too small to be pictures (rules, bullets), the page behind the text (a scan made searchable, a watermark), and page furniture: images of the same size in about the same place at an edge of two or more pages.
 - An image inside a table cell is placed right after the table.
 - The summary counts placeholders by kind.
+
+**Check boxes** (ticket 26)
+- On OCR pages, a check box comes out as ☒ when ticked and ☐ when empty, in both outputs, where it sits: before the choice it qualifies, or in its table cell. It is text, not a placeholder: the choice is what the page says.
+- OCR reads no text in a box, so boxes are found in the page image: a small square, two thirds of a line's height or so, closed by straight rules meeting at its corners, with clear paper either side of it. A box with ink inside is ticked; one with only a speck in it is ticked and uncertain text. A square holding a block of ink, as a QR code's corners do, is no box.
+- The engine's own reading of a box or its tick ("V", "√") gives way to it. Where the engine took a box into the text beside it, its text is cut where a word starts nearest the box.
+- Text pages need nothing: Word exports check boxes as characters, which their text layer holds.
 
 **Document model** (ADR 0003)
 - **Block kinds:**

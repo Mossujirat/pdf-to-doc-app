@@ -484,24 +484,32 @@ def test_a_column_that_carries_on_below_the_end_of_the_other_is_read_to_its_end_
     assert markdown_pages(result) == ["\n\n".join([*columns, "1"])]
 
 
-@pytest.mark.parametrize(
-    "below",
-    [
-        [[(72, "ชื่อโครงการ"), (300, "การพัฒนาระบบติดตามงานวิจัยแบบออนไลน์")], [(72, "หัวหน้าโครงการ"), (300, "นางสาวสมหญิง รักดี ตำแหน่งนักวิจัย")]],
-        [[(72, "ลงชื่อ ................"), (300, "ลงชื่อ ................")], [(72, "(นายสมชาย ใจดี)"), (300, "(นางสาวสมหญิง รักดี)")]],
-    ],
-    ids=["labels and values", "signature blocks"],
-)
-def test_rows_under_two_columns_are_read_row_by_row_after_them(below: list[Pieces]) -> None:
-    # Their gaps lie under the columns' gutter, but they are not more of the columns.
+def under_two_columns(below: list[Pieces]) -> str:
+    """The page of two columns with the rows below them, their gaps under the columns' gutter."""
     rows = [Styled(text, size=12, x=x, y=TOP + (7 + number) * LINE_HEIGHT) for number, row in enumerate(below) for x, text in row]
     engine = FakeEngine([*two_columns(THAI_LEFT, THAI_RIGHT, y=TOP), *rows])
-
     [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+    return page
+
+
+def test_labels_and_values_under_two_columns_are_read_row_by_row_after_them() -> None:
+    # They are not more of the columns.
+    below: list[Pieces] = [[(72, "ชื่อโครงการ"), (300, "การพัฒนาระบบติดตามงานวิจัยแบบออนไลน์")], [(72, "หัวหน้าโครงการ"), (300, "นางสาวสมหญิง รักดี ตำแหน่งนักวิจัย")]]
+
+    page = under_two_columns(below)
 
     assert page.startswith("".join(THAI_LEFT) + "\n\n" + "".join(THAI_RIGHT))
     printed = [" ".join(text for _, text in row) for row in below]
     assert [line for line in printed if line not in page] == []
+
+
+def test_signature_blocks_under_two_columns_are_read_one_block_after_the_other_after_them() -> None:
+    below: list[Pieces] = [[(72, "ลงชื่อ ................"), (300, "ลงชื่อ ................")], [(72, "(นายสมชาย ใจดี)"), (300, "(นางสาวสมหญิง รักดี)")]]
+
+    page = under_two_columns(below)
+
+    assert page.startswith("".join(THAI_LEFT) + "\n\n" + "".join(THAI_RIGHT))
+    assert_read_one_after_the_other(page, [THAI_RIGHT[-1:], *([row[block][1] for row in below] for block in range(2))])
 
 
 def test_a_note_typed_under_a_column_comes_out_once_at_the_end_of_that_column() -> None:
@@ -680,18 +688,133 @@ def test_a_line_with_a_wide_gap_in_it_is_one_line_not_two_columns() -> None:
     )
 
 
-# Their lines are as short as labels', so they cannot be told apart from labels yet (ticket 32).
-SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
-    "a letter with a panel of addresses": [
-        [(72, "บริษัทขอแจ้งให้ทราบว่าได้รับเอกสารประกอบการเสนอราคา"), (440, "สำนักงานใหญ่")],
-        [(72, "ของท่านครบถ้วนแล้ว และจะแจ้งผลการพิจารณาให้ทราบ"), (440, "กรุงเทพมหานคร")],
-        [(72, "ภายในสามสิบวันนับแต่วันที่ได้รับหนังสือฉบับนี้"), (440, "โทร 02 123 4567")],
-        [(72, "จึงเรียนมาเพื่อโปรดทราบและขอขอบคุณมาในโอกาสนี้"), (440, "ทะเบียน 0105556012345")],
+# Short lines beside other text, as short as labels'. Signature blocks side by side, and a side
+# panel set in smaller type, are columns (ticket 32); see `beside_a_letter` and SIGNATURE_BLOCKS.
+SIGNATURE_BLOCKS: list[Pieces] = [
+    [(72, "ลงชื่อ ................"), (240, "ลงชื่อ ................"), (410, "ลงชื่อ ................")],
+    [(72, "(นายสมชาย ใจดี)"), (240, "(นางสาวสมหญิง รักดี)"), (410, "(นายสมศักดิ์ มีสุข)")],
+    [(72, "ผู้ให้ทุน"), (240, "ผู้รับทุน"), (410, "พยาน")],
+]
+LETTER = [
+    "บริษัทขอแจ้งให้ทราบว่าได้รับเอกสารประกอบการเสนอราคา",
+    "ของท่านครบถ้วนแล้ว และจะแจ้งผลการพิจารณาให้ทราบ",
+    "ภายในสามสิบวันนับแต่วันที่ได้รับหนังสือฉบับนี้",
+    "จึงเรียนมาเพื่อโปรดทราบและขอขอบคุณมาในโอกาสนี้",
+]
+PANEL = ["สำนักงานใหญ่", "กรุงเทพมหานคร", "โทร 02 123 4567", "ทะเบียน 0105556012345", "ธนาคาร กรุงไทย", "สาขาสีลม"]
+
+
+def beside_a_letter(panel_size: float) -> list[Styled]:
+    """The letter in 12 pt, with the panel at x 440 from its first baseline, a line of the panel's
+    own size after another, in the order the page draws them: top to bottom."""
+    letter = [Styled(line, size=12, y=TOP + number * LINE_HEIGHT) for number, line in enumerate(LETTER)]
+    panel = [Styled(line, size=panel_size, x=440, y=TOP + number * panel_size * 1.4) for number, line in enumerate(PANEL)]
+    return sorted([*letter, *panel], key=lambda line: line.y or 0)
+
+
+def assert_read_one_after_the_other(page: str, parts: list[list[str]]) -> None:
+    """Each part's lines are in the page in order, the parts one after the other."""
+    place = 0
+    for line in (line for part in parts for line in part):
+        found = page.find(line, place)
+        assert found >= 0, f"{line!r} is not in the page after what comes before it:\n{page}"
+        place = found + len(line)
+
+
+def test_signature_blocks_side_by_side_are_read_one_block_after_the_other() -> None:
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(SIGNATURE_BLOCKS))))
+
+    assert_read_one_after_the_other(page, [[row[block][1] for row in SIGNATURE_BLOCKS] for block in range(3)])
+
+
+def test_rows_of_signature_blocks_with_a_stamp_across_the_gap_are_read_a_block_at_a_time() -> None:
+    # As on the sample contract's signing page: signers beside their witnesses, two rows deep with
+    # no blank line between, and a company stamp, read as text, running across the gap.
+    rows: list[Pieces] = [
+        [(72, "ลงชื่อ ........ ผู้ให้ทุน"), (330, "ลงชื่อ ........ พยาน")],
+        [(72, "(นายสมชาย ใจดี)"), (330, "(นางสาวสมหญิง รักดี)")],
+        [(72, "ผู้อำนวยการ"), (330, "นักวิจัย")],
+        [(72, "ลงชื่อ ........ ผู้รับทุน"), (330, "ลงชื่อ ........ พยาน")],
+        [(72, "(นายสมศักดิ์ มีสุข)"), (330, "(นางสาวสมใจ ดีมาก)")],
+        [(72, "หัวหน้าโครงการ"), (330, "ผู้ช่วยวิจัย")],
+    ]
+    stamp = Boxed("บริษัทตัวอย่างจำกัด", x=200, top=TOP + 2 * LINE_HEIGHT + 2, bottom=TOP + 2 * LINE_HEIGHT + 14, confidence=0.99)
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine([*on_rows(rows), stamp])))
+
+    blocks = [[row[block][1] for row in rows[first : first + 3]] for first in (0, 3) for block in (0, 1)]
+    assert_read_one_after_the_other(page, blocks)
+
+
+def test_english_signature_blocks_that_sign_by_name_are_read_one_block_after_the_other() -> None:
+    # As on the five-page sample agreement: "By:" and the signer's name, where Thai has "ลงชื่อ".
+    rows: list[Pieces] = [
+        [(72, "By: Jane Smith"), (330, "By: Somchai Jaidee")],
+        [(72, "Title: Chief of Industry"), (330, "Title: Executive Director, National")],
+        [(72, "Economy Division"), (330, "Metal and Materials Technology Center")],
+        [(72, "Date: 07/07/2026"), (330, "Date: 08/07/2026")],
+    ]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert_read_one_after_the_other(page, [[row[block][1] for row in rows] for block in (0, 1)])
+
+
+def test_a_side_panel_set_in_smaller_type_is_read_after_the_letter_beside_it() -> None:
+    # Its lines do not share the letter's baselines, unlike labels beside their values.
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(beside_a_letter(9))))
+
+    assert_read_one_after_the_other(page, [LETTER, PANEL])
+
+
+def test_a_paragraph_right_under_signature_blocks_is_read_after_them_all() -> None:
+    # No blank line parts it from the blocks: it runs across them, so it is no block's.
+    closing = "หมายเหตุ สัญญานี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาต่างยึดถือไว้ฝ่ายละหนึ่งฉบับ"
+    rows: list[Pieces] = [*SIGNATURE_BLOCKS, [(72, closing)]]
+
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(on_rows(rows))))
+
+    assert_read_one_after_the_other(page, [*([row[block][1] for row in SIGNATURE_BLOCKS] for block in range(3)), [closing]])
+
+
+# Rows that look like signature blocks or a side panel, and are not: read row by row.
+SIGN_IN_SHEET: list[Pieces] = [
+    [(72, "ลำดับ"), (130, "ชื่อ-สกุล"), (300, "ลายมือชื่อ (เช้า)"), (430, "ลายมือชื่อ (บ่าย)")],
+    [(72, "1"), (130, "นายสมชาย ใจดี"), (300, "สมชาย"), (430, "สมชาย")],
+    [(72, "2"), (130, "นางสาวสมหญิง รักดี"), (300, "สมหญิง"), (430, "สมหญิง")],
+    [(72, "3"), (130, "นายสมศักดิ์ มีสุข"), (300, "สมศักดิ์"), (430, "สมศักดิ์")],
+]
+NOT_BLOCKS_OR_PANELS: dict[str, list[Styled]] = {
+    "a sign-in sheet with two signing columns": on_rows(SIGN_IN_SHEET),
+    "long labels beside values in smaller type that wrap": [
+        Styled("ชื่อโครงการวิจัยตามที่ได้รับอนุมัติ", size=12, y=TOP),
+        Styled("ระบบติดตามงานวิจัย", size=10, x=330, y=TOP),
+        Styled("แบบออนไลน์", size=10, x=330, y=TOP + 14),
+        Styled("หน่วยงานต้นสังกัดของหัวหน้าโครงการ", size=12, y=TOP + LINE_HEIGHT + 14),
+        Styled("คณะวิศวกรรมศาสตร์", size=10, x=330, y=TOP + LINE_HEIGHT + 14),
+        Styled("มหาวิทยาลัยตัวอย่าง", size=10, x=330, y=TOP + LINE_HEIGHT + 28),
+        Styled("ระยะเวลาดำเนินงานตามสัญญาฉบับนี้", size=12, y=TOP + 2 * LINE_HEIGHT + 28),
+        Styled("สิบสองเดือน", size=10, x=330, y=TOP + 2 * LINE_HEIGHT + 28),
     ],
-    "signature blocks side by side": [
-        [(72, "ลงชื่อ ................"), (240, "ลงชื่อ ................"), (410, "ลงชื่อ ................")],
-        [(72, "(นายสมชาย ใจดี)"), (240, "(นางสาวสมหญิง รักดี)"), (410, "(นายสมศักดิ์ มีสุข)")],
-        [(72, "ผู้ให้ทุน"), (240, "ผู้รับทุน"), (410, "พยาน")],
+}
+
+
+@pytest.mark.parametrize("lines", NOT_BLOCKS_OR_PANELS.values(), ids=NOT_BLOCKS_OR_PANELS.keys())
+def test_rows_that_only_look_like_signature_blocks_or_a_side_panel_are_read_row_by_row(lines: list[Styled]) -> None:
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(lines)))
+
+    by_row = sorted(lines, key=lambda line: (line.y or 0, line.x))
+    assert_read_one_after_the_other(page, [[line.text for line in by_row]])
+
+
+# Still read row by row: a panel in the letter's own type shares its baselines, and bank details
+# beside the signatories are set like labels and values (tickets 41 and 39).
+SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
+    "a letter with a panel of addresses in its own type": [
+        [(72, LETTER[0]), (440, PANEL[0])],
+        [(72, LETTER[1]), (440, PANEL[1])],
+        [(72, LETTER[2]), (440, PANEL[2])],
+        [(72, LETTER[3]), (440, PANEL[3])],
     ],
     "bank details beside the signatories": [
         [(72, "ธนาคาร กรุงไทย สาขาสีลม"), (330, "นายสมชาย ใจดี")],
@@ -703,7 +826,7 @@ SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
 
 
 @pytest.mark.parametrize("rows", SHORT_LINES_BESIDE_OTHER_TEXT.values(), ids=SHORT_LINES_BESIDE_OTHER_TEXT.keys())
-def test_short_lines_beside_other_text_are_read_row_by_row_for_now(rows: list[Pieces]) -> None:
+def test_short_lines_beside_other_text_on_its_baselines_are_still_read_row_by_row(rows: list[Pieces]) -> None:
     assert_read_row_by_row(rows)
 
 
