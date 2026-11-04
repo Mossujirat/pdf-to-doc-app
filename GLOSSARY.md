@@ -100,6 +100,10 @@ _Avoid_: text block, side-by-side text
 An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.
 _Avoid_: figure
 
+**Check box**:
+A small printed square beside a choice on a form or in a table, which a person ticks or crosses to make that choice. Outputs show whether it is ticked, before the text it qualifies; a tick the converter cannot confirm is uncertain text.
+_Avoid_: tick box, checkbox (as one word)
+
 ## Web service
 
 **Release**:

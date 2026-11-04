@@ -54,7 +54,10 @@ KNOWN_LIMITATIONS = (
     ),
     KnownLimitation(
         'ลายเซ็น ตราประทับ และรูปภาพบนหน้าสแกน ไม่มีป้ายบอกในข้อความ จึงดูไม่ออกว่าเอกสารลงนามแล้ว ถ้าต้องการเห็น เลือก "เก็บหน้าสแกนเป็นภาพ"',
-        ("converter-engine/issues/24-pictures-on-ocr-pages-that-are-not-scans.md",),
+        (
+            "converter-engine/issues/24-pictures-on-ocr-pages-that-are-not-scans.md",
+            "converter-engine/issues/38-pictures-inside-scans.md",
+        ),
     ),
     KnownLimitation(
         "เลขหน้า หัวกระดาษ และท้ายกระดาษของหน้าสแกนยังติดมาในเนื้อหา ลบออกเองก่อนใช้",
@@ -78,7 +81,10 @@ KNOWN_LIMITATIONS = (
     ),
     KnownLimitation(
         "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่น เช่น หลักหายหรือหลักเกิน ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
-        ("converter-engine/issues/37-numbers-misread-as-other-numbers.md",),
+        (
+            "converter-engine/issues/37-numbers-misread-as-other-numbers.md",
+            "converter-engine/issues/40-number-misreads-left-after-37.md",
+        ),
     ),
     KnownLimitation(
         "ตารางที่ตีเส้นเฉพาะช่องตัวเลข เช่น ตารางงบประมาณ ชื่อรายการจะแยกออกมาอยู่นอกตาราง ต้องจับคู่กับแถวเอง",

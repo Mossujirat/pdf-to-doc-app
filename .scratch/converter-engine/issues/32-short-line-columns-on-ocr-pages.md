@@ -11,7 +11,7 @@ An account or registry number lands in the wrong text, and a signer's name can b
 
 **Blocked by:** 18
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Seen on:** the local samples listed in ticket 18: the scanned supplement's letter and signing page, the five-page agreement printed to PDF, and signature blocks in the 110-page contract.
 
@@ -51,3 +51,15 @@ An account or registry number lands in the wrong text, and a signer's name can b
 
 - **Text pages too:** a text page that draws these layouts line by line across is read across in the same way (synthetic pages: CER 0.37 with a panel, 0.39 with signature blocks, 0.56 with bank details beside signatories). Ticket 31 gives text pages ticket 18's column finder, so a cue found here can serve both kinds of page.
 - **A real signing page passes the body-text guard:** on the signing page of a research contract among the local samples, the signature blocks' dotted signing lines are long enough that the finder splits the two blocks into columns. Signature blocks with short lines do not pass it.
+
+**2026-11-03, triage**
+
+- **In this round,** with 37, 24 and 26.
+- **Scope:** signature blocks side by side, and side panels. Bank details beside signatories split out as ticket 39: neither cue covers them.
+- **The cues:**
+  - **Signature blocks:** a signing word ("ลงชื่อ", "Signature") two or more times on one row, the pattern placeholders already use. Keep it out of the check that joins a band to the columns above it, or signature blocks under two-column terms join those columns (a test pins this today).
+  - **Side panels:** a panel set in smaller type, whose lines do not pair with the body's. A panel in the body's own type stays read across.
+- **How signature blocks come out:** each block whole, left before right: its signing line, name and title together, so a name cannot meet another signer's title.
+- **Local samples:** the user allows converting them on this machine for the whole round; tickets record numbers and observations only.
+- **Estimate:** medium. The code change is small; the cost is in new test pages for each layout, false-split guards, and checks on real signing pages, where OCR may misread the signing word or box it across both blocks.
+- **The known limitation on the what's-new page** names signature blocks and side panels only. Closing this ticket drops it; if a panel in the body's own type is still read across, it needs a ticket and a narrower limitation of its own.
