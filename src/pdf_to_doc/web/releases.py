@@ -80,11 +80,9 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/35-thai-misreads-that-are-real-words.md",),
     ),
     KnownLimitation(
-        "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่น เช่น หลักหายหรือหลักเกิน ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
-        (
-            "converter-engine/issues/37-numbers-misread-as-other-numbers.md",
-            "converter-engine/issues/40-number-misreads-left-after-37.md",
-        ),
+        "ตัวเลขในหน้าสแกนที่อ่านผิดเป็นตัวเลขอื่นแต่ยังดูเป็นตัวเลขปกติ เช่น จำนวนเงินที่หลักเกินแต่จุลภาคยังอยู่ถูกที่"
+        " หรือวันที่ที่กลายเป็นอีกวันหนึ่ง ไม่มีสีเหลืองบอก ตรวจจำนวนเงินและวันที่กับต้นฉบับเสมอ",
+        ("converter-engine/issues/40-number-misreads-left-after-37.md",),
     ),
     KnownLimitation(
         "ตารางที่ตีเส้นเฉพาะช่องตัวเลข เช่น ตารางงบประมาณ ชื่อรายการจะแยกออกมาอยู่นอกตาราง ต้องจับคู่กับแถวเอง",

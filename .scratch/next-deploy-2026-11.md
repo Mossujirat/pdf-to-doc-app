@@ -29,6 +29,10 @@ Each is its own task: `/grill-with-docs` if anything is still open, then `/imple
 - **32** closes and drops its limitation, unless a side panel in the body's own type is still read across.
 - **26** closes and drops its limitation.
 
+## Done
+
+- **37,** 2026-11-04, on `fix/number-misread-rules`. Its known limitation now says what is left, worded with the user. A draft line for the release, to approve at the deploy: "ตัวเลขในหน้าสแกนที่อ่านผิดจนเป็นไปไม่ได้มีสีเหลืองบอกแล้ว ได้แก่ จำนวนเงินที่จุลภาคคั่นไม่ลงตัวทีละสามหลัก ปีในวันที่ที่เหลือสามหลัก และวันที่ที่เดือนนั้นไม่มี".
+
 ## Split off in triage
 
 - **38:** signatures, stamps and pictures inside scans (from 24).

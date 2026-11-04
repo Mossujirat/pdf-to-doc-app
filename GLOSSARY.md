@@ -111,5 +111,5 @@ A production deploy that changes what visitors get, in a conversion's outputs or
 _Avoid_: version, update
 
 **Known limitation**:
-Something the converter still gets wrong without saying so in its outputs, such as content left out or text read across, with neither uncertain text nor a placeholder to warn the reader. Each one stands for an open ticket, and the release that closes the ticket drops it.
+Something the converter still gets wrong without saying so in its outputs, such as content left out or text read across, with neither uncertain text nor a placeholder to warn the reader. Each one stands for one or more open tickets, and the release that closes the last of them drops it.
 _Avoid_: known issue, caveat

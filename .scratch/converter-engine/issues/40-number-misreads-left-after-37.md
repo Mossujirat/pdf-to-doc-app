@@ -18,3 +18,8 @@
 **Known to be out of reach:** a misread that leaves a valid value, such as a day read as another day, and a dash lost from a range.
 
 ## Comments
+
+**2026-11-04, from ticket 37's measurement**
+
+- **Per-character confidence:** precise below about 0.3, but on the 110-page contract it adds only 2 marks beyond the rules, both on junk text; any threshold that catches more marks correct amounts and the contract number. The numbers and the labelled sample are in ticket 37's 2026-11-04 comment. Using it means patching PaddleX's decoder, which `uv.lock` pins, and carrying a score per character through the boxes.
+- **A lead from the same run:** a document number's year lost a digit in "ที่ ๑๕๖/๒๕๒" (for ๑๔๖/๒๕๖๒). A rule for the year after "ที่ N/" would catch it.
