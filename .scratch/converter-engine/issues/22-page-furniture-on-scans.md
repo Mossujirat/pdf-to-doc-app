@@ -31,3 +31,19 @@ They waste AI tokens and break the text between pages.
 
 - **After the next deploy:** the user chose to leave it for a later version. See `.scratch/next-deploy.md`.
 - Status stays `needs-triage` until then.
+
+**2026-11-10, from a 10-page scanned contract**
+
+The 10-page scanned Thai contract of ticket 42 was converted on 2026-11-10 with the user's permission. Its pages are upright, so ticket 19 does not affect what follows. Each page has a header of two lines, and a footer of three lines beside initials.
+
+- **Exact matching works when OCR reads alike.** The header line, with the contract number and "หน้า x/9", was removed on 8 of 9 pages. On the ninth, OCR read one character of the contract number differently, so the line stayed. This is the case this ticket already names.
+- **New: lines just outside the edge band are never removed,** however exactly they repeat.
+  - The header's second line, a form version, starts at about 10.8% of the page's height. The band is 10%.
+  - The footer's first line starts at about 87.6%, above the bottom band, which starts at 90%.
+- **New: a block of furniture that crosses the band edge is only partly removed.** Only the footer's middle line is inside the band, so it is the only one removed.
+- **New: a footer line that shares a baseline with initials never matches.** `_join_on_baselines` joins it to the initials that OCR read as junk (ticket 38). The row's text then differs on every page.
+- **New: leftover furniture damages the body text.** On 3 of 9 pages, a clause runs on from the page before. The leftover version line joins that clause's paragraph, so the clause starts with it. Elsewhere it stands as a paragraph of its own.
+- **Leads:**
+  - remove a block of lines when one of them is furniture and the others repeat with it;
+  - let a row that repeats on most pages lie a little outside the band;
+  - match the footer before rows are joined on baselines, or once junk read from initials is gone. That ties this ticket to ticket 38.

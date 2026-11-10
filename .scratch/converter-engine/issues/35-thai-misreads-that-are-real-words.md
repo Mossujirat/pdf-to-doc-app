@@ -29,3 +29,15 @@ The reader and the AI are not warned. These are the spec's known gap of "a misre
   - The case: "กุณภาพ" for "คุณภาพ" is marked as "กุณ", since "ภาพ" is a syllable of two consonants and is not pulled in.
   - The idea: swap look-alike letters in the stretch around the unknown piece; if that makes a word the list holds, such as "คุณภาพ", mark that whole stretch.
   - Pulling in syllables of two consonants instead would also mark correct words, such as "หก" in "ทุกหกเคือน".
+
+## Comments
+
+**2026-11-10, from a 10-page scanned contract**
+
+The 10-page scanned Thai contract of ticket 42 was converted on 2026-11-10 with the user's permission. On this file, the converter marked 38 stretches as uncertain. These misreads were left unmarked, or marked only in part:
+
+- **A dropped vowel or tone mark that leaves a word:** "ทน" for "ทุน", and "ที" for "ที่" before a number. Both are cases this ticket already names.
+- **Not yet checked why it passed:** "ผกพัน" for "ผูกพัน". It may be in the word list, or it may be segmented into words the list holds.
+- **ช read as ซ, with only part of it marked:** "ซอบ" for "ชอบ", marked on "บ" alone. Swapping look-alike letters in the stretch around the marked piece, this ticket's idea, would give "ชอบ" and mark the whole word.
+- **A Latin word read with Thai look-alikes, not caught by ticket 23:** "E-mail" came out as "E" and a hyphen followed by two Thai letters. Ticket 23 marks a single Thai letter inside or joined to a Latin word. Here there are two, after a hyphen. The same table of look-alike letters could catch it.
+- **Out of reach, as decided in ticket 23:** in the contract number, the letters "IO" were read as the digits "10" on every page. Ticket 23 left a digit read in place of a letter as a known gap, since codes such as "B10" have the same shape.

@@ -13,7 +13,7 @@ from generate import CRISP_PAGE, KAR_AS_KAM, RULED_TABLE_PAGES
 from markdown_reader import page_texts
 from pdf_builder import SARABUN, Drawn, Grid, Line, Scan, pdf, remapped
 
-from pdf_to_doc import convert
+from pdf_to_doc import convert, paddle
 from pdf_to_doc.ocr import LANGUAGES, PageImage, render
 from pdf_to_doc.ocr_models import models_folder
 from pdf_to_doc.paddle import PaddleOcrEngine
@@ -146,20 +146,35 @@ def test_a_scan_under_a_dot_pattern_watermark_is_read_again_blurred() -> None:
     assert boxes == engine.read(blurred, LANGUAGES)
 
 
-def test_no_scan_in_the_corpus_is_read_twice() -> None:
+def test_no_corpus_scan_is_read_again_for_a_watermark_and_lost_lines_add_only_one_dropped_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A few corpus pages show regions shaped like lost lines, and are read again blurred. What was
+    # first read must stay as it was, and only one box is added: the header cell "จำนวนเงิน" of the
+    # table on rotated-text-pages, which the detector dropped (see its reference text). That page
+    # converts as a text page, so no output changes. Without lost lines, no page is read again: none
+    # shows the watermark sign.
     engine = PaddleOcrEngine(models_folder())
-    scans = [
-        render(page)
+    pages = [
+        (render(page), (path.stem, page.number + 1))
         for path in sorted((CORPUS / "synthetic").glob("*.pdf")) + sorted((CORPUS / "degraded").glob("*.pdf"))
         for page in pymupdf.open(path).pages()
         if page.get_images()
     ]
+    with_lost_lines = [engine.read(scan, LANGUAGES) for scan, _ in pages]
 
+    monkeypatch.setattr(paddle, "lost_lines", lambda regions, width: [])
     with counted(engine) as reads:
-        for scan in scans:
-            engine.read(scan, LANGUAGES)
+        as_first_read = [engine.read(scan, LANGUAGES) for scan, _ in pages]
 
-    assert len(reads) == len(scans) >= 25
+    assert len(reads) == len(pages) >= 25
+    assert all(boxes[: len(first)] == first for boxes, first in zip(with_lost_lines, as_first_read))
+    added = [
+        (*page, box.text)
+        for boxes, first, (_, page) in zip(with_lost_lines, as_first_read, pages)
+        for box in boxes[len(first) :]
+    ]
+    assert added == [("rotated-text-pages", 1, "จำนวนเงิน")]
 
 
 # How much the engine blurs a scan under such a pattern before reading it again.
