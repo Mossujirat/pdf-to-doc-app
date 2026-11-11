@@ -956,3 +956,99 @@ def test_a_dash_boxed_apart_in_the_middle_of_a_line_stays() -> None:
     [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
 
     assert "-" in page
+
+
+# List markers that OCR reads joined to the word after them, as it does when the marker is set
+# close to the word: the space is put back, so the row is a list item as on a text page (ticket 43).
+
+DUTIES = "ผู้รับทุนมีหน้าที่ดังนี้"
+
+
+def test_numbered_items_whose_markers_ocr_read_joined_to_their_word_are_list_items() -> None:
+    engine = FakeEngine([DUTIES, "(1)ส่งรายงานความก้าวหน้า", "(2) ส่งรายงานฉบับสมบูรณ์", "(๓)เก็บเอกสารการเงินไว้"])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [
+        f"{DUTIES}\n\n- (1) ส่งรายงานความก้าวหน้า\n- (2) ส่งรายงานฉบับสมบูรณ์\n- (๓) เก็บเอกสารการเงินไว้"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("row", "item"),
+    [
+        ("(ก)ส่งรายงานความก้าวหน้า", "(ก) ส่งรายงานความก้าวหน้า"),
+        ("-ส่งรายงานความก้าวหน้า", "ส่งรายงานความก้าวหน้า"),
+        ("–ส่งรายงานความก้าวหน้า", "ส่งรายงานความก้าวหน้า"),
+        ("•ส่งรายงานความก้าวหน้า", "ส่งรายงานความก้าวหน้า"),
+    ],
+)
+def test_a_letter_in_brackets_or_a_bullet_ocr_read_joined_to_its_word_starts_a_list_item(row: str, item: str) -> None:
+    engine = FakeEngine([DUTIES, row])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [f"{DUTIES}\n\n- {item}"]
+
+
+def test_an_item_whose_marker_ocr_read_joined_keeps_its_line_wrapped_under_a_hanging_indent() -> None:
+    # Missed, the item was a paragraph, and its second line, further in, an indent that starts another.
+    lines: list[str | Styled] = [
+        "(1)ส่งรายงานความก้าวหน้าของงาน",
+        Styled("ทุกหกเดือนจนจบโครงการ", x=LEFT + 18),
+        "(2)ส่งรายงานฉบับสมบูรณ์",
+    ]
+    engine = FakeEngine([DUTIES, *lines])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [f"{DUTIES}\n\n- (1) ส่งรายงานความก้าวหน้าของงานทุกหกเดือนจนจบโครงการ\n- (2) ส่งรายงานฉบับสมบูรณ์"]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "2.5ล้านบาทภายในปีนี้",  # an amount
+        "4.2ของสัญญานี้",  # a clause number a reference wrapped onto the row
+        "1.ผู้รับทุนส่งรายงาน",  # read the same as either
+        "*หมายเหตุท้ายสัญญา",  # a note
+        "-5 องศาเซลเซียส",  # a minus sign
+        "2)ซึ่งมีผลบังคับใช้แล้ว",  # the end of a bracket wrapped onto the row, as in "(ฉบับที่ / 2)"
+    ],
+)
+def test_a_row_ocr_read_with_no_space_after_what_is_not_a_list_marker_carries_on_as_read(row: str) -> None:
+    # After a line that stops short, a number or bullet with a space after it would start an item.
+    engine = FakeEngine([DUTIES, row])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [f"{DUTIES} {row}"]
+
+
+def test_a_number_in_brackets_ocr_read_joined_after_a_full_line_carries_on_the_sentence() -> None:
+    # As on a text page: outside a list, after a line that runs the full width, it wrapped.
+    full_line = "ผู้รับทุนต้องปฏิบัติตามเงื่อนไขที่กำหนดไว้ทุกประการตามวรรค"
+    engine = FakeEngine([full_line, "(1)ของสัญญาฉบับนี้"])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [f"{full_line} (1) ของสัญญาฉบับนี้"]
+
+
+@pytest.mark.parametrize(
+    ("opened", "closed", "joined"),
+    [
+        ("(ฉบับที่", "2)ซึ่งมีผลบังคับใช้แล้ว", "(ฉบับที่ 2)ซึ่งมีผลบังคับใช้แล้ว"),
+        # Thai lines join with no space, and a letter on its own is no word, so it is marked uncertain.
+        ("(ภาคผนวก", "ก)ซึ่งแนบท้ายสัญญานี้", "(ภาคผนวก<mark>ก</mark>)ซึ่งแนบท้ายสัญญานี้"),
+    ],
+)
+def test_the_end_of_a_bracket_wrapped_onto_a_row_inside_a_list_item_carries_on_the_item(
+    opened: str, closed: str, joined: str
+) -> None:
+    # Within an item, a number or letter with a space after it starts the next item; this one closes a bracket.
+    engine = FakeEngine([f"(1) ผู้รับทุนต้องปฏิบัติตามเอกสาร {opened}", closed])
+
+    pages = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=engine))
+
+    assert pages == [f"- (1) ผู้รับทุนต้องปฏิบัติตามเอกสาร {joined}"]

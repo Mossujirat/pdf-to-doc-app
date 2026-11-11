@@ -20,7 +20,7 @@ from pdf_to_doc.model import (
     Table,
     TableCell,
 )
-from pdf_to_doc.thai import DIGITS, MARK, THAI_CONSONANT, THAI_LETTER, join_lines, repair
+from pdf_to_doc.thai import DIGITS, MARK, THAI_CONSONANT, THAI_LETTER, THAI_WORD_START, join_lines, repair
 from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece, uncertain_spans
 from pdf_to_doc.words import first_word
 
@@ -81,7 +81,19 @@ _REFERENCE_AT_END = re.compile(
 # Symbol and Wingdings fonts, which Word draws bullets with, report their glyphs
 # as Private Use Area characters in this range.
 SYMBOL_FONT_CHARACTERS = f"{chr(0xF000)}-{chr(0xF0FF)}"
-_BULLET_ITEM = re.compile(r"^\s*[•●○◦▪■□‣⁃∙\-–*" + SYMBOL_FONT_CHARACTERS + r"]\s+")
+# The bullets that start a list item even joined to their word (see `_JOINED_MARKER`). A bullet
+# item can also start with "*" or a Symbol font's glyph, but only with a space after it: "*" also
+# marks a note, and only a text layer holds those glyphs.
+_BULLETS = r"•●○◦▪■□‣⁃∙\-–"
+_BULLET_ITEM = re.compile(rf"^\s*[{_BULLETS}*{SYMBOL_FONT_CHARACTERS}]\s+")
+# A list marker OCR read joined to the word after it, at the start of a row: "(1)คำ", "(ก)คำ" or
+# "-คำ". PaddleOCR drops the space when the marker is set close to the word, as on a sample contract
+# and the corpus's `list-markers-scans`. Only before the first letter of a Thai word: a dash before
+# a digit is a minus sign. Left out, as running text reads the same:
+# - "1." and "1.2": an amount such as "2.5ล้าน", or a wrapped reference such as "4.2ของ";
+# - "1)" and "ก)" with no opening bracket: the end of a bracket wrapped onto the row, as in
+#   "(ฉบับที่ / 2)ซึ่ง" or "(ภาคผนวก / ก)ซึ่ง".
+_JOINED_MARKER = re.compile(rf"^\s*(?:\((?:{_NUMBER}|{THAI_CONSONANT})\)|[{_BULLETS}])(?={THAI_WORD_START})")
 # Font sizes closer than this (points) count as the same size within a paragraph.
 _SIZE_STEP = 0.5
 # Text this much larger than the body can be a heading; heading sizes closer than
@@ -740,6 +752,13 @@ def _centred(row: Row, page: PageRows) -> bool:
 
 def _starts_list_item(text: str) -> bool:
     return bool(_NUMBERED_ITEM.match(text) or _BULLET_ITEM.match(text))
+
+
+def with_marker_spaced(text: str) -> str:
+    """The text a row starts with as OCR read it, with the space put back after a list marker read
+    joined to the word after it, so that the row is a list item as on a text page."""
+    marker = _JOINED_MARKER.match(text)
+    return f"{text[: marker.end()]} {text[marker.end() :]}" if marker else text
 
 
 def _body_size(pages: list[PageRows]) -> float:

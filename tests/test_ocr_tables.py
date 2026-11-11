@@ -460,6 +460,23 @@ def test_a_box_that_runs_through_a_rule_makes_its_table_incomplete() -> None:
     assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน\n\n๑ ส่งรายงานทุกหกเดือน"]
 
 
+def test_a_note_typed_into_an_incomplete_table_keeps_its_text_as_typed() -> None:
+    # The note is typed with no space after its number, and the text layer holds it exactly: no space
+    # is put back after it, as after a list marker OCR read joined to its word (ticket 43). It sits
+    # alone on the table's last row, in the note column; the engine reads it too, with a letter lost.
+    rows = (("งวดที่", "งาน", "หมายเหตุ"), ("๑", "ส่งรายงานทุกหกเดือน", ""), ("", "", ""))
+    scanned_grid = Grid(rows=rows, widths=(80, 200, 200))
+    read_grid = Grid(rows=(rows[0], (Cell("๑ ส่งรายงานทุกหกเดือน", colspan=2), ""), rows[2]), widths=(80, 200, 200))
+    # Where pdf_builder sets a cell's text: in the last cell, 4 points in, 3 under its top rule.
+    cell = laid_out_grid(scanned_grid, TOP).cells[-1].rect
+    x, baseline = cell.x0 + 4, cell.y0 + 3 + FONT_SIZE
+    note, misread_note = Styled("(1)แก้ไขตามบันทึก", x=x, y=baseline), Styled("(1)แกไขตามบันทึก", x=x, y=baseline)
+
+    pages = converted(pdf(scanned([scanned_grid], overlay=[note], seed=1)), FakeEngine([read_grid, misread_note]))
+
+    assert pages == ["[ตารางอาจไม่สมบูรณ์]\n\nงวดที่ งาน หมายเหตุ\n\n๑ ส่งรายงานทุกหกเดือน\n\n(1)แก้ไขตามบันทึก"]
+
+
 def test_a_box_that_runs_out_through_the_frame_of_a_table_makes_it_incomplete() -> None:
     # The engine boxes the last cell's text past the table's right rule, 380 points from its left,
     # as it would with a note printed beside the table: what lies outside cannot be told apart.
