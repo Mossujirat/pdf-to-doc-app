@@ -16,7 +16,17 @@ import pymupdf
 from pdf_to_doc.check_boxes import EMPTY, TICKED, CheckBox, check_boxes
 from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
-from pdf_to_doc.layout import COLUMN_GAP, CellLine, PageRows, PlacedImage, PlacedIncompleteTable, PlacedTable, RawCell, Row
+from pdf_to_doc.layout import (
+    COLUMN_GAP,
+    CellLine,
+    PageRows,
+    PlacedImage,
+    PlacedIncompleteTable,
+    PlacedTable,
+    RawCell,
+    Row,
+    with_marker_spaced,
+)
 from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece
 from pdf_to_doc.words import unknown_words, word_starts
@@ -616,6 +626,7 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
     set its parts apart (`in_columns`), so it stays a line of its own: a table's row, or a label
     and its value. On the corpus's scans, only such rows, signature lines and junk had a gap
     that wide; the detector cuts body text at ordinary spaces."""
+    line = _line_with_marker_spaced(line)
     centre = median(_centre(box) for box in line) * scale
     half = _ROW_HEIGHT_PER_FONT_SIZE * size / 2
     gaps = [(after.box[0] - before.box[2]) * scale for before, after in zip(line, line[1:])]
@@ -629,6 +640,15 @@ def _row(line: list[TextBox], scale: float, size: float) -> Row:
         in_columns=any(gap > COLUMN_GAP * size for gap in gaps),
         pieces=_pieces(line),
     )
+
+
+def _line_with_marker_spaced(line: list[TextBox]) -> list[TextBox]:
+    """The line with the space put back after a list marker that the engine read joined to the
+    word after it (see `with_marker_spaced`). A text-layer row's text is exact, and stays as it is."""
+    first = line[0]
+    if isinstance(first, _LayerRow):
+        return line
+    return [replace(first, text=with_marker_spaced(first.text)), *line[1:]]
 
 
 def _reads_better(boxes: tuple[TextBox, ...], row: Row, scale: float) -> bool:

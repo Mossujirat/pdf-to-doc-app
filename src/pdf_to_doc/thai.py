@@ -18,6 +18,9 @@ _INVISIBLE = re.compile(f"[{ZERO_WIDTH}{SOFT_HYPHEN}]")
 # Thai consonants, vowels and marks: everything from ko kai to yamakkan.
 THAI_LETTER = r"[\u0e01-\u0e4e]"
 THAI_CONSONANT = r"[\u0e01-\u0e2e]"
+# A letter a Thai word can start with: a consonant, or a vowel written before one, sara e to
+# sara ai maimalai.
+THAI_WORD_START = r"[\u0e01-\u0e2e\u0e40-\u0e44]"
 THAI_DIGIT = r"[\u0e50-\u0e59]"
 # An Arabic or Thai digit; int() reads both.
 DIGIT = r"[0-9\u0e50-\u0e59]"

@@ -434,6 +434,51 @@ def furnished(number: int) -> SyntheticPage:
 
 FURNITURE_DOCUMENTS = (SyntheticDocument(name="furniture-on-scans", font_file=SARABUN, pages=tuple(furnished(number) for number in range(1, 6))),)
 
+
+def tight(marker: str, text: str) -> Spaced:
+    """A list item whose marker is set a point from its word, which PaddleOCR reads joined to it."""
+    return Spaced((marker, text), gap=1)
+
+
+# Lists on a scan, as on a scanned contract (ticket 43): in each, some markers are set a full space
+# from their word and some a point from it, and the third numbered item wraps under a hanging indent,
+# in line with its text.
+LIST_MARKER_DOCUMENTS = (
+    SyntheticDocument(
+        name="list-markers-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(
+                    [
+                        "ผู้รับทุนต้องปฏิบัติตามข้อกำหนดดังนี้",
+                        tight("(1)", "ส่งรายงานความก้าวหน้าให้ผู้ให้ทุนทุกหกเดือน"),
+                        "(2) ส่งรายงานฉบับสมบูรณ์ภายในสามสิบวัน",
+                        tight("(3)", "เก็บเอกสารการเงินของโครงการไว้ให้ตรวจสอบได้"),
+                        Styled("เป็นเวลาห้าปีนับแต่วันสิ้นสุดโครงการ", x=92),
+                        "",
+                        "เอกสารประกอบรายงานมีดังนี้",
+                        tight("-", "สำเนาใบเสร็จรับเงิน"),
+                        "- หนังสือรับรองการใช้เงิน",
+                        tight("-", "รายงานการเงินประจำงวด"),
+                    ],
+                    seed=50,
+                ),
+                reference=(
+                    "ผู้รับทุนต้องปฏิบัติตามข้อกำหนดดังนี้\n\n"
+                    "- (1) ส่งรายงานความก้าวหน้าให้ผู้ให้ทุนทุกหกเดือน\n"
+                    "- (2) ส่งรายงานฉบับสมบูรณ์ภายในสามสิบวัน\n"
+                    "- (3) เก็บเอกสารการเงินของโครงการไว้ให้ตรวจสอบได้เป็นเวลาห้าปีนับแต่วันสิ้นสุดโครงการ\n\n"
+                    "เอกสารประกอบรายงานมีดังนี้\n\n"
+                    "- สำเนาใบเสร็จรับเงิน\n"
+                    "- หนังสือรับรองการใช้เงิน\n"
+                    "- รายงานการเงินประจำงวด"
+                ),
+            ),
+        ),
+    ),
+)
+
 CLAUSES = [
     "ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติ",
     "และจะรายงานผลการดำเนินงานให้ผู้ให้ทุนทราบทุกหกเดือน",
@@ -1210,6 +1255,7 @@ ALL_DOCUMENTS = (
     + RULED_TABLE_DOCUMENTS
     + PART_RULED_TABLE_DOCUMENTS
     + FURNITURE_DOCUMENTS
+    + LIST_MARKER_DOCUMENTS
 )
 
 

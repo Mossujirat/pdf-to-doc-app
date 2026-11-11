@@ -126,3 +126,20 @@ def test_two_columns_are_read_one_after_the_other_and_a_cover_sheet_row_by_row()
     for number, page in enumerate(markdown_page_texts(markdown), start=1):
         reference = (SYNTHETIC / "two-column-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
         assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
+
+
+def list_item_flags(page: str) -> list[bool]:
+    """Whether each block of a page in Markdown is a list item, in order."""
+    return [line.startswith("- ") for line in page.splitlines() if line]
+
+
+@pytest.mark.ocr
+def test_list_markers_that_paddleocr_reads_joined_to_their_word_still_start_list_items() -> None:
+    # Set a point from their word, PaddleOCR reads them joined to it (ticket 43). The harness drops
+    # list markup, so items run together would score little worse: each block is checked.
+    markdown = convert((SYNTHETIC / "list-markers-scans.pdf").read_bytes()).output.decode("utf-8")
+
+    [page] = markdown_page_texts(markdown)
+    reference = (SYNTHETIC / "list-markers-scans" / reference_file_name(1)).read_text(encoding="utf-8-sig")
+    assert list_item_flags(page) == list_item_flags(reference)
+    assert score_page(page, reference).cer < OCR_PAGE_MAX_CER

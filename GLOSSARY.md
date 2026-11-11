@@ -16,6 +16,10 @@ _Avoid_: intermediate format, AST
 A block of the document model that starts with its own number, letter or bullet, such as a clause of a contract. A number that only carries on a sentence, such as an amount or the clause number a cross-reference points to, wrapped onto a new line, does not start one.
 _Avoid_: clause (for the block), numbered paragraph
 
+**List marker**:
+The number, letter or bullet that a list item starts with, such as "(1)", "ก)" or a dash.
+_Avoid_: bullet (for numbers and letters), item number
+
 **Output**:
 A DOCX or Markdown file produced from the document model.
 
