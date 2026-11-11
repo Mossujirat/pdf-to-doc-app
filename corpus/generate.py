@@ -398,6 +398,42 @@ SCANNED_DOCUMENTS = (
     ),
 )
 
+FURNITURE_FORM = "แบบรายงานผลการดำเนินงานประจำงวดของโครงการ"
+FURNITURE_LABEL = "ประวัติและผลงานของผู้ร่วมงาน"
+FURNITURE_BODIES = [
+    ["ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงาน", "ที่ได้รับอนุมัติจากผู้ให้ทุน"],
+    ["ผู้ให้ทุนจะจ่ายเงินเป็นงวดตามความก้าวหน้า", "ของงานที่ผู้รับทุนรายงาน"],
+    ["ผู้รับทุนต้องส่งรายงานความก้าวหน้า", "ให้ผู้ให้ทุนทุกหกเดือน"],
+    ["ผู้ให้ทุนจะตรวจรับงานภายในสามสิบวัน", "นับแต่วันที่ได้รับรายงาน"],
+    ["ผู้รับทุนต้องแจ้งการเปลี่ยนแปลงโครงการ", "ให้ผู้ให้ทุนทราบเป็นหนังสือ"],
+]
+
+
+def furnished(number: int) -> SyntheticPage:
+    """A page of a scanned form with page furniture: a header that reads differently on page 3, as
+    OCR reads a header differently from page to page; a second header line just below the top
+    band; and a footer just above the bottom band, numbered at its end with no word for "page", as
+    on a scan pasted into a larger page. A label heads the body of every other page, as each
+    researcher's résumé is headed: it is content, not furniture."""
+    header = "สัญญาเลขที่ T-002 ฉบับแก้ไขครั้งที่หนึ่ง" if number != 3 else "สัญญาเลขที T-002 ฉบับแก้ไขครั้งทีหนึ่ง"
+    label = [Styled(FURNITURE_LABEL, y=135)] if number % 2 else []
+    first, *rest = FURNITURE_BODIES[number - 1]
+    lines: list[Line] = [
+        Styled(header, size=14, y=50),
+        Styled("(ฉบับปรับปรุง มีนาคม 2567)", size=14, y=105),
+        *label,
+        Styled(first, y=200),
+        *rest,
+        Styled(f"{FURNITURE_FORM} {number}", size=14, y=735),
+    ]
+    reference = "".join(FURNITURE_BODIES[number - 1])
+    return SyntheticPage(
+        lines=scanned(lines, seed=30 + number), reference=f"{FURNITURE_LABEL}\n\n{reference}" if label else reference
+    )
+
+
+FURNITURE_DOCUMENTS = (SyntheticDocument(name="furniture-on-scans", font_file=SARABUN, pages=tuple(furnished(number) for number in range(1, 6))),)
+
 CLAUSES = [
     "ผู้รับทุนตกลงจะดำเนินการวิจัยตามแผนงานที่ได้รับอนุมัติ",
     "และจะรายงานผลการดำเนินงานให้ผู้ให้ทุนทราบทุกหกเดือน",
@@ -1173,6 +1209,7 @@ ALL_DOCUMENTS = (
     + TWO_COLUMN_DOCUMENTS
     + RULED_TABLE_DOCUMENTS
     + PART_RULED_TABLE_DOCUMENTS
+    + FURNITURE_DOCUMENTS
 )
 
 

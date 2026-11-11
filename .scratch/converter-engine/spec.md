@@ -139,6 +139,7 @@ Where the converter cannot confirm that it read text correctly, it marks that te
 **Header and footer removal**
 - Remove lines that repeat in the same position across pages, including stamped header lines on scans.
 - Page counters such as "หน้าที่ x/y" restart in each appendix. They are removed, never used as page numbers.
+- On OCR pages, lines OCR read also match when they say the same past what OCR is unsure of, or read alike, at about the same height, so a header OCR misreads on one page still goes. Lines only alike, lines a little further from the edge than the band, and footers numbered only by a number at their end are removed from each page where they repeat on that page and on two others or more, one of them next to it. Two pages that are copies of one page, sharing half their body's lines or more, do not count for each other. A label repeated on every other page is content and stays (ticket 22).
 
 **OCR adapters**
 
