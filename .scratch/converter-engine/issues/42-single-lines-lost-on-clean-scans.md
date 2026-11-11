@@ -139,3 +139,7 @@
 - **Checked after the fixes:**
   - The two samples that changed give the same outputs as before the review.
   - pytest (741 passed, 1 skipped); `pytest -m ocr` on `test_paddle.py` (14 passed); mypy.
+
+**2026-11-11, at the release**
+
+The known limitation of decision 5 went on the what's-new page with the wording the user agreed: "บนหน้าสแกน บางบรรทัดอาจยังหายไปทั้งบรรทัดโดยไม่มีอะไรบอก ตรวจกับต้นฉบับก่อนนำไปใช้". A known limitation must point to an open ticket, so it points to ticket 46, opened for the lines this fix still loses.
