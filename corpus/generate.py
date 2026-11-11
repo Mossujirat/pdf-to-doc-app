@@ -874,6 +874,91 @@ SIDE_PANEL = [
     "บัญชี 123-4-56789-0",
 ]
 
+# Blocks of details under their headings, two by two, in the body's own type, as on the five-page
+# sample agreement (ticket 39): the bank and the account on the left, the transfer and the
+# signatories on the right, each block starting on a row of its own. Lines 16 points apart.
+FUNDS_INTRO = "ผู้ให้ทุนจะโอนเงินเข้าบัญชีของผู้รับทุนตามรายละเอียดต่อไปนี้"
+BANK_BLOCKS = [
+    ["ชื่อธนาคารและที่อยู่", "ธนาคารตัวอย่าง จำกัด (มหาชน)", "เลขที่ 99 ถนนสีลม เขตบางรัก", "กรุงเทพมหานคร"],
+    ["ชื่อบัญชีและเลขที่บัญชี", "มหาวิทยาลัยตัวอย่าง", "เลขที่บัญชี 123-4-56789-0"],
+]
+TRANSFER_AND_SIGNATORY_BLOCKS = [
+    ["วิธีการโอนเงิน", "โอนผ่านระบบ SWIFT รหัส EXAMTHBK"],
+    [
+        "ผู้มีอำนาจลงนาม",
+        "ชื่อ นายสมชาย ใจดี ผู้อำนวยการศูนย์วิจัยตัวอย่าง",
+        "ตำแหน่ง ผู้อำนวยการศูนย์วิจัยตัวอย่างแห่งชาติ",
+        "ในนามสำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยี",
+        "แห่งชาติ กระทรวงการอุดมศึกษาตัวอย่าง",
+    ],
+]
+FUNDS_CLOSE = "ภายในหนึ่งเดือนหลังสิ้นสุดสัญญา ผู้รับทุนจะคืนเงินที่เหลือทั้งหมดแก่ผู้ให้ทุน"
+# A table set apart without rules, in one type, as on the 110-page sample contract: each result
+# beside who bears its costs, in lines 16 and 21 points apart. Its rows start together on both
+# sides, as blocks side by side do not, so it is read row by row.
+COSTS_INTRO = "ค่าใช้จ่ายในการบริหารจัดการผลงานแต่ละรายการ มีผู้รับผิดชอบดังนี้"
+COST_ROWS = [
+    (
+        [
+            "3.1 ต้นแบบผลิตภัณฑ์กาวชีวภาพจากลิกนิน",
+            "สำหรับอุตสาหกรรมไม้แปรรูปและเฟอร์นิเจอร์",
+            "รวมถึงสูตรการผลิตและกระบวนการทดสอบ",
+            "ตามมาตรฐานผลิตภัณฑ์อุตสาหกรรม",
+        ],
+        ["สวทช. และบริษัทตัวอย่าง", "จำกัด ร่วมกัน", "สัดส่วนห้าสิบต่อห้าสิบ", "ตามการมีส่วนร่วมจริง"],
+    ),
+    (
+        [
+            "3.2 กระบวนการปรับปรุงสมบัติทางกายภาพ",
+            "และเคมีของกากลิกนินจากโรงงานต้นแบบ",
+            "เพื่อใช้เป็นวัตถุดิบในการผลิตกาวชีวภาพ",
+            "ในระดับอุตสาหกรรมขนาดกลาง",
+        ],
+        ["บริษัทตัวอย่าง จำกัด", "เป็นผู้บริหารจัดการ", "โดยแจ้ง สวทช.", "ทุกหกเดือน"],
+    ),
+]
+
+
+def in_blocks(blocks: list[list[str]], *, x: float, starts: list[float], pitch: float = 16) -> list[Styled]:
+    """Each block's lines in 12 points, `pitch` points apart, the first of each on the baseline in `starts` beside it."""
+    return [
+        Styled(line, size=12, x=x, y=start + number * pitch)
+        for block, start in zip(blocks, starts, strict=True)
+        for number, line in enumerate(block)
+    ]
+
+
+def headed_blocks_page() -> list[Styled]:
+    """The intro, the blocks two by two from 40 points under it, and the closing line under them."""
+    top = TOP + 40
+    return [
+        Styled(FUNDS_INTRO, size=12, y=TOP),
+        *in_blocks(BANK_BLOCKS, x=72, starts=[top, top + 80]),
+        *in_blocks(TRANSFER_AND_SIGNATORY_BLOCKS, x=330, starts=[top + 16, top + 72]),
+        Styled(FUNDS_CLOSE, size=12, y=top + 180),
+    ]
+
+
+def cost_table_page() -> list[Styled]:
+    """The intro, then COST_ROWS from 40 points under it: results at x 72, their owners at x 330."""
+    top = TOP + 40
+    return [
+        Styled(COSTS_INTRO, size=12, y=TOP),
+        *(
+            line
+            for (results, owners), start in zip(COST_ROWS, [top, top + 84], strict=True)
+            for line in [*in_blocks([results], x=72, starts=[start]), *in_blocks([owners], x=330, starts=[start], pitch=21)]
+        ),
+    ]
+
+
+def cost_row_lines(row: tuple[list[str], list[str]]) -> str:
+    """A row of COST_ROWS as printed lines, as a table without rules is read: results 16 points
+    apart, owners 21, so each owner sits on the line of the result nearest it."""
+    (result_1, result_2, result_3, result_4), (owner_1, owner_2, owner_3, owner_4) = row
+    return "\n".join([f"{result_1} {owner_1}", f"{result_2} {owner_2}", result_3, f"{result_4} {owner_3}", owner_4])
+
+
 # A form's choices, each after a check box, ticked or not (ticket 26): a row's label, then each
 # box and the choice it qualifies, as (box's x, ticked, choice's x, choice).
 CHOICE_ROWS = [
@@ -996,6 +1081,29 @@ TWO_COLUMN_DOCUMENTS = (
                     seed=15,
                 ),
                 reference="".join(PANEL_LETTER) + "\n\n" + "\n".join(SIDE_PANEL),
+            ),
+        ),
+    ),
+    # Blocks of details under their headings side by side in the body's own type, read one column
+    # after the other, and a table of the same type set apart without rules, read row by row (ticket 39).
+    SyntheticDocument(
+        name="headed-blocks-scans",
+        font_file=SARABUN,
+        pages=(
+            SyntheticPage(
+                lines=scanned(headed_blocks_page(), seed=18),
+                reference="\n\n".join(
+                    [
+                        FUNDS_INTRO,
+                        "\n".join(line for block in BANK_BLOCKS for line in block),
+                        "\n".join(line for block in TRANSFER_AND_SIGNATORY_BLOCKS for line in block),
+                        FUNDS_CLOSE,
+                    ]
+                ),
+            ),
+            SyntheticPage(
+                lines=scanned(cost_table_page(), seed=19),
+                reference="\n\n".join([COSTS_INTRO, *map(cost_row_lines, COST_ROWS)]),
             ),
         ),
     ),

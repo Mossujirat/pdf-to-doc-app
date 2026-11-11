@@ -55,6 +55,19 @@ _ON_SHARED_LINES = 0.75
 # two sizes on one baseline are, as are the lines that `_SAME_LINE` groups, more loosely, into one
 # printed line; lines a line of the smaller type apart are not.
 _SAME_BASELINE = 0.25
+# A panel in the body's own type, such as blocks of bank details under their headings beside the
+# signatories, keeps rows of its own (ticket 39): fewer than this share of each side's lines share
+# a baseline with the other side. On the five-page sample agreement, 25 and 29% did; on the
+# 110-page sample contract, tables set apart without rules, in one type, had 44% or more.
+_OWN_ROWS = 0.35
+# And its blocks start on rows of their own, where a table's rows start together on both sides: on
+# the five-page sample agreement, the nearest block starts on the two sides lay 0.44 box heights
+# apart; on the 110-page sample contract's tables, 0.1 at most (see `_SAME_BASELINE`). A block
+# starts at a side's first line, and at a line this many of the side's box heights or more below
+# the one before. On the agreement, lines followed one another 0.85 to 1.09 box heights apart, and
+# blocks 1.70 and 2.25. Measured in box heights rather than the side's own line pitch, so that a
+# side of one-line blocks still has each of them start one.
+_BLOCK_GAP = 1.5
 # Signature blocks side by side are found by their rows to sign on (see `_signature_blocks`): a
 # signing word, or a box that opens with "By:", as English signature blocks name their signer.
 # "By:" is not a row to sign on for placeholders: "Photo by" beside a picture is no signature.
@@ -243,27 +256,45 @@ def _signing_boxes[P: Placed](line: list[P]) -> list[P]:
 
 
 def _panel_columns[P: Placed](boxes: tuple[P, ...], unit: float) -> list[tuple[P, ...]]:
-    """The boxes' columns, left to right, when they are body text and a side panel set in smaller
-    type beside it; otherwise none. Unlike columns of body text, they never take in the band below
-    them (see `_more_of`)."""
+    """The boxes' columns, left to right, when they are body text and a side panel beside it;
+    otherwise none. Unlike columns of body text, they never take in the band below them (see
+    `_more_of`)."""
     columns = _lined_up_columns(boxes, unit)
-    return columns if columns and _set_in_smaller_type(columns) else []
+    return columns if columns and _body_and_side_panel(columns) else []
 
 
-def _set_in_smaller_type[P: Placed](columns: list[tuple[P, ...]]) -> bool:
+def _body_and_side_panel[P: Placed](columns: list[tuple[P, ...]]) -> bool:
     """Whether the columns are body text and a side panel beside it: two columns, one of body text of
-    a few lines at least, the other narrower and set in smaller type, their lines mostly apart (see
-    `_ON_SHARED_LINES`). Tables set apart without rules have more columns, or none of body text."""
+    a few lines at least, the other narrower, their lines mostly apart. A panel in smaller type
+    keeps off the body's baselines (see `_ON_SHARED_LINES`); one in the body's own type keeps rows
+    of its own, and its blocks start on rows of their own (see `_OWN_ROWS`). Tables set apart
+    without rules have more columns, or none of body text, or rows that start together."""
     if len(columns) != 2:
         return False
     for panel, body in (columns, columns[::-1]):
-        smaller = median(map(_height, panel)) <= _SMALLER_TYPE * median(map(_height, body))
         narrower = _right(panel) - _left(panel) < _right(body) - _left(body)
-        if smaller and narrower and len(printed_lines(body)) >= _BODY_LINES and _body_text(body):
-            return _on_shared_baselines(printed_lines(panel), body) < _ON_SHARED_LINES and (
-                _on_shared_baselines(printed_lines(body), panel) < 1
+        if narrower and len(printed_lines(body)) >= _BODY_LINES and _body_text(body):
+            panel_lines, body_lines = printed_lines(panel), printed_lines(body)
+            if median(map(_height, panel)) <= _SMALLER_TYPE * median(map(_height, body)):
+                return _on_shared_baselines(panel_lines, body) < _ON_SHARED_LINES and (
+                    _on_shared_baselines(body_lines, panel) < 1
+                )
+            return (
+                _on_shared_baselines(panel_lines, body) < _OWN_ROWS
+                and _on_shared_baselines(body_lines, panel) < _OWN_ROWS
+                and not any(
+                    _on_one_baseline(start, other) for start in _block_starts(panel_lines) for other in _block_starts(body_lines)
+                )
             )
     return False
+
+
+def _block_starts[P: Placed](lines: list[list[P]]) -> list[P]:
+    """The first box of each block of the lines: the first line, and each line at least `_BLOCK_GAP`
+    of their box heights below the one before."""
+    centres = [_centre(line[0]) for line in lines]
+    gap = _BLOCK_GAP * median(_height(box) for line in lines for box in line)
+    return [lines[0][0]] + [line[0] for line, before, after in zip(lines[1:], centres, centres[1:]) if after - before >= gap]
 
 
 def _on_shared_baselines[P: Placed](lines: list[list[P]], beside: tuple[P, ...]) -> float:

@@ -93,7 +93,7 @@ A page whose content is printed a half turn from the page, so a reader turns the
 _Avoid_: rotated page, inverted page
 
 **Column**:
-Text set beside other text on a page, with a clear gap between them, which a reader reads to its end before the text beside it: one of the two columns of a terms-and-conditions page, a panel of addresses beside a letter, or one of several signature blocks side by side. A table's columns are not columns in this sense, nor are labels set apart from their values, as on a form: they are read row by row.
+Text set beside other text on a page, with a clear gap between them, which a reader reads to its end before the text beside it: one of the two columns of a terms-and-conditions page, a panel of addresses beside a letter, one of several signature blocks side by side, or a column of details under their headings, such as a bank account, beside another, such as the signatories. A table's columns are not columns in this sense, nor are labels set apart from their values, as on a form: they are read row by row.
 _Avoid_: text block, side-by-side text
 
 **Picture**:

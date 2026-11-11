@@ -4,21 +4,25 @@ from itertools import zip_longest
 from typing import Literal
 
 import pytest
-from generate import PAYMENT_PAGE, SIGNING_PAGE
+from generate import PAYMENT_PAGE, SIGNING_PAGE, cost_table_page, headed_blocks_page
 from markdown_reader import page_texts
 from pdf_builder import LEFT, LINE_HEIGHT, TOP, Rotated, Spaced, Styled, pdf
 from test_ocr_pages import (
     ENGLISH_LEFT,
+    HEADED_BLOCKS_IN_ORDER,
     ENGLISH_RIGHT,
     LABELS_AND_VALUES,
     LETTER,
+    NOT_BLOCKS_OR_PANELS,
     PANEL,
+    PANEL_ON_THE_LETTERS_ROWS,
     SHORT_LINES_BESIDE_OTHER_TEXT,
     SIGN_IN_SHEET,
     SIGNATURE_BLOCKS,
     THAI_LEFT,
     THAI_RIGHT,
     Pieces,
+    assert_each_row_read_before_the_next,
     assert_read_one_after_the_other,
     beside_a_letter,
     on_rows,
@@ -267,9 +271,37 @@ def test_a_side_panel_in_smaller_type_drawn_across_is_read_after_the_letter_besi
     assert_read_one_after_the_other(page, [LETTER, PANEL])
 
 
+def drawn_across(lines: list[Styled]) -> list[Styled]:
+    """The lines in the order a PDF drawing them line by line across the page draws them: down, then left to right."""
+    return sorted(lines, key=lambda line: (line.y or 0, line.x))
+
+
+def test_headed_blocks_side_by_side_drawn_across_are_read_one_column_after_the_other() -> None:
+    # Blocks in the body's own type, on rows of their own (ticket 39).
+    [page] = markdown_pages(pdf(drawn_across(headed_blocks_page())))
+
+    assert_read_one_after_the_other(page, HEADED_BLOCKS_IN_ORDER)
+
+
+def test_a_table_of_multi_line_cells_drawn_across_is_read_row_by_row() -> None:
+    # Its rows start together on both sides, as blocks side by side do not.
+    [page] = markdown_pages(pdf(drawn_across(cost_table_page())))
+
+    assert_each_row_read_before_the_next(page)
+
+
+def test_a_panel_in_the_letters_own_type_on_its_rows_drawn_across_is_read_row_by_row() -> None:
+    # Every panel line shares a letter line's baseline, as labels' do (ticket 41).
+    lines = drawn_across(NOT_BLOCKS_OR_PANELS[PANEL_ON_THE_LETTERS_ROWS])
+    [page] = markdown_pages(pdf(lines))
+
+    assert_read_one_after_the_other(page, [[line.text for line in lines]])
+
+
 # Labels set apart from their values, as on a form, are drawn line by line across the page too,
-# and read row by row. So are a side panel in the letter's own type and bank details beside the
-# signatories: their lines share baselines with the text beside them, as labels' do (tickets 41, 39).
+# and read row by row. So are a side panel in the letter's own type and bank details paired line by
+# line with the signatories: their lines share baselines with the text beside them, as labels' do
+# (ticket 41).
 # So is a table whose header has two signing columns.
 
 
