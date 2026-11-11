@@ -64,3 +64,20 @@ Each is its own task: `/grill-with-docs` if anything is still open, then `/imple
 ## Deployed
 
 **2026-11-04:** PR #23 merged, then PR #24 with the release entry, as worded and approved by the user. Staging passed its smoke test at `6467c4f` (CER 0.000 on both corpus files, 2.3 and 1.4 s per OCR page); production runs `6467c4f`, and its `/health`, what's-new page and `/source-code` answer as they should. The two checks still open from the launch stay open.
+
+## The next round: deployed 2026-11-11
+
+The user chose this order on 2026-11-10. Each ticket was grilled, built and reviewed on its own branch and merged on its own PR:
+
+| Ticket | PR | What it fixed |
+| --- | --- | --- |
+| converter-engine 42 | #26 | single lines lost on clean scans, read again blurred |
+| converter-engine 39 | #27 | headed blocks side by side, in the body's own type, read a column at a time |
+| converter-engine 22 | #28 | page furniture on scans that OCR reads differently, or a little further in |
+| converter-engine 43 | #29 | list markers that OCR reads joined to their word |
+
+- **The release,** PR #30. It lists the four fixes, worded and approved by the user. It adds ticket 42's known limitation, which points to ticket 46, opened for the lines still lost. The limitations for 39 and 22 had already been reworded to point to tickets 41 and 44.
+- **Opened on the way:** 44 (furniture still left), 45 (list markers OCR does not read), 46 (lines still lost unmarked). All three need triage. 41 is `needs-info`.
+- **Deployed:** staging passed its smoke test at `24b8cf0`, with a CER of 0.000 on both corpus files, at 2.8 and 1.4 s per OCR page. Production runs `24b8cf0`. Its `/health`, its what's-new page with the release of 11 November, and `/source-code` answer as they should. Staging was stopped.
+- **Branches:** the round's five merged branches were deleted locally and on GitHub. The eight older ones stay.
+- **Still open from the launch:** a file near 50 MB through Funnel, and Funnel on IPv6.
