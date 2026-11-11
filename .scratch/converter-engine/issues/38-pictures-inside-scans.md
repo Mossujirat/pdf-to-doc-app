@@ -27,3 +27,8 @@ The 10-page scanned Thai contract of ticket 42 was converted on 2026-11-10 with 
   - Ticket 24 fixed this for OCR pages that are not scans. It still happens on scans.
 - **Junk damages real text, not only adds to it.** On the signing page, junk read from a signature joined the printed party label on the same signing row, and the uncertain mark covered the label too. One label came out garbled, and another lost a tone mark.
 - **The initials keep page furniture from matching.** OCR reads the initials differently on each page, and they share a baseline with a footer line, so that line never matches across pages (ticket 22's comment of the same day). Triage this ticket with 22, or before it.
+
+**2026-11-11, from ticket 22**
+
+- **A footer line beside initials is now removed with them.** Ticket 22 matches furniture on OCR pages by what OCR is sure of, so the junk on the footer's row no longer stops the match. The whole row goes, its junk too.
+- **Junk rows of their own stay,** such as a row of dots or a stray letter under the initials. On the 10-page contract, 5 such rows are left on 4 pages.

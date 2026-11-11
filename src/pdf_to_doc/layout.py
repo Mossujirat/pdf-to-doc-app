@@ -1,8 +1,10 @@
 """Page layout: turns the printed rows of each page, read from its text layer or with OCR, into document structure."""
 
 import re
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from dataclasses import dataclass, replace
+from difflib import SequenceMatcher
 
 from pdf_to_doc.model import (
     DEEPEST_HEADING,
@@ -19,7 +21,7 @@ from pdf_to_doc.model import (
     TableCell,
 )
 from pdf_to_doc.thai import DIGITS, MARK, THAI_CONSONANT, THAI_LETTER, join_lines, repair
-from pdf_to_doc.uncertain import Piece, uncertain_spans
+from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece, uncertain_spans
 from pdf_to_doc.words import first_word
 
 # Rows this close to the top or bottom edge (share of page height) can be page furniture.
@@ -35,6 +37,34 @@ _PAGE_COUNTER = re.compile(
 )
 # A row that is only a page number, such as "7", "- 7 -" or "7/12".
 _BARE_PAGE_NUMBER = re.compile(rf"{_DASHES}(?P<page>{_NUMBER})(?:\s*/\s*{_NUMBER})?{_DASHES}")
+# A number at the end of a row, after a space, with no word for "page" before it, as a form's
+# footer numbers its pages: "Form 1.3 5", "Ref: 0042 2/7". On an OCR page it can be a page number.
+_TRAILING_NUMBER = re.compile(rf"\s(?P<page>{_NUMBER})(?:\s*/\s*{_NUMBER})?$")
+# On an OCR page, page furniture is also found where OCR reads it a little differently on each
+# page, and a little further in than the edge band: within this reach, a share of the page's
+# height from an edge, as on a scan pasted into a larger page. Measured on the sample contracts
+# (2026-11-11): footers 81% of the way down, page numbers at 87-89%, a header's second line at 10.7%.
+_OCR_EDGE_REACH = 0.20
+# Rows that OCR read within the reach are the same furniture when their middles lie less than this
+# share of the page's height apart: the same furniture moved by up to 1% from page to page on the
+# sample contracts, as the scans sat a little differently.
+_SAME_HEIGHT = 0.015
+# They must also say alike what OCR is sure of: the same, or, when both are at least
+# `_ALIKE_LENGTH` characters long, this alike by difflib's ratio, unless they differ in their
+# digits alone, which says different numbers. On the sample contracts, letterheads and footers
+# OCR misread a little scored 0.9 or more; two lines of a body that differ in a word scored 0.81,
+# and a form's label repeated in the body 0.79-0.85. Letterheads OCR garbled worse, at 0.80-0.89,
+# are left in. Shorter rows, such as a word or a page number, must be the same: one letter
+# misread already changes their ratio by a fifth or more.
+_ALIKE = 0.9
+_ALIKE_LENGTH = 8
+# Inside the edge band, a row OCR read is furniture when another page has the same furniture.
+# Beyond it, or with its page number found only at the end of the row, it must repeat on at
+# least this many pages, one of them next to its own: a form's label repeated on every other
+# page, as on the pages of researchers' résumés, is its content. On the sample contracts such
+# labels sat at 12-14% on alternate pages.
+_FURTHER_IN_PAGES = 3
+_DIGIT = re.compile(r"\d")  # Thai digits too
 # A numbered list item starts with "1.", "1)", "(1)", "1.2" or "1.2.", or with a Thai
 # letter in brackets, "(ก)" or "ก)", followed by a space. "ก." is left out: it is
 # also how Thai abbreviates ตำบล, อำเภอ and the like.
@@ -435,6 +465,8 @@ def _edge(top: float, bottom: float, page: PageRows) -> str | None:
 def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
     """Drop page furniture: rows at the same edge (top or bottom) that repeat on two or more
     pages, and images of the same size in about the same place at an edge of two or more pages.
+    On OCR pages, rows that OCR read alike are furniture too, some of them further in and on
+    three pages or more (see `_furniture_read_alike`).
 
     Page numbers must follow the pages: a printed number repeats only if it
     stays the same distance from the PDF's own page number. A row near the edge
@@ -443,14 +475,16 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
     """
     keys = [[_furniture_key(row, page, number) for row in page.rows] for number, page in enumerate(pages, 1)]
     pages_per_key = Counter(key for page_keys in keys for key in set(page_keys) if key)
+    read_alike = _furniture_read_alike(pages)
     images = [[(image, _edge(image.top, image.bottom, page)) for image in page.images] for page in pages]
     return [
         replace(
             page,
             rows=tuple(
                 row
-                for row, key in zip(page.rows, page_keys)
+                for row_index, (row, key) in enumerate(zip(page.rows, page_keys))
                 if not (key and (pages_per_key[key] >= 2 or _is_counter_only(row)))
+                and (page_index, row_index) not in read_alike
             ),
             images=tuple(
                 image
@@ -458,7 +492,7 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
                 if not (edge and any(_repeats(image, edge, others) for others in images if others is not page_images))
             ),
         )
-        for page, page_keys, page_images in zip(pages, keys, images)
+        for page_index, (page, page_keys, page_images) in enumerate(zip(pages, keys, images))
     ]
 
 
@@ -493,10 +527,128 @@ def _furniture_key(row: Row, page: PageRows, number: int) -> str | None:
     text = " ".join(row.text.split())
     if edge is None or not any(char.isalnum() for char in text):
         return None
-    if counter := _BARE_PAGE_NUMBER.fullmatch(text) or _PAGE_COUNTER.search(text):
+    if counter := _page_counter(text):
         offset = int(counter["page"]) - number
         return f"{edge}|{text[: counter.start()].strip()}|page{offset:+d}"
     return f"{edge}|{text}"
+
+
+def _page_counter(text: str) -> re.Match[str] | None:
+    """The page number in a row's text, when the row is only one or ends in a page counter."""
+    return _BARE_PAGE_NUMBER.fullmatch(text) or _PAGE_COUNTER.search(text)
+
+
+@dataclass(frozen=True)
+class _Reading:
+    """How a row that OCR read near an edge would look if it were page furniture: what OCR is sure
+    of in it, and its page number's distance from the PDF page number, if it has one."""
+
+    page: int  # index of its page
+    row: int  # index of the row on the page
+    edge: str
+    middle: float  # share of the page's height
+    in_band: bool  # it starts or ends in the edge band
+    text: str
+    offset: int | None = None
+    trailing: bool = False  # the page number is a number at the end of the row
+
+
+def _furniture_read_alike(pages: list[PageRows]) -> set[tuple[int, int]]:
+    """The rows on OCR pages, as (page index, row index), that are page furniture by what OCR read:
+    rows near the same edge of other OCR pages, at about the same height, say alike what OCR is
+    sure of in them (see `_OCR_EDGE_REACH`). So a letterhead read a little differently on each page
+    matches, and a footer whose line holds junk OCR read in initials beside it. Text from the text
+    layer is matched by `_furniture_key` alone, as on a text page.
+
+    In the edge band, a row that says the same as on one other page will do. A row that is only
+    alike, or further in, or with a page number found only at the end of the row, must repeat on
+    `_FURTHER_IN_PAGES` pages, one of them next to its own: two lines of a body a word apart can be
+    as alike as a letterhead OCR misread. Two pages that share half the lines of either's body or more are copies of one page, such as a
+    form filled in for each of several people: what repeats on them is their content, so neither
+    counts for the other. Pages that share a line or two, as a signatory's name, are not.
+    """
+    readings = [reading for index, page in enumerate(pages) if page.kind == "ocr" for reading in _readings(page, index)]
+    body_lines = {index: _body_lines(page) for index, page in enumerate(pages) if page.kind == "ocr"}
+
+    def copies(page: int, other: int) -> bool:
+        shared = len(body_lines[page] & body_lines[other])
+        return shared > 0 and 2 * shared >= min(len(body_lines[page]), len(body_lines[other]))
+
+    by_edge: dict[str, list[_Reading]] = {}
+    for reading in sorted(readings, key=lambda reading: reading.middle):
+        by_edge.setdefault(reading.edge, []).append(reading)
+    found: set[tuple[int, int]] = set()
+    for edge_readings in by_edge.values():
+        middles = [reading.middle for reading in edge_readings]
+        for reading in edge_readings:
+            near = edge_readings[bisect_left(middles, reading.middle - _SAME_HEIGHT) : bisect_right(middles, reading.middle + _SAME_HEIGHT)]
+            alike = [
+                other
+                for other in near
+                if other.page != reading.page and _alike(reading, other) and not copies(reading.page, other.page)
+            ]
+            pages_alike = {other.page for other in alike}
+            if reading.in_band and not reading.trailing and any(other.text == reading.text for other in alike):
+                found.add((reading.page, reading.row))
+            elif len(pages_alike) >= _FURTHER_IN_PAGES - 1 and pages_alike & {reading.page - 1, reading.page + 1}:
+                found.add((reading.page, reading.row))
+    return found
+
+
+def _readings(page: PageRows, index: int) -> list[_Reading]:
+    """Each way a row that OCR read near an edge of the page can be read as furniture: as it stands,
+    and, should a number end it, with that number as its page number. A page counter, as
+    `_furniture_key` finds one, is read as one only. A row that holds text from the text layer
+    too is left to `_furniture_key`, which matches it exactly."""
+    readings: list[_Reading] = []
+    for row_index, row in enumerate(page.rows):
+        top, bottom = row.y0 / page.height, row.y1 / page.height
+        edge = "top" if top <= _OCR_EDGE_REACH else "bottom" if bottom >= 1 - _OCR_EDGE_REACH else None
+        text = _sure_text(row)
+        read = bool(row.pieces) and all(piece.confidence is not None for piece in row.pieces)
+        if edge is None or not read or not any(char.isalnum() for char in text):
+            continue
+        reading = _Reading(index, row_index, edge, (top + bottom) / 2, _edge(row.y0, row.y1, page) is not None, text)
+        if counter := _page_counter(text):
+            readings.append(replace(reading, text=text[: counter.start()].strip(), offset=int(counter["page"]) - index))
+            continue
+        readings.append(reading)
+        if number := _TRAILING_NUMBER.search(text):
+            readings.append(
+                replace(reading, text=text[: number.start()].strip(), offset=int(number["page"]) - index, trailing=True)
+            )
+    return readings
+
+
+def _body_lines(page: PageRows) -> set[str]:
+    """What OCR is sure of in the page's rows away from its edges (see `_OCR_EDGE_REACH`), each at
+    least `_ALIKE_LENGTH` characters long, so that a word that repeats, such as a label, is not
+    taken for a copied line."""
+    lines = (
+        _sure_text(row)
+        for row in page.rows
+        if row.y0 > _OCR_EDGE_REACH * page.height and row.y1 < (1 - _OCR_EDGE_REACH) * page.height
+    )
+    return {line for line in lines if len(line) >= _ALIKE_LENGTH}
+
+
+def _sure_text(row: Row) -> str:
+    """The row's text without what OCR is unsure of, such as junk read in initials beside a footer;
+    all of it when OCR is sure of none."""
+    sure = [piece.text for piece in row.pieces if piece.confidence is None or piece.confidence >= LOW_CONFIDENCE]
+    return " ".join(" ".join(sure).split()) or " ".join(row.text.split())
+
+
+def _alike(reading: _Reading, other: _Reading) -> bool:
+    """Whether two readings say the same furniture (see `_OCR_EDGE_REACH`)."""
+    if reading.offset != other.offset:
+        return False
+    if reading.text == other.text:
+        return True
+    if min(len(reading.text), len(other.text)) < _ALIKE_LENGTH or _DIGIT.sub("", reading.text) == _DIGIT.sub("", other.text):
+        return False
+    matcher = SequenceMatcher(None, reading.text, other.text, autojunk=False)
+    return matcher.real_quick_ratio() >= _ALIKE and matcher.quick_ratio() >= _ALIKE and matcher.ratio() >= _ALIKE
 
 
 def _is_counter_only(row: Row) -> bool:
