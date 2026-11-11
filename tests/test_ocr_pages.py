@@ -6,7 +6,17 @@ from typing import Literal
 import numpy as np
 import pytest
 from fake_ocr import FakeEngine, Sideways, Boxed, Unsure, UpsideDown, marks_over
-from generate import CRISP_PAGE
+from generate import (
+    BANK_BLOCKS,
+    COST_ROWS,
+    CRISP_PAGE,
+    FUNDS_CLOSE,
+    FUNDS_INTRO,
+    TRANSFER_AND_SIGNATORY_BLOCKS,
+    cost_table_page,
+    headed_blocks_page,
+    in_blocks,
+)
 from markdown_reader import page_texts
 from pdf_builder import LEFT, LINE_HEIGHT, TOP, Drawn, Rotated, Scan, Styled, pdf, remapped
 
@@ -767,6 +777,24 @@ def test_a_side_panel_set_in_smaller_type_is_read_after_the_letter_beside_it() -
     assert_read_one_after_the_other(page, [LETTER, PANEL])
 
 
+# Blocks of details under their headings, two by two, in the body's own type, as on the five-page
+# sample agreement and the corpus's `headed-blocks-scans`: the bank and the account on the left, the
+# transfer and the signatories on the right. The right-hand blocks start on rows of their own, half
+# a line or a line off the left's (ticket 39). Lines 16 points apart; FakeEngine's boxes 18 tall.
+HEADED_BLOCKS_IN_ORDER = [
+    [FUNDS_INTRO],
+    [line for block in BANK_BLOCKS for line in block],
+    [line for block in TRANSFER_AND_SIGNATORY_BLOCKS for line in block],
+    [FUNDS_CLOSE],
+]
+
+
+def test_headed_blocks_side_by_side_on_rows_of_their_own_are_read_one_column_after_the_other() -> None:
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(headed_blocks_page())))
+
+    assert_read_one_after_the_other(page, HEADED_BLOCKS_IN_ORDER)
+
+
 def test_a_paragraph_right_under_signature_blocks_is_read_after_them_all() -> None:
     # No blank line parts it from the blocks: it runs across them, so it is no block's.
     closing = "หมายเหตุ สัญญานี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาต่างยึดถือไว้ฝ่ายละหนึ่งฉบับ"
@@ -784,7 +812,19 @@ SIGN_IN_SHEET: list[Pieces] = [
     [(72, "2"), (130, "นางสาวสมหญิง รักดี"), (300, "สมหญิง"), (430, "สมหญิง")],
     [(72, "3"), (130, "นายสมศักดิ์ มีสุข"), (300, "สมศักดิ์"), (430, "สมศักดิ์")],
 ]
+# A letter with a panel in its own type on its rows: the panel's blocks start below the letter's
+# first line, but every panel line shares a letter line's baseline (ticket 41).
+LONGER_LETTER = [
+    *LETTER,
+    "หากมีข้อสงสัยประการใดโปรดติดต่อกลับมาที่บริษัท",
+    "ในวันและเวลาทำการตามที่อยู่ที่ระบุไว้ข้างนี้",
+]
+PANEL_ON_THE_LETTERS_ROWS = "a panel in the letter's own type on its rows, its blocks starting below the letter's first line"
 NOT_BLOCKS_OR_PANELS: dict[str, list[Styled]] = {
+    PANEL_ON_THE_LETTERS_ROWS: [
+        *in_blocks([LONGER_LETTER], x=72, starts=[TOP]),
+        *in_blocks([PANEL[:2], PANEL[2:4]], x=440, starts=[TOP + 16, TOP + 64]),
+    ],
     "a sign-in sheet with two signing columns": on_rows(SIGN_IN_SHEET),
     "long labels beside values in smaller type that wrap": [
         Styled("ชื่อโครงการวิจัยตามที่ได้รับอนุมัติ", size=12, y=TOP),
@@ -807,8 +847,27 @@ def test_rows_that_only_look_like_signature_blocks_or_a_side_panel_are_read_row_
     assert_read_one_after_the_other(page, [[line.text for line in by_row]])
 
 
-# Still read row by row: a panel in the letter's own type shares its baselines, and bank details
-# beside the signatories are set like labels and values (tickets 41 and 39).
+# A table set apart without rules, in one type, as on the 110-page sample contract and the corpus's
+# `headed-blocks-scans`: each result beside who bears its costs, in lines 16 and 21 points apart,
+# so only each row's first lines share a baseline. Its rows start together on both sides, as
+# blocks side by side do not (ticket 39).
+
+
+def assert_each_row_read_before_the_next(page: str) -> None:
+    """Each row's results and owners are read before the next row's, its owners beside its results rather than after them all."""
+    [(results, owners), (next_results, _)] = COST_ROWS
+    assert page.index(owners[0]) < page.index(results[-1]), page
+    assert max(page.index(line) for line in [*results, *owners]) < page.index(next_results[0]), page
+
+
+def test_a_table_of_multi_line_cells_whose_rows_start_together_is_read_row_by_row() -> None:
+    [page] = markdown_pages(convert(pdf(Scan(["ภาพสแกน"], dpi=50)), ocr=FakeEngine(cost_table_page())))
+
+    assert_each_row_read_before_the_next(page)
+
+
+# Still read row by row: a panel in the letter's own type that shares its baselines, and bank
+# details paired line by line with the signatories, are set like labels and values (ticket 41).
 SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
     "a letter with a panel of addresses in its own type": [
         [(72, LETTER[0]), (440, PANEL[0])],
@@ -816,7 +875,7 @@ SHORT_LINES_BESIDE_OTHER_TEXT: dict[str, list[Pieces]] = {
         [(72, LETTER[2]), (440, PANEL[2])],
         [(72, LETTER[3]), (440, PANEL[3])],
     ],
-    "bank details beside the signatories": [
+    "bank details paired line by line with the signatories": [
         [(72, "ธนาคาร กรุงไทย สาขาสีลม"), (330, "นายสมชาย ใจดี")],
         [(72, "ชื่อบัญชี มหาวิทยาลัยตัวอย่าง"), (330, "หัวหน้าโครงการ")],
         [(72, "เลขที่บัญชี 123-4-56789-0"), (330, "นางสาวสมหญิง รักดี")],

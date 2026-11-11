@@ -74,12 +74,9 @@ KNOWN_LIMITATIONS = (
         ("converter-engine/issues/22-page-furniture-on-scans.md",),
     ),
     KnownLimitation(
-        "แถบข้อความข้างจดหมายที่ตัวอักษรขนาดเท่าเนื้อความ และเลขบัญชีที่วางข้างรายชื่อผู้ลงนาม บนหน้าสแกน"
-        " ยังถูกอ่านปนกับข้อความข้างๆ เลขบัญชีอาจไปอยู่ผิดที่",
-        (
-            "converter-engine/issues/39-bank-details-beside-signatories.md",
-            "converter-engine/issues/41-side-panels-in-the-bodys-own-type.md",
-        ),
+        "แถบข้อความข้างจดหมาย หรือรายละเอียดบัญชีข้างรายชื่อผู้ลงนาม ที่ตัวอักษรขนาดเท่าเนื้อความและเรียงบรรทัดตรงกับข้อความข้างๆ"
+        " บนหน้าสแกน ยังถูกอ่านปนกัน เลขบัญชีอาจไปอยู่ผิดที่",
+        ("converter-engine/issues/41-side-panels-in-the-bodys-own-type.md",),
     ),
     KnownLimitation(
         "ข้อความที่เขียนเฉียงบนหน้าสแกน เช่น ตัวลายน้ำเอง หรือข้อความที่เขียนคร่อมสำเนาบัตรประชาชน ไม่ถูกอ่าน",
