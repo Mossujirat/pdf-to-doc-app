@@ -28,7 +28,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync
-uv run pdf-to-doc-models                         # once: fetch the OCR models (about 13 MB)
+uv run pdf-to-doc-models                         # once: fetch the OCR and layout models (about 140 MB)
 uv run pdf-to-doc document.pdf -o document.md
 uv run pdf-to-doc document.pdf --to docx         # writes document.docx; -o document.docx does the same
 uv run pdf-to-doc locked.pdf --password "..."   # a PDF that needs a password to open

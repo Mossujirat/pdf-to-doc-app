@@ -1,6 +1,6 @@
 """The conversion function: the single entry point the CLI and the web service wrap."""
 
-from collections.abc import Iterable, Mapping, Set
+from collections.abc import Callable, Iterable, Mapping, Set
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -10,7 +10,7 @@ from pdf_to_doc.intake import MAX_OUTPUTS, IntakeError, admit, open_pdf
 from pdf_to_doc.markdown import render_markdown
 from pdf_to_doc.model import Document, KeptImage
 from pdf_to_doc.ocr import OcrEngine
-from pdf_to_doc.paddle import default_engine
+from pdf_to_doc.paddle import default_engine, default_picture_finder
 from pdf_to_doc.pdf_images import KEPT_DPI, lowered
 from pdf_to_doc.pictures import NoPictures, PictureFinder
 from pdf_to_doc.progress import Opened, Progress, ProgressCallback
@@ -59,8 +59,9 @@ def convert(
 
     `password` opens a PDF that needs one. `ocr` reads OCR pages; PaddleOCR does
     by default, and raises `ModelsMissing` if its models are not installed.
-    `pictures` finds the signatures, stamps and pictures inside scans read with OCR; by default
-    none are found.
+    `pictures` finds the signatures, stamps and pictures inside scans read with OCR. It reads the
+    image the engine read, so by default it goes with the engine: PaddleX's layout model with
+    PaddleOCR, which raises `ModelsMissing` likewise, and none found beside an engine given in `ocr`.
     `keep_images` keeps each scan of a PDF as an image of the page instead of reading it with OCR,
     and each picture as itself. Should the outputs then pass MAX_OUTPUTS, the kept images' resolution
     is lowered until they fit, and the summary says to what.
@@ -89,7 +90,7 @@ def convert(
                 pdf,
                 (lambda: ocr) if ocr else default_engine,
                 report,
-                pictures=(lambda: pictures) if pictures else NoPictures,
+                pictures=_finder(pictures, ocr),
                 keep_images=keep_images,
             )
     report(Progress(stage="writing"))
@@ -99,6 +100,14 @@ def convert(
         del outputs  # as large as the limit or more, and of no more use while the images are lowered
         document, outputs = _within_the_limit(document, formats, rest)
     return ConversionResult(outputs=outputs, summary=summarize(document))
+
+
+def _finder(pictures: PictureFinder | None, ocr: OcrEngine | None) -> Callable[[], PictureFinder]:
+    """What gives the picture finder: the one given; or, as it reads the image the engine read, the
+    one that goes with the engine: PaddleX's layout model with PaddleOCR, and none with another."""
+    if pictures:
+        return lambda: pictures
+    return NoPictures if ocr else default_picture_finder
 
 
 def _rendered(document: Document, formats: Set[OutputFormat]) -> dict[OutputFormat, bytes]:

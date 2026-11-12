@@ -29,7 +29,10 @@ DOCKER_SOCKET = "/var/run/docker.sock"
 _API = "/v1.44"
 _LABEL = "pdf-to-doc.sandbox"  # its value is the environment
 _CPUS = 4
-_MEMORY = 2 * 1024**3
+# 3 GiB since the layout model reads scans beside OCR (ticket 38). On the 110-page sample contract,
+# 91 scans, a conversion peaked at 2.19 GiB with no limit, 2.07 GiB without the model; held to 2 GiB,
+# it still ended, at 1.94 GiB, too close to the limit with gVisor's own use on top.
+_MEMORY = 3 * 1024**3
 # Threads count as processes. A conversion with an OCR page had 24 at most, at 4 OCR threads.
 _PROCESSES = 128
 # PaddleX keeps its working folders in /tmp; they stayed empty while a scanned page was read.

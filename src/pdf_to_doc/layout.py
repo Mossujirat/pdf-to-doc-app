@@ -288,29 +288,33 @@ def _across(table: PlacedTable | PlacedIncompleteTable, row: Row) -> bool:
     return table.x0 < row.x1 and row.x0 < table.x1
 
 
-def _behind_text(image: PlacedImage, rows: tuple[Row, ...]) -> bool:
-    """Whether enough rows are printed over the image for it to be the page behind them."""
-    over = [
-        row
+def stands_in(image: PlacedImage, rows_over: int) -> bool:
+    """Whether a placeholder stands for the image, with this many rows printed over it: always for a
+    stamp, wherever it is pressed, even over a whole signature block; for any other image, unless
+    enough rows are printed over it for it to be the page behind them."""
+    return image.stamp_like or rows_over < _BACKGROUND_ROWS
+
+
+def _rows_over(image: PlacedImage, rows: tuple[Row, ...]) -> int:
+    """How many of the rows are printed over the image: their middles lie within it."""
+    return sum(
+        image.x0 <= (row.x0 + row.x1) / 2 <= image.x1 and image.top <= (row.y0 + row.y1) / 2 <= image.bottom
         for row in rows
-        if image.x0 <= (row.x0 + row.x1) / 2 <= image.x1 and image.top <= (row.y0 + row.y1) / 2 <= image.bottom
-    ]
-    return len(over) >= _BACKGROUND_ROWS
+    )
 
 
 def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
-    """What stands in for the image, or None when it is the page behind the text. With images
-    kept, it carries the picture.
+    """What stands in for the image, or None when it is the page behind the text (see `stands_in`).
+    With images kept, it carries the picture.
 
-    A stamp when the image is a ring in colour, wherever it is pressed, even over
-    a whole signature block. A signature when it is small and sits on a row to sign on,
-    or just above or below one. When it is unclear what an image shows, it is only an
+    A stamp when the image is a ring in colour. A signature when it is small and sits on a row to
+    sign on, or just above or below one. When it is unclear what an image shows, it is only an
     image: the converter does not guess.
     """
+    if not stands_in(image, _rows_over(image, page.rows)):
+        return None
     if image.stamp_like:
         return Placeholder("stamp", image.kept_image)
-    if _behind_text(image, page.rows):
-        return None
     small = (
         image.x1 - image.x0 <= _SIGNATURE_MAX_WIDTH * page.width
         and image.bottom - image.top <= _SIGNATURE_MAX_HEIGHT * page.height

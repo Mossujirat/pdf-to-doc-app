@@ -13,3 +13,4 @@ The web service takes PDFs from anyone and runs on gmt, the server that also hol
 - PaddleOCR must be told how many CPUs the container has. It always starts 10 threads, and under a 4-CPU limit that ran almost three times slower (8.8 instead of 3.3 seconds a page).
 - Each conversion pays the OCR model load, about 5–6 seconds, as it already did (ticket 12).
 - gVisor is installed on gmt once and kept up to date.
+- **The memory limit rose to 3 GiB in November 2026,** when a layout model came to read scans beside OCR (ticket 38). A 110-page scanned contract then peaked at 2.19 GiB with no limit, and ended at 1.94 GiB when held to 2 GiB, too close to it. Both were measured in the image under Docker's own runtime, not gVisor.

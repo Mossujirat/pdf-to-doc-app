@@ -25,6 +25,7 @@ from pdf_to_doc.layout import (
     PlacedTable,
     RawCell,
     Row,
+    stands_in,
     with_marker_spaced,
 )
 from pdf_to_doc.pictures import FoundPicture, PictureFinder, a_picture, ring_in_colour
@@ -302,11 +303,18 @@ def _ocr_page(
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
-    found = tuple(picture for picture in found if a_picture(*_sides(picture.box, scale)))
-    # Junk goes first, so that it never stands in for a text-layer row typed over the picture.
-    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, picture.box) for picture in found))
     # Each text-layer row, and where it lies on the image.
     layer = [(row, _turned_row(row, image.turn, text_layer)) for row in text_layer.rows]
+    found = tuple(picture for picture in found if a_picture(*_sides(picture.box, scale)))
+    placed = [_scan_picture(picture, image, scale) for picture in found]
+    # Junk goes first, so that it never stands in for a text-layer row typed over the picture; and only
+    # from a picture that a placeholder will stand for, not one found behind the text.
+    placeheld = [
+        picture.box
+        for picture, on_page in zip(found, placed)
+        if stands_in(on_page, _rows_over(picture.box, boxes, [on_image for _, on_image in layer], scale))
+    ]
+    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, area) for area in placeheld))
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
@@ -363,7 +371,7 @@ def _ocr_page(
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
     pictures = tuple(_turned_image(picture, image.turn, text_layer) for picture in text_layer.images)
-    pictures += tuple(_scan_picture(picture, image, scale) for picture in found)
+    pictures += tuple(placed)
     return PageRows(
         rows=tuple(rows),
         width=width,
@@ -373,6 +381,18 @@ def _ocr_page(
         images=pictures,
         kind="ocr",
     )
+
+
+def _rows_over(area: Box, boxes: tuple[TextBox, ...], layer: list[Row], scale: float) -> int:
+    """How many rows will lie over a picture found in this area of the image, for page layout to
+    tell whether it is the page behind the text (see `layout.stands_in`): the printed lines of what
+    the engine read surely there, and the text-layer rows. Junk is not yet dropped, so it is not
+    counted, as it is not once dropped. The layout model took a whole damaged scan of the corpus for
+    one image."""
+    sure = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE and _centred_in(box, area))
+    x0, y0, x1, y1 = (edge * scale for edge in area)
+    typed = sum(x0 <= (row.x0 + row.x1) / 2 <= x1 and y0 <= (row.y0 + row.y1) / 2 <= y1 for row in layer)
+    return len(printed_lines(sure)) + typed
 
 
 def _sides(box: Box, scale: float) -> tuple[float, float]:

@@ -1,4 +1,5 @@
-"""The default OCR engine: PaddleOCR with the PP-OCRv5 mobile models, on the CPU.
+"""The default OCR engine: PaddleOCR with the PP-OCRv5 mobile models, on the CPU. And the default
+picture finder, which reads scans beside it: PaddleX's PP-DocLayout_plus-L (see `PaddleLayoutFinder`).
 
 The settings come from the October 2026 benchmark (docs/research):
 - The detector's input is capped at 1280 px on its longest side. At full
@@ -19,13 +20,14 @@ import os
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, get_args
 
 import cv2
 import numpy as np
 
-from pdf_to_doc.ocr import Language, OcrEngine, PageImage, TextBox
-from pdf_to_doc.ocr_models import DETECTOR, THAI_RECOGNISER, model_path, models_folder
+from pdf_to_doc.ocr import Box, Language, OcrEngine, PageImage, TextBox
+from pdf_to_doc.ocr_models import DETECTOR, LAYOUT, THAI_RECOGNISER, model_path, models_folder
+from pdf_to_doc.pictures import FoundPicture, PictureFinder, PictureLabel
 
 _DETECTOR_LONGEST_SIDE = 1280
 # Only boxes at least this many times as wide as tall show the slant of the text.
@@ -78,6 +80,9 @@ _EVERY_REGION = 0.01
 # almost three times slower (ADR 0004); the sandbox sets it to its CPU limit.
 THREADS_VARIABLE = "PDF_TO_DOC_OCR_THREADS"
 
+# The layout model's labels for a picture (see `PictureLabel`).
+_PICTURE_LABELS: frozenset[str] = frozenset(get_args(PictureLabel))
+
 # A region the detector found: its four corners on the image, and how it scored.
 Region = tuple[np.ndarray, float]
 
@@ -91,6 +96,69 @@ class Reading(NamedTuple):
     corners: np.ndarray
 
 
+def _quiet_and_offline() -> None:
+    """Before Paddle is imported: never look for the models online, and keep Paddle's own log lines
+    out of the output."""
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+    os.environ.setdefault("GLOG_minloglevel", "2")
+    # Paddle looks for a compiler cache it would only need to build extensions.
+    warnings.filterwarnings("ignore", message="No ccache found", category=UserWarning)
+    for logger in ("paddlex", "paddleocr"):
+        logging.getLogger(logger).setLevel(logging.ERROR)
+
+
+def _threads_set() -> int | None:
+    """How many CPU threads Paddle may use, as the environment says, or None for its default."""
+    threads = os.environ.get(THREADS_VARIABLE)
+    return int(threads) if threads else None
+
+
+def default_picture_finder() -> PictureFinder:
+    """PaddleX's layout model, freshly loaded from the models folder, as the engine is, and for the
+    same reason (see `default_engine`); raises ModelsMissing if it is not there."""
+    return PaddleLayoutFinder(models_folder(), threads=_threads_set())
+
+
+class PaddleLayoutFinder:
+    """Finds pictures inside a page image with PP-DocLayout_plus-L, on the CPU: the regions it
+    labels "image", "chart" or "seal", scored at least its own threshold. Its other labels, such as
+    text, tables, headers and footers, are no picture.
+
+    On the samples' scans it found most signatures, logos and photos, and no seal at all
+    (ticket 38, 2026-11-12); signatures it misses beside a row to sign on are ticket 03's.
+    """
+
+    def __init__(self, models: Path, *, threads: int | None = None) -> None:
+        """Load the model from the models folder; raises ModelsMissing if it is not there.
+        `threads` is how many CPU threads to use, or None for Paddle's default."""
+        path = model_path(models, LAYOUT)
+        _quiet_and_offline()
+        from paddleocr import LayoutDetection
+
+        self._model = LayoutDetection(
+            model_name=LAYOUT.name,
+            model_dir=str(path),
+            device="cpu",
+            **({} if threads is None else {"cpu_threads": threads}),
+        )
+
+    def find(self, image: PageImage) -> tuple[FoundPicture, ...]:
+        rgb = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, 3)
+        # Paddle takes an array's colours in OpenCV's order, blue first.
+        [result] = self._model.predict(np.ascontiguousarray(rgb[..., ::-1]), batch_size=1)
+        return tuple(
+            FoundPicture(_box(region["coordinate"]), region["label"])
+            for region in result["boxes"]
+            if region["label"] in _PICTURE_LABELS
+        )
+
+
+def _box(coordinate: Sequence[float]) -> Box:
+    """A region's box as Paddle gives it, its corners (x0, y0, x1, y1) as NumPy numbers, as plain ones."""
+    x0, y0, x1, y1 = (float(value) for value in coordinate)
+    return x0, y0, x1, y1
+
+
 def default_engine() -> OcrEngine:
     """PaddleOCR, freshly loaded from the models folder.
 
@@ -100,8 +168,7 @@ def default_engine() -> OcrEngine:
     document. Loading again takes under a second; importing Paddle, the slow
     part, happens once per process.
     """
-    threads = os.environ.get(THREADS_VARIABLE)
-    return PaddleOcrEngine(models_folder(), threads=int(threads) if threads else None)
+    return PaddleOcrEngine(models_folder(), threads=_threads_set())
 
 
 class PaddleOcrEngine:
@@ -111,15 +178,9 @@ class PaddleOcrEngine:
         """Load the models from the models folder; raises ModelsMissing if they are not there.
         `threads` is how many CPU threads to use, or None for PaddleOCR's default."""
         detector, recogniser = model_path(models, DETECTOR), model_path(models, THAI_RECOGNISER)
-        # Never look for the models online, and keep Paddle's own log lines out of the output.
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        os.environ.setdefault("GLOG_minloglevel", "2")
-        # Paddle looks for a compiler cache it would only need to build extensions.
-        warnings.filterwarnings("ignore", message="No ccache found", category=UserWarning)
+        _quiet_and_offline()
         from paddleocr import PaddleOCR
 
-        for logger in ("paddlex", "paddleocr"):
-            logging.getLogger(logger).setLevel(logging.ERROR)
         self._ocr = PaddleOCR(
             text_detection_model_name=DETECTOR.name,
             text_detection_model_dir=str(detector),

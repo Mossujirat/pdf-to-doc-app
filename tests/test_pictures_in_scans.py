@@ -3,15 +3,18 @@ image comes out as a placeholder, as a picture on a text page does, and the junk
 it goes with it."""
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal
 
 import pytest
 from fake_ocr import Boxed, FakeEngine, FakePictures, Sideways, UpsideDown
 from generate import CLAUSES, SIGNATURE, SIGNATURE_LINE
 from markdown_reader import page_texts
-from pdf_builder import Drawn, Picture, Scan, Styled, pdf
+from pdf_builder import TOP, Drawn, Picture, Scan, Styled, pdf
 
-from pdf_to_doc import convert
+from pdf_to_doc import ModelsMissing, convert
+from pdf_to_doc.ocr_models import DETECTOR, THAI_RECOGNISER
+from pdf_to_doc.paddle import default_picture_finder
 
 # Lines that both the PDF builder and the fake engine lay out.
 Line = str | Styled | Picture
@@ -92,6 +95,34 @@ def test_text_read_surely_in_a_signature_stays() -> None:
     assert page == "".join(CLAUSES) + "\n\n[ลายเซ็น]\n\nสมชาย" + SIGNATURE_LINE
 
 
+def test_text_unsure_in_a_picture_found_behind_the_text_stays() -> None:
+    # The layout model found a whole damaged scan of the corpus as one image: the page behind its
+    # text, which gets no placeholder (see `layout._placeholder`). Junk is dropped only for one.
+    behind = Picture("photo", 450, 80, y=TOP - 20)
+    unsure = Boxed("ฟฦ๏", 300, TOP + 50, TOP + 58, confidence=0.4)
+
+    [page] = scan_markdown([*BEFORE, unsure, behind, *AFTER])
+
+    assert "[รูปภาพ]" not in page
+    assert "ฟฦ๏" in page
+
+
+def test_text_unsure_in_a_picture_with_text_layer_rows_typed_over_it_stays() -> None:
+    # Found in review: page layout counts the text layer's rows over a picture too, so a picture under
+    # three typed rows gets no placeholder, and the junk dropped from it was lost with nothing in its place.
+    behind = Picture("photo", 450, 90, y=SIGNED_AT)
+    typed = [Styled(f"บันทึกแนบท้ายข้อ {number}", x=100, y=SIGNED_AT + 25 * number) for number in (1, 2, 3)]
+    unsure = Boxed("ฟฦ๏", 420, SIGNED_AT + 70, SIGNED_AT + 78, confidence=0.4)
+    lines: list[Line] = [*BEFORE, behind, *AFTER]
+    source = pdf(Scan(lines, overlay=typed, dpi=100, colour=True))
+
+    result = convert(source, ocr=FakeEngine([*lines, unsure]), pictures=FakePictures(lines))
+
+    markdown = result.output.decode("utf-8")
+    assert "[รูปภาพ]" not in markdown
+    assert "ฟฦ๏" in markdown
+
+
 def test_a_note_typed_over_a_picture_stays_even_where_junk_read_there_holds_fewer_unknown_words() -> None:
     # Found in review: the engine's reading of a text-layer row's place takes the row's place when
     # it holds fewer words outside the word list, but junk read in a picture is then dropped, and
@@ -148,6 +179,18 @@ def test_with_images_kept_the_finder_is_never_asked() -> None:
     convert(pdf(Scan(SIGNING_PAGE, dpi=100, colour=True)), ocr=FakeEngine(SIGNING_PAGE), pictures=finder, keep_images=True)
 
     assert finder.images == []
+
+
+def test_a_missing_layout_model_is_reported_as_missing_ocr_models_are(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The OCR models are there, the layout model is not: `pdf-to-doc-models` fetches it.
+    for model in (DETECTOR, THAI_RECOGNISER):
+        (tmp_path / model.name).mkdir()
+        for file in model.files:
+            (tmp_path / model.name / file).touch()
+    monkeypatch.setenv("PDF_TO_DOC_MODELS", str(tmp_path))
+
+    with pytest.raises(ModelsMissing):
+        default_picture_finder()
 
 
 def test_the_finder_is_asked_once_a_scan() -> None:
