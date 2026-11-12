@@ -149,6 +149,7 @@ class Scan:
     upside_down: bool = False
     landscape: bool = False  # the page itself is A4 on its side, its lines laid out across it
     searchable: Literal["over", "under"] | None = None  # where its lines are hidden as text, if they are
+    colour: bool = False  # scanned in colour, as every scan of the sample contracts is, rather than grey
 
 
 @dataclass(frozen=True)
@@ -312,18 +313,19 @@ def _draw_as_shapes(page: pymupdf.Page, lines: Sequence[Line], font_file: Path) 
 
 
 def _scanned_image(scan: Scan, font_file: Path, rotation: int) -> bytes:
-    """The lines as a grey JPEG, rendered at the scan's resolution, askew and grainy,
-    turned the other way from how a reader turns a sideways page, or round if upside down,
+    """The lines as a grey JPEG, or a colour one, rendered at the scan's resolution, askew and
+    grainy, turned the other way from how a reader turns a sideways page, or round if upside down,
     and turned back by the page's rotation."""
+    colours = pymupdf.csRGB if scan.colour else pymupdf.csGRAY
     with pymupdf.open() as paper:
         _draw_lines(_on_its_side(paper) if scan.sideways or scan.landscape else paper.new_page(), scan.lines, font_file)
         zoom = scan.dpi / 72
         turn = pymupdf.Matrix(zoom, zoom).prerotate(scan.angle - scan.sideways - 180 * scan.upside_down - rotation)
-        pix = paper[0].get_pixmap(matrix=turn, colorspace=pymupdf.csGRAY)
-    pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
-    grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape) if scan.noise else 0
+        pix = paper[0].get_pixmap(matrix=turn, colorspace=colours)
+    pixels = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    grain = np.random.default_rng(scan.seed).normal(0, scan.noise, pixels.shape[:2])[..., None] if scan.noise else 0
     grainy = np.clip(pixels + grain, 0, 255).astype(np.uint8)
-    image = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, grainy.tobytes(), False)
+    image = pymupdf.Pixmap(colours, pix.width, pix.height, grainy.tobytes(), False)
     jpeg: bytes = image.tobytes("jpg", jpg_quality=75)
     return jpeg
 

@@ -12,6 +12,7 @@ from pdf_to_doc.model import Document, KeptImage
 from pdf_to_doc.ocr import OcrEngine
 from pdf_to_doc.paddle import default_engine
 from pdf_to_doc.pdf_images import KEPT_DPI, lowered
+from pdf_to_doc.pictures import NoPictures, PictureFinder
 from pdf_to_doc.progress import Opened, Progress, ProgressCallback
 from pdf_to_doc.reading import read_pdf
 from pdf_to_doc.summary import Summary, summarize
@@ -48,6 +49,7 @@ def convert(
     to: OutputFormat | Set[OutputFormat] = "markdown",
     password: str | None = None,
     ocr: OcrEngine | None = None,
+    pictures: PictureFinder | None = None,
     progress: ProgressCallback | None = None,
     keep_images: bool = False,
 ) -> ConversionResult:
@@ -57,6 +59,8 @@ def convert(
 
     `password` opens a PDF that needs one. `ocr` reads OCR pages; PaddleOCR does
     by default, and raises `ModelsMissing` if its models are not installed.
+    `pictures` finds the signatures, stamps and pictures inside scans read with OCR; by default
+    none are found.
     `keep_images` keeps each scan of a PDF as an image of the page instead of reading it with OCR,
     and each picture as itself. Should the outputs then pass MAX_OUTPUTS, the kept images' resolution
     is lowered until they fit, and the summary says to what.
@@ -81,7 +85,13 @@ def convert(
         with open_pdf(source, password) as pdf:
             report(Opened(source_type="pdf", pages=pdf.page_count))
             report(Progress(stage="reading"))
-            document = read_pdf(pdf, (lambda: ocr) if ocr else default_engine, report, keep_images=keep_images)
+            document = read_pdf(
+                pdf,
+                (lambda: ocr) if ocr else default_engine,
+                report,
+                pictures=(lambda: pictures) if pictures else NoPictures,
+                keep_images=keep_images,
+            )
     report(Progress(stage="writing"))
     outputs = _rendered(document, formats)
     if _size(outputs) > MAX_OUTPUTS and (images := document.kept_images()):

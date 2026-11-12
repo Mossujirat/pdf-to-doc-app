@@ -9,6 +9,7 @@ from typing import ClassVar, Literal
 from pdf_builder import FONT_SIZE, LINE_HEIGHT, TOP, CheckBox, Grid, Picture, Styled, laid_out_grid, laid_out_picture
 
 from pdf_to_doc.ocr import Box, Language, PageImage, TextBox, turned_box
+from pdf_to_doc.pictures import FoundPicture, PictureLabel
 
 # How sure the engine is of a line, unless the line says otherwise.
 CONFIDENT = 0.99
@@ -162,7 +163,15 @@ def _straightened(boxes: tuple[TextBox, ...], angle: float, image: PageImage) ->
 
 def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float]]:
     """Each line's text, box in pixels on the upright sheet, and confidence."""
+    boxes, _ = _laid_out_with_pictures(lines, scale)
+    return boxes
+
+
+def _laid_out_with_pictures(lines: Sequence[Line], scale: float) -> tuple[list[tuple[str, Box, float]], list[tuple[Picture, Box]]]:
+    """Each line's text, box in pixels on the upright sheet, and confidence; and each picture
+    with its box there."""
     boxes = []
+    pictures = []
     baseline: float = TOP
     for entry in lines:
         if isinstance(entry, Boxed):
@@ -179,7 +188,8 @@ def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float
             baseline = grid.next_baseline
             continue
         if isinstance(line, Picture):
-            _, baseline = laid_out_picture(line, baseline)
+            top, baseline = laid_out_picture(line, baseline)
+            pictures.append((line, (line.x * scale, top * scale, (line.x + line.width) * scale, (top + line.height) * scale)))
             continue
         if isinstance(line, CheckBox):
             continue
@@ -189,13 +199,39 @@ def _laid_out(lines: Sequence[Line], scale: float) -> list[tuple[str, Box, float
             right = styled.x + styled.size / 2 * len(styled.text)
             boxes.append((styled.text, _box(styled.x, right, baseline, styled.size, scale), confidence))
         baseline += max(LINE_HEIGHT, styled.size * 1.4) if isinstance(line, Styled) else LINE_HEIGHT
-    return boxes
+    return boxes, pictures
 
 
 def _box(left: float, right: float, baseline: float, size: float, scale: float) -> Box:
     """The box a detector draws around text from `left` to `right` on the baseline, in points,
     as pixels `scale` to a point: about one and a half times the font size tall."""
     return left * scale, (baseline - 1.1 * size) * scale, right * scale, (baseline + 0.4 * size) * scale
+
+
+class FakePictures:
+    """A picture finder that finds each `Picture` of a page where `pdf_builder` draws it, labelled
+    "image", or as `labels` labels its kind of picture. Each image it is asked about is the next
+    page's, as a converter asks once a scan, on the image the engine read last. On a sideways or
+    upside-down page, it finds them where they lie on the image once turned to be read. Asked about
+    an image turned any other way, it finds them turned with that image, and so out of place."""
+
+    def __init__(
+        self, *pages: Sequence[Line] | Sideways | UpsideDown, labels: dict[str, PictureLabel] | None = None
+    ) -> None:
+        self.pages = list(pages)
+        self.labels = labels or {}
+        self.images: list[PageImage] = []  # every image it was asked about
+
+    def find(self, image: PageImage) -> tuple[FoundPicture, ...]:
+        page = self.pages[len(self.images)]
+        self.images.append(image)
+        lines = page.lines if isinstance(page, (Sideways, UpsideDown)) else page
+        off = (image.turn - page.turn) % 360 if isinstance(page, (Sideways, UpsideDown)) else image.turn
+        sheet = (image.height, image.width) if off % 180 else (image.width, image.height)
+        _, pictures = _laid_out_with_pictures(lines, image.dpi / 72)
+        return tuple(
+            FoundPicture(turned_box(box, off, *sheet), self.labels.get(picture.kind, "image")) for picture, box in pictures
+        )
 
 
 class BlankEngine:

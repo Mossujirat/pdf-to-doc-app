@@ -27,6 +27,7 @@ from pdf_to_doc.layout import (
     Row,
     with_marker_spaced,
 )
+from pdf_to_doc.pictures import FoundPicture, PictureFinder, a_picture, ring_in_colour
 from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece
 from pdf_to_doc.words import unknown_words, word_starts
@@ -158,16 +159,17 @@ def softened(image: PageImage) -> PageImage:
     return _image(cv2.GaussianBlur(_pixels(image), (0, 0), _SOFTENING), image.dpi, image.turn)
 
 
-def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows) -> PageRows:
+def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows, finder: PictureFinder | None = None) -> PageRows:
     """The page's rows, read by the engine; a sideways page is turned upright and read again,
-    and so is an upside-down one (see `_read_upright`)."""
+    and so is an upside-down one (see `_read_upright`). On a scan, the finder finds the pictures
+    in the image as it was read, upright."""
     boxes = engine.read(image, LANGUAGES)
     turn = _sideways_turn(engine, image, boxes)
     if turn:
         image = _turned(image, turn)
         boxes = engine.read(image, LANGUAGES)
     image, boxes = _read_upright(engine, image, boxes)
-    return _ocr_page(boxes, image, text_layer)
+    return _ocr_page(boxes, image, text_layer, finder.find(image) if finder else ())
 
 
 def _read_upright(engine: OcrEngine, image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[PageImage, tuple[TextBox, ...]]:
@@ -263,7 +265,9 @@ def _confidence(boxes: tuple[TextBox, ...]) -> float:
     return sum(length * confidence for length, confidence in read) / characters if characters else 0.0
 
 
-def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows) -> PageRows:
+def _ocr_page(
+    boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows, found: tuple[FoundPicture, ...] = ()
+) -> PageRows:
     """The page's rows, in PDF points: the text layer's rows, and what the engine read elsewhere.
 
     Text over a scan, such as a stamped header or a note, is taken from the text
@@ -291,9 +295,16 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     printed lines: a grid with a box that runs through one of its rules (see `_through_a_rule`), or
     with text within it that no cell holds, as where a scan lost part of a rule; and rules that make
     no whole grid, with the rows set out under them (see `_part_ruled`).
+
+    The pictures `found` in a scan's image are pictures on the page (see `_scan_picture`). What the
+    engine read in one unsurely is junk read in its ink, and is dropped; what it read surely there,
+    such as a signer's name printed under a signature, stays.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
+    found = tuple(picture for picture in found if a_picture(*_sides(picture.box, scale)))
+    # Junk goes first, so that it never stands in for a text-layer row typed over the picture.
+    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, picture.box) for picture in found))
     # Each text-layer row, and where it lies on the image.
     layer = [(row, _turned_row(row, image.turn, text_layer)) for row in text_layer.rows]
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
@@ -352,6 +363,7 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
     pictures = tuple(_turned_image(picture, image.turn, text_layer) for picture in text_layer.images)
+    pictures += tuple(_scan_picture(picture, image, scale) for picture in found)
     return PageRows(
         rows=tuple(rows),
         width=width,
@@ -361,6 +373,24 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         images=pictures,
         kind="ocr",
     )
+
+
+def _sides(box: Box, scale: float) -> tuple[float, float]:
+    """The width and height of a box in an image's pixels, in points, its pixels `scale` points apart."""
+    x0, y0, x1, y1 = box
+    return (x1 - x0) * scale, (y1 - y0) * scale
+
+
+def _scan_picture(found: FoundPicture, image: PageImage, scale: float) -> PlacedImage:
+    """A picture found in a scan's image, where it lies on the page as read, in points, its box kept
+    within the image. Whether it is a ring in colour is told by its ink in the image, all of which
+    shows, as no image of its own lets anything through."""
+    x0, y0, x1, y1 = found.box
+    left, top = max(0, int(x0)), max(0, int(y0))
+    right, bottom = min(image.width, max(left + 1, round(x1))), min(image.height, max(top + 1, round(y1)))
+    rgb = _pixels(image)[top:bottom, left:right].astype(np.float64) / 255
+    stamp = ring_in_colour(rgb, (right - left) / (bottom - top))
+    return PlacedImage(left * scale, top * scale, right * scale, bottom * scale, stamp_like=stamp)
 
 
 def _with_check_boxes(texts: list[TextBox], found: list[CheckBox]) -> list[TextBox]:

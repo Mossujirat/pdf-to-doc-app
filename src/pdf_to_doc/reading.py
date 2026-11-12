@@ -4,7 +4,8 @@ A page whose text layer is there but cannot be trusted is also an OCR page. With
 kept, a scan is kept as an image of the page instead, and not read at all. An OCR page
 that is not a scan, such as a page a PDF printer drew as shapes, is rendered from the PDF,
 crisp, and softened before it is read; its pictures are hidden from OCR and become
-placeholders, or are kept, as on a text page.
+placeholders, or are kept, as on a text page. A scan's pictures are part of its image: a
+picture finder finds them there, and they become placeholders.
 """
 
 from collections.abc import Callable, Sequence
@@ -20,6 +21,7 @@ from pdf_to_doc.model import Document, KeptImage, Page, PageKind, Placeholder
 from pdf_to_doc.ocr import OcrEngine, PageImage, read_page, render, softened
 from pdf_to_doc.pdf_images import kept_page, pictures_hidden
 from pdf_to_doc.pdf_text import kept_pictures, text_rows
+from pdf_to_doc.pictures import NoPictures, PictureFinder
 from pdf_to_doc.progress import Progress
 from pdf_to_doc.validation import trusted
 
@@ -58,11 +60,13 @@ def read_pdf(
     ocr: Callable[[], OcrEngine],
     progress: Callable[[Progress], None],
     *,
+    pictures: Callable[[], PictureFinder] = NoPictures,
     keep_images: bool = False,
 ) -> Document:
     """Read every page. `ocr` gives the engine, and is called once, when the first OCR page needs one.
-    With `keep_images`, a scan is kept as an image of the page instead. `progress` hears before each
-    page image is made, and before each OCR page is read."""
+    `pictures` gives the finder of pictures inside a scan, and is called once, when the first scan
+    read with OCR needs one. With `keep_images`, a scan is kept as an image of the page instead.
+    `progress` hears before each page image is made, and before each OCR page is read."""
     pages = list(pdf.pages())
     rows = [text_rows(page) for page in pages]
     # A scan's text layer is checked too, as the text laid over it is kept.
@@ -100,13 +104,18 @@ def read_pdf(
     for index in text_pages:
         rows[index] = in_reading_order(rows[index])
     engines: dict[int, str] = {}
-    # The engine lives only as long as this call: an engine holds what it last read.
+    # The engine and the finder live only as long as this call: each holds what it last read.
     engine: OcrEngine | None = None
+    finder: PictureFinder | None = None
     for count, index in enumerate(ocr_pages, start=1):
         progress(Progress(stage="ocr", current=count, total=len(ocr_pages)))
         if engine is None:
             engine = ocr()
-        rows[index] = read_page(engine, _page_image(pages[index], rows[index], index in crisp), rows[index])
+        # Only a scan holds pictures in its image; another OCR page's are images of their own.
+        if finder is None and index not in crisp:
+            finder = pictures()
+        image = _page_image(pages[index], rows[index], index in crisp)
+        rows[index] = read_page(engine, image, rows[index], None if index in crisp else finder)
         engines[index] = engine.name
     return Document(
         pages=tuple(

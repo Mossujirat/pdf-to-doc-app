@@ -13,26 +13,11 @@ import pymupdf
 
 from pdf_to_doc.layout import PlacedImage
 from pdf_to_doc.model import LARGEST_PAGE, KeptImage
+from pdf_to_doc.pictures import a_picture, ring_in_colour
 
 # A kept image is no sharper than this, at the size it is shown, and a JPEG of this quality.
 KEPT_DPI = 150
 _KEPT_QUALITY = 75
-
-# An image whose shorter side is under this (points) is a rule, a bullet or an ornament.
-_SMALLEST_PICTURE = 8.0
-# A pixel is ink when it is darker than this share of white, or more coloured than this saturation.
-_PAPER = 0.85
-_COLOURED = 0.25
-# A stamp is a ring in colour: its box is nearly square, its ink well coloured, the
-# corners outside the round hold little ink next to the inside, and the ink is densest
-# in the round's outer band, where a stamp's border runs. On the sample contracts, a
-# square signature's corners held 0.63 of its inside's ink, and a logo's 0.68. A pie
-# chart or a photo cropped round has no border denser than its inside.
-_SQUARE = (0.75, 1.33)
-_STAMP_SATURATION = 0.4
-_STAMP_CORNERS = 0.25
-_STAMP_BORDER = 0.8  # share of the radius where the outer band starts
-_STAMP_BORDER_INK = 1.5  # how many times denser the band's ink is than the ink inside it
 
 
 def placed_images(blocks: list[dict[str, Any]], keep: bool = False) -> tuple[PlacedImage, ...]:
@@ -44,15 +29,11 @@ def placed_images(blocks: list[dict[str, Any]], keep: bool = False) -> tuple[Pla
             continue
         x0, top, x1, bottom = block["bbox"]
         width, height = x1 - x0, bottom - top
-        if _a_picture(width, height):
+        if a_picture(width, height):
             kept_image = _kept_picture(block) if keep else None
-            images.append(PlacedImage(x0, top, x1, bottom, _stamp_like(block, width / height), kept_image))
+            rgb, opaque = _pixels(block)
+            images.append(PlacedImage(x0, top, x1, bottom, ring_in_colour(rgb, width / height, opaque), kept_image))
     return tuple(images)
-
-
-def _a_picture(width: float, height: float) -> bool:
-    """Whether an image this size on the page is a picture, not a rule, a bullet or an ornament."""
-    return min(width, height) >= _SMALLEST_PICTURE
 
 
 @contextmanager
@@ -66,7 +47,7 @@ def pictures_hidden(page: pymupdf.Page) -> Iterator[pymupdf.Page]:
         hidden = copy[0]
         for info in hidden.get_image_info():
             x0, top, x1, bottom = info["bbox"]
-            if _a_picture(x1 - x0, bottom - top):
+            if a_picture(x1 - x0, bottom - top):
                 hidden.add_redact_annot(pymupdf.Rect(info["bbox"]))
         hidden.apply_redactions(
             images=pymupdf.mupdf.PDF_REDACT_IMAGE_REMOVE,
@@ -181,23 +162,6 @@ def _samples(pix: pymupdf.Pixmap) -> npt.NDArray[np.uint8]:
     """The pixmap's values, row by row and pixel by pixel: height by width by values per pixel."""
     rows = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)[:, : pix.width * pix.n]
     return rows.reshape(pix.height, pix.width, pix.n)
-
-
-def _stamp_like(block: dict[str, Any], aspect: float) -> bool:
-    if not _SQUARE[0] <= aspect <= _SQUARE[1]:
-        return False
-    rgb, opaque = _pixels(block)
-    brightest, darkest = rgb.max(axis=2), rgb.min(axis=2)
-    saturation = np.where(brightest > 0, (brightest - darkest) / np.maximum(brightest, 1e-6), 0.0)
-    ink = ((brightest < _PAPER) | (saturation > _COLOURED)) & opaque
-    if not ink.any() or saturation[ink].mean() < _STAMP_SATURATION:
-        return False
-    height, width = ink.shape
-    y, x = np.mgrid[0:height, 0:width]
-    radius = np.hypot((x + 0.5) / width * 2 - 1, (y + 0.5) / height * 2 - 1)  # 1 at the round's edge
-    corners, band, inside = radius > 1, (radius > _STAMP_BORDER) & (radius <= 1), radius <= _STAMP_BORDER
-    round_mark = ink[corners].mean() <= _STAMP_CORNERS * ink[radius <= 1].mean()
-    return bool(round_mark and ink[band].mean() >= _STAMP_BORDER_INK * ink[inside].mean())
 
 
 def _pixels(block: dict[str, Any]) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.bool_]]:
