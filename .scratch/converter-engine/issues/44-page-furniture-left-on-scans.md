@@ -25,3 +25,10 @@ Junk rows read in initials at the foot of the page are ticket 38's.
 **To decide at triage**
 - Whether a lower bar is safe where a row repeats on many pages, as a letterhead does. At 0.8, a form's label in the body matched as well (ticket 22).
 - Whether furniture on a single page, such as a cover's contract number, should go at all.
+
+## Comments
+
+**2026-11-12, grilled together with ticket 38**
+
+- **Its rules wait for ticket 38.** Ticket 38 drops initials at the foot of scans as page furniture, and finds pictures such as logos in scans, which changes what furniture is left. This ticket's two triage questions are settled after ticket 38 is built, on fresh measurements of the samples.
+
