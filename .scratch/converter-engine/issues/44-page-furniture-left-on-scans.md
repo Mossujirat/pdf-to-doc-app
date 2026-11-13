@@ -32,3 +32,14 @@ Junk rows read in initials at the foot of the page are ticket 38's.
 
 - **Its rules wait for ticket 38.** Ticket 38 drops initials at the foot of scans as page furniture, and finds pictures such as logos in scans, which changes what furniture is left. This ticket's two triage questions are settled after ticket 38 is built, on fresh measurements of the samples.
 
+**2026-11-13, ticket 38 is built: ready to grill**
+
+- **What ticket 38 changed:** it is built on branch `feat/pictures-inside-scans`, tickets 01 to 05 there.
+  - Initials found at the foot of scans are page furniture.
+  - What OCR read in and beside them goes with them.
+- **The junk left at the foot of the samples' scans** is in the Comments of `.scratch/pictures-inside-scans/issues/04`:
+  - none on the 10-page contract;
+  - 2 rows read unsurely on the 110-page contract;
+  - single letters on the supplement.
+- **The furniture rows this ticket lists** were not measured again. Ticket 38 changed no row rule, only pictures and the rows read in them.
+

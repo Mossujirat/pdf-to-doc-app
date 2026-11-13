@@ -88,3 +88,16 @@ The 10-page scanned Thai contract of ticket 42 was converted on 2026-11-10 with 
 **Size:** large. Next comes a spec (`/to-spec`), then tickets. Ticket 44 is grilled after this one is built.
 
 **Also found:** `iapp/OpenThai2.0-OCR-Markdown`, noted on ticket 15 as a candidate for Accurate mode. It is not used here.
+
+**2026-11-13, built**
+
+- **Where:** the feature is built on branch `feat/pictures-inside-scans`, as the tickets in `.scratch/pictures-inside-scans/issues/`:
+  - **01:** pictures found in a scan become placeholders;
+  - **02:** the layout model PP-DocLayout_plus-L finds them;
+  - **03:** coloured ink beside a row to sign on;
+  - **04:** initials at the foot are page furniture;
+  - **05:** the check on the samples.
+
+  Their Comments hold the measurements.
+- **What is left** is ticket 47, `47-pictures-the-layout-model-misses-on-scans.md`: signatures in black ink, coloured ink under rows of print, and logos, pictures and QR codes the model misses.
+- **This ticket stays open until the release is written.** The known limitation on the what's-new page points here. When the release is written, the user rewords it to point to ticket 47, and this ticket is closed.
