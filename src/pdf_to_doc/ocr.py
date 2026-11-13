@@ -18,6 +18,7 @@ from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
 from pdf_to_doc.layout import (
     COLUMN_GAP,
+    SIGNATURE_LINE,
     CellLine,
     PageRows,
     PlacedImage,
@@ -25,8 +26,11 @@ from pdf_to_doc.layout import (
     PlacedTable,
     RawCell,
     Row,
+    next_to,
+    stands_in,
     with_marker_spaced,
 )
+from pdf_to_doc.pictures import FoundPicture, PictureFinder, a_picture, coloured_ink, ring_in_colour
 from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece
 from pdf_to_doc.words import unknown_words, word_starts
@@ -101,6 +105,10 @@ _TICK_READINGS = frozenset("VvXx×√✓✔/口ロ□")
 # The engine's box is cut around a check box it took in at a word's start no more than this many
 # characters from where the check box lies: the box itself stands where a character or two would.
 _CUT_REACH = 3
+# A mark of coloured ink lies in a picture already found when this share of its box or more does:
+# half, as a lost line's boxes are counted (see `paddle._INSIDE_A_LOST_LINE`). Not measured: on the
+# samples, no mark lay in a picture a placeholder stood for (ticket 03).
+_IN_A_PICTURE = 0.5
 
 
 @dataclass(frozen=True)
@@ -158,16 +166,42 @@ def softened(image: PageImage) -> PageImage:
     return _image(cv2.GaussianBlur(_pixels(image), (0, 0), _SOFTENING), image.dpi, image.turn)
 
 
-def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows) -> PageRows:
+def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows, finder: PictureFinder | None = None) -> PageRows:
     """The page's rows, read by the engine; a sideways page is turned upright and read again,
-    and so is an upside-down one (see `_read_upright`)."""
+    and so is an upside-down one (see `_read_upright`). On a scan, the finder finds the pictures
+    in the image as it was read, upright."""
     boxes = engine.read(image, LANGUAGES)
     turn = _sideways_turn(engine, image, boxes)
     if turn:
         image = _turned(image, turn)
         boxes = engine.read(image, LANGUAGES)
     image, boxes = _read_upright(engine, image, boxes)
-    return _ocr_page(boxes, image, text_layer)
+    found = finder.find(image) if finder else ()
+    ink = _ink_beside_rows_to_sign_on(image, boxes) if finder else ()
+    return _ocr_page(boxes, image, text_layer, found, ink)
+
+
+def _ink_beside_rows_to_sign_on(image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[FoundPicture, ...]:
+    """The marks of coloured ink beside a row to sign on, as near as page layout counts a signature
+    beside one (see `layout.next_to`): signatures in blue pen, as most are, which the finder may
+    miss. Coloured print elsewhere on the page is not looked at."""
+    texts = [box for box in boxes if box.text.strip()]
+    if not texts:
+        return ()
+    size = median(map(_height, texts)) / _BOX_HEIGHT_PER_FONT_SIZE
+    # Each printed line as a row in the image's pixels, as `_row` sets it out in points; at a scale of
+    # one point a pixel, so that page layout's own tests can judge it.
+    rows = [_row(line, 1.0, size) for line in printed_lines(tuple(texts))]
+    rows = [row for row in rows if SIGNATURE_LINE.search(row.text)]
+    return tuple(
+        FoundPicture(mark, "ink")
+        for mark in coloured_ink(_pixels(image), image.dpi)
+        if any(next_to(PlacedImage(*mark), row) for row in rows)
+    )
+
+
+def _box_area(box: Box) -> float:
+    return (box[2] - box[0]) * (box[3] - box[1])
 
 
 def _read_upright(engine: OcrEngine, image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[PageImage, tuple[TextBox, ...]]:
@@ -263,7 +297,13 @@ def _confidence(boxes: tuple[TextBox, ...]) -> float:
     return sum(length * confidence for length, confidence in read) / characters if characters else 0.0
 
 
-def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows) -> PageRows:
+def _ocr_page(
+    boxes: tuple[TextBox, ...],
+    image: PageImage,
+    text_layer: PageRows,
+    found: tuple[FoundPicture, ...] = (),
+    ink: tuple[FoundPicture, ...] = (),
+) -> PageRows:
     """The page's rows, in PDF points: the text layer's rows, and what the engine read elsewhere.
 
     Text over a scan, such as a stamped header or a note, is taken from the text
@@ -291,11 +331,42 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
     printed lines: a grid with a box that runs through one of its rules (see `_through_a_rule`), or
     with text within it that no cell holds, as where a scan lost part of a rule; and rules that make
     no whole grid, with the rows set out under them (see `_part_ruled`).
+
+    The pictures `found` in a scan's image are pictures on the page (see `_scan_picture`). What the
+    engine read in one unsurely is junk read in its ink, and is dropped; what it read surely there,
+    such as a signer's name printed under a signature, stays. The marks of coloured `ink` found
+    beside a row to sign on are pictures too, unless they lie in a picture found that a placeholder
+    stands for: not in one found behind the text, as a layout model took a sample's whole signature
+    block, rows of print and all, for one image.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
     # Each text-layer row, and where it lies on the image.
     layer = [(row, _turned_row(row, image.turn, text_layer)) for row in text_layer.rows]
+    on_image = [row for _, row in layer]
+
+    def standing(pictures: tuple[FoundPicture, ...]) -> list[tuple[FoundPicture, PlacedImage, bool]]:
+        """Each picture big enough to be one, where it lies on the page, and whether a placeholder stands for it."""
+        pictures = tuple(picture for picture in pictures if a_picture(*_sides(picture.box, scale)))
+        placed = [_scan_picture(picture, image, scale) for picture in pictures]
+        return [
+            (picture, on_page, stands_in(on_page, _rows_over(picture.box, boxes, on_image, scale)))
+            for picture, on_page in zip(pictures, placed)
+        ]
+
+    def placeheld(pictures: list[tuple[FoundPicture, PlacedImage, bool]]) -> list[Box]:
+        return [picture.box for picture, _, stands in pictures if stands]
+
+    scan_pictures = standing(found)
+    held = placeheld(scan_pictures)
+    scan_pictures += standing(
+        tuple(mark for mark in ink if not any(_overlap(mark.box, box) >= _IN_A_PICTURE * _box_area(mark.box) for box in held))
+    )
+    placed = [on_page for _, on_page, _ in scan_pictures]
+    # Junk goes first, so that it never stands in for a text-layer row typed over the picture; and only
+    # from a picture that a placeholder will stand for, not one found behind the text.
+    held = placeheld(scan_pictures)
+    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, area) for area in held))
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]
@@ -352,6 +423,7 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
             part_rows[0] = replace(part_rows[0], starts_block=True)
         rows += part_rows
     pictures = tuple(_turned_image(picture, image.turn, text_layer) for picture in text_layer.images)
+    pictures += tuple(placed)
     return PageRows(
         rows=tuple(rows),
         width=width,
@@ -361,6 +433,36 @@ def _ocr_page(boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows
         images=pictures,
         kind="ocr",
     )
+
+
+def _rows_over(area: Box, boxes: tuple[TextBox, ...], layer: list[Row], scale: float) -> int:
+    """How many rows will lie over a picture found in this area of the image, for page layout to
+    tell whether it is the page behind the text (see `layout.stands_in`): the printed lines of what
+    the engine read surely there, and the text-layer rows. Junk is not yet dropped, so it is not
+    counted, as it is not once dropped. The layout model took a whole damaged scan of the corpus for
+    one image."""
+    sure = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE and _centred_in(box, area))
+    x0, y0, x1, y1 = (edge * scale for edge in area)
+    typed = sum(x0 <= (row.x0 + row.x1) / 2 <= x1 and y0 <= (row.y0 + row.y1) / 2 <= y1 for row in layer)
+    return len(printed_lines(sure)) + typed
+
+
+def _sides(box: Box, scale: float) -> tuple[float, float]:
+    """The width and height of a box in an image's pixels, in points, its pixels `scale` points apart."""
+    x0, y0, x1, y1 = box
+    return (x1 - x0) * scale, (y1 - y0) * scale
+
+
+def _scan_picture(found: FoundPicture, image: PageImage, scale: float) -> PlacedImage:
+    """A picture found in a scan's image, where it lies on the page as read, in points, its box kept
+    within the image. Whether it is a ring in colour is told by its ink in the image, all of which
+    shows, as no image of its own lets anything through."""
+    x0, y0, x1, y1 = found.box
+    left, top = max(0, int(x0)), max(0, int(y0))
+    right, bottom = min(image.width, max(left + 1, round(x1))), min(image.height, max(top + 1, round(y1)))
+    rgb = _pixels(image)[top:bottom, left:right].astype(np.float64) / 255
+    stamp = ring_in_colour(rgb, (right - left) / (bottom - top))
+    return PlacedImage(left * scale, top * scale, right * scale, bottom * scale, stamp_like=stamp, in_scan=True)
 
 
 def _with_check_boxes(texts: list[TextBox], found: list[CheckBox]) -> list[TextBox]:

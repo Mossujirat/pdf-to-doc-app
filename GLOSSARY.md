@@ -101,7 +101,7 @@ Text set beside other text on a page, with a clear gap between them, which a rea
 _Avoid_: text block, side-by-side text
 
 **Picture**:
-An image placed on a page among its text, such as a photo, a chart, a signature or a stamp. It becomes a placeholder unless images are kept.
+An image placed on a page among its text, such as a photo, a chart, a signature or a stamp, or such a thing inside a scan: initials, a signature or a stamp put on the paper, or a logo printed on it. It becomes a placeholder unless images are kept.
 _Avoid_: figure
 
 **Check box**:

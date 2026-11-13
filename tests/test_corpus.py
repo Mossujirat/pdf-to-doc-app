@@ -1,6 +1,7 @@
 """The committed synthetic corpus: reproducible, up to date, and free of broken text."""
 
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from docx_reader import page_texts
@@ -9,6 +10,7 @@ from generate import DEGRADED, NOTE_ABOVE, NOTE_BELOW, SYNTHETIC, generate, gene
 from markdown_reader import page_texts as markdown_page_texts
 
 from pdf_to_doc import convert
+from pdf_to_doc.model import Placeholder, PlaceholderKind
 from pdf_to_doc.quality import evaluate, reference_file_name, score_page
 
 # OCR pages are read with real PaddleOCR. Their gate comes with the OCR baseline
@@ -126,6 +128,27 @@ def test_two_columns_are_read_one_after_the_other_and_a_cover_sheet_row_by_row()
     for number, page in enumerate(markdown_page_texts(markdown), start=1):
         reference = (SYNTHETIC / "two-column-scans" / reference_file_name(number)).read_text(encoding="utf-8-sig")
         assert score_page(page, reference).cer < OCR_PAGE_MAX_CER, f"page {number}"
+
+
+PLACEHOLDERS = {f"[{Placeholder(kind).name}]" for kind in get_args(PlaceholderKind)}
+
+
+def placeholders(page: str) -> list[str]:
+    """The placeholders of a page in Markdown, in order: a placeholder is a block of its own."""
+    return [line for line in page.splitlines() if line in PLACEHOLDERS]
+
+
+@pytest.mark.ocr
+@pytest.mark.parametrize("corpus", [SYNTHETIC, DEGRADED], ids=["synthetic", "degraded"])
+def test_no_scan_in_the_corpus_gets_a_placeholder_its_reference_does_not_have(corpus: Path) -> None:
+    # Tables, check boxes, headers and dense text are not pictures, though a layout model could take them for some.
+    for source in sorted(corpus.glob("*.pdf")):
+        result = convert(source.read_bytes())
+        for page, summary in zip(markdown_page_texts(result.output.decode("utf-8")), result.summary.pages, strict=True):
+            reference = corpus / source.stem / reference_file_name(summary.number)
+            expected = placeholders(reference.read_text(encoding="utf-8-sig")) if reference.exists() else []
+            if summary.kind == "ocr":
+                assert placeholders(page) == expected, f"{source.name} page {summary.number}"
 
 
 def list_item_flags(page: str) -> list[bool]:

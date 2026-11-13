@@ -32,9 +32,9 @@ def test_a_sandbox_container_is_created_under_every_restriction() -> None:
     assert "CapAdd" not in host
     assert host["SecurityOpt"] == ["no-new-privileges"]
     assert "Privileged" not in host
-    # 4 CPUs, 2 GB of memory and no swap, and a limit on processes.
+    # 4 CPUs, 3 GiB of memory and no swap, and a limit on processes.
     assert host["NanoCpus"] == 4_000_000_000
-    assert host["Memory"] == 2 * 1024**3
+    assert host["Memory"] == 3 * 1024**3
     assert host["MemorySwap"] == host["Memory"]
     assert host["PidsLimit"] > 0  # 0 and -1 would be none
     # No volumes, and no environment beyond the OCR thread count, which matches the CPUs, and

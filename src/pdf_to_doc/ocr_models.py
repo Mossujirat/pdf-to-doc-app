@@ -1,4 +1,5 @@
-"""The OCR models: which ones, pinned to exact files, where they live, and fetching them.
+"""The OCR models, and the layout model that finds pictures in scans: which ones, pinned to exact
+files, where they live, and fetching them.
 
 Models are downloaded once, at install or image build time, by `pdf-to-doc-models`.
 A conversion never downloads anything.
@@ -47,14 +48,25 @@ THAI_RECOGNISER = Model(
         "inference.yml": "f6ba7fefc38ca1ff398ddafa75d67d16e0b3757c4e6c833adffee98a981766c9",
     },
 )
-MODELS = (DETECTOR, THAI_RECOGNISER)
+# PaddleX's layout model, which finds the pictures inside a scan (ticket 38): Apache-2.0, as PaddleOCR is.
+LAYOUT = Model(
+    name="PP-DocLayout_plus-L",
+    revision="aa52b8528c84f9b1a34ac3a88fe0e576edb9d11d",
+    files={
+        "config.json": "adc92346e7ecc5d54dc9ed224c754c9237f56e5d88b0c9208db08cb315d66c09",
+        "inference.json": "99bd09c0a1b9e88d35c65c305b91711d98055fc94b4a6eecd50da02e04729384",
+        "inference.pdiparams": "24ca3e2e442164505e250deef59f7ee9a54ea12dd32875c9cd6155d959dc97da",
+        "inference.yml": "d60f782a16f96afb27e8280399899a94c3e9ffc694ffb2f913ea00af1c522f1e",
+    },
+)
+MODELS = (DETECTOR, THAI_RECOGNISER, LAYOUT)
 
 
 class ModelsMissing(RuntimeError):
-    """The OCR models are not in the models folder; `pdf-to-doc-models` fetches them."""
+    """The OCR models, or the layout model, are not in the models folder; `pdf-to-doc-models` fetches them."""
 
     def __init__(self, folder: Path) -> None:
-        super().__init__(f"OCR models not found in {folder}")
+        super().__init__(f"OCR or layout models not found in {folder}")
         self.folder = folder
 
 

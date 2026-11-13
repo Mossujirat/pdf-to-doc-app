@@ -43,3 +43,15 @@
 - **Default mode will not rebuild unruled tables.** It gives them one line per row, and gives ruled tables their grid from the page image. PaddleOCR's table models were measured and rejected: too much memory for the sandbox, and unreliable on unruled tables. The user chose Accurate mode as the way to get unruled tables' structure, so Typhoon's HTML tables carry more weight here.
 - **Uncertain text in table cells** is added by ticket 14: cells are marked, and the summary counts them, through the same accessor as paragraphs. Typhoon's tables can use it for this mode's rule on uncertain text.
 - **Ticket 14 finds ruled grids where OCR pages are read, through the `OcrEngine` interface.** It needs the engine's text boxes. Typhoon gives none, so in this mode the tables come from Typhoon's HTML alone.
+
+**2026-11-12, a candidate to measure against Typhoon**
+
+The user found `iapp/OpenThai2.0-OCR-Markdown` on Hugging Face, released on 2026-11-09. Its card was read on 2026-11-12; the model was not downloaded or run.
+- **What it is:** iApp Technology's Thai fine-tune of NVIDIA Nemotron 3.5 Parse, 0.63B parameters, 2.5 GB of float32 weights. A page image goes in, and Markdown comes out, with tables as HTML and a box and a class for every block, pictures included.
+- **Its own figures:** a little ahead of Typhoon OCR V2 2B on Thai text and tables (an average of 88.3 against 85.8), and 1.6 s per page against 15.8 on an H100. The test sets are mostly government documents and the Royal Gazette. Nobody has measured it on contracts.
+- **Why it could serve this ticket:** it is about a third of Typhoon's size, and its picture blocks would give this mode signatures and pictures without ticket 38's finder.
+- **Before choosing it:**
+  - **Speed:** it is built for an NVIDIA GPU through vLLM. Neither this machine nor the web server has one, so its speed on CPU has to be measured.
+  - **Uncertain text:** like Typhoon, it gives no confidence for each character, so this mode still needs its own rule for uncertain text.
+  - **The licence:** OpenMDW-1.1. Read the full terms before shipping it beside the AGPL code (ADR 0002).
+  - **Its hosted API is out:** iApp's API sends the file to their server, against ADR 0001.

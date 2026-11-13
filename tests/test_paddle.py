@@ -11,7 +11,7 @@ import pymupdf
 import pytest
 from generate import CRISP_PAGE, KAR_AS_KAM, RULED_TABLE_PAGES
 from markdown_reader import page_texts
-from pdf_builder import SARABUN, Drawn, Grid, Line, Scan, pdf, remapped
+from pdf_builder import SARABUN, Drawn, Grid, Line, Picture, Scan, pdf, remapped
 
 from pdf_to_doc import convert, paddle
 from pdf_to_doc.ocr import LANGUAGES, PageImage, render
@@ -37,6 +37,26 @@ def test_a_scan_fed_in_askew_reads_its_lines_in_order(angle: float) -> None:
 
     [page] = page_texts(result.output.decode("utf-8"))
     assert score_page(page, "".join(LINES)).cer < 0.05
+
+
+# The layout model (ticket 38)
+
+
+def test_the_layout_model_finds_a_photo_and_a_stamp_inside_a_colour_scan() -> None:
+    # A signature on its row to sign on, which the model missed on such a scan, is ticket 03's.
+    lines: list[Line] = [*LINES, "", Picture("photo", 120, 70), "", Picture("stamp", 70, 70, x=330)]
+
+    result = convert(pdf(Scan(lines, dpi=200, angle=0.4, noise=6, seed=11, colour=True)))
+
+    [page] = page_texts(result.output.decode("utf-8"))
+    assert result.summary.pages[0].placeholders == ("image", "stamp")
+    assert score_page(page, "".join(LINES) + "\n\n[รูปภาพ]\n\n[ตราประทับ]").cer < 0.05
+
+
+def test_the_layout_model_finds_no_picture_in_a_scan_of_text() -> None:
+    result = convert(pdf(Scan(LINES, dpi=200, angle=0.4, noise=6, seed=1, colour=True)))
+
+    assert [page.placeholders for page in result.summary.pages] == [()]
 
 
 # A project timeline whose title and cells sit close together: the crops that tell

@@ -1,8 +1,8 @@
 # The converter on Linux, with its tests and quality harness. README.md shows
 # how to run it, and .github/workflows/ci.yml runs the checks in it.
 #
-# Nothing is fetched while converting: dependencies and the OCR models are
-# downloaded here, at build time.
+# Nothing is fetched while converting: dependencies, the OCR models and the
+# layout model are downloaded here, at build time.
 
 ARG PYTHON_IMAGE=python:3.13.16-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
 
@@ -36,7 +36,7 @@ RUN uv sync --frozen
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
-# The models, fetched and checked against their pinned hashes.
+# The models, fetched and checked against their pinned hashes: 140 MB, the layout model 125 of it.
 RUN PDF_TO_DOC_MODELS=/opt/pdf-to-doc/models .venv/bin/pdf-to-doc-models
 
 FROM ${PYTHON_IMAGE}
