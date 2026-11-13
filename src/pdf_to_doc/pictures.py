@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
+import cv2
 import numpy as np
 import numpy.typing as npt
 
@@ -16,6 +17,9 @@ if TYPE_CHECKING:  # `ocr` reads scans with a finder, and so imports this module
 # What a finder took a region for, in a layout model's own labels: "seal" is its word for a stamp.
 # Its other labels, such as text or a table, are no picture.
 PictureLabel = Literal["image", "chart", "seal"]
+# What a picture was found as: one of those, or coloured ink beside a row to sign on, where the
+# finder found nothing (see `coloured_ink`).
+FoundAs = PictureLabel | Literal["ink"]
 
 # An image whose shorter side is under this (points) is a rule, a bullet or an ornament.
 _SMALLEST_PICTURE = 8.0
@@ -32,6 +36,23 @@ _STAMP_SATURATION = 0.4
 _STAMP_CORNERS = 0.25
 _STAMP_BORDER = 0.8  # share of the radius where the outer band starts
 _STAMP_BORDER_INK = 1.5  # how many times denser the band's ink is than the ink inside it
+# Coloured ink in a scan, as a pen or a stamp leaves it. Every scan of the sample contracts is in
+# colour, and their signatures mostly in blue pen (ticket 38, 2026-11-12). It is looked for at this
+# resolution, at which it was measured there.
+_INK_DPI = 150
+# A pixel is clearly coloured, not black, grey or paper, when its brightest channel is this share of
+# white above its darkest: scanned black print, its edges tinted by the JPEG, stays well under it.
+_INK_CHROMA = 0.2
+# Strokes this close, in points, are one mark, as a pen lifts and lands again within a signature.
+_INK_JOIN = 3.0
+# A mark holds at least this many coloured pixels at `_INK_DPI`; fewer is a speck.
+_INK_PIXELS = 1500
+# A highlight is no ink: a mark whose box is this share or more bright colour, a channel above
+# `_BRIGHT` and saturated above `_BRIGHT_SATURATION`, is the paper marked with a highlighter, and the
+# print under it passed for ink. On the samples this dropped what the user checked was right to drop.
+_BRIGHT = 0.85
+_BRIGHT_SATURATION = 0.15
+_HIGHLIGHT = 0.3
 
 
 @dataclass(frozen=True)
@@ -39,7 +60,7 @@ class FoundPicture:
     """A picture a finder found: its box (x0, y0, x1, y1) in the image's pixels, and what it took it for."""
 
     box: tuple[float, float, float, float]
-    label: PictureLabel
+    label: FoundAs
 
 
 class PictureFinder(Protocol):
@@ -58,6 +79,33 @@ class NoPictures:
 def a_picture(width: float, height: float) -> bool:
     """Whether an image this size on the page, in points, is a picture, not a rule, a bullet or an ornament."""
     return min(width, height) >= _SMALLEST_PICTURE
+
+
+def coloured_ink(rgb: npt.NDArray[np.uint8], dpi: float) -> list[tuple[float, float, float, float]]:
+    """The marks of coloured ink in an image, its 8-bit RGB samples `dpi` to the inch: the box
+    (x0, y0, x1, y1) of each, in the image's pixels. A mark is coloured pixels close enough to be
+    strokes of one, and many enough not to be a speck; highlights are not ink (see `_HIGHLIGHT`)."""
+    shrink = min(1.0, _INK_DPI / dpi)
+    small = cv2.resize(rgb, None, fx=shrink, fy=shrink, interpolation=cv2.INTER_AREA) if shrink < 1 else rgb
+    colours = small.astype(np.float32) / 255
+    brightest, darkest = colours.max(axis=2), colours.min(axis=2)
+    ink = brightest - darkest > _INK_CHROMA
+    bright = (brightest > _BRIGHT) & (brightest - darkest > _BRIGHT_SATURATION * brightest)
+    reach = max(1, round(_INK_JOIN * dpi * shrink / 72))
+    joined = cv2.dilate(ink.astype(np.uint8), np.ones((2 * reach + 1, 2 * reach + 1), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(joined, connectivity=8)
+    least = _INK_PIXELS * (dpi * shrink / _INK_DPI) ** 2
+    marks = []
+    for label in range(1, count):
+        x, y, width, height = (int(value) for value in stats[label][:4])
+        ys, xs = np.nonzero(ink[y : y + height, x : x + width] & (labels[y : y + height, x : x + width] == label))
+        if len(ys) < least:
+            continue
+        x0, y0, x1, y1 = x + xs.min(), y + ys.min(), x + xs.max() + 1, y + ys.max() + 1
+        if bright[y0:y1, x0:x1].mean() >= _HIGHLIGHT:
+            continue
+        marks.append((x0 / shrink, y0 / shrink, x1 / shrink, y1 / shrink))
+    return marks
 
 
 def ring_in_colour(rgb: npt.NDArray[np.float64], aspect: float, opaque: npt.NDArray[np.bool_] | None = None) -> bool:

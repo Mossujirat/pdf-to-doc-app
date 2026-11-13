@@ -329,9 +329,18 @@ def scanned(
     seed: int = 0,
     sideways: Literal[0, 90, 270] = 0,
     upside_down: bool = False,
+    colour: bool = False,
 ) -> Scan:
     return Scan(
-        lines, overlay=overlay or [], dpi=200, angle=0.4, noise=6, seed=seed, sideways=sideways, upside_down=upside_down
+        lines,
+        overlay=overlay or [],
+        dpi=200,
+        angle=0.4,
+        noise=6,
+        seed=seed,
+        sideways=sideways,
+        upside_down=upside_down,
+        colour=colour,
     )
 
 
@@ -583,6 +592,14 @@ PLACEHOLDER_DOCUMENTS = (
             initialled((478, 766)),
             initialled((469, 759)),
         ),
+    ),
+    # The signing page scanned in colour, as every scan of the sample contracts is: the layout model
+    # finds the photo and the stamp, and the signature, whose foot runs down to the signer's name, is
+    # found by its blue ink beside the row to sign on.
+    SyntheticDocument(
+        name="pictures-in-scans",
+        font_file=SARABUN,
+        pages=(SyntheticPage(lines=scanned(DRAWN_SIGNING_LINES, seed=40, colour=True), reference=DRAWN_SIGNING_REFERENCE),),
     ),
 )
 

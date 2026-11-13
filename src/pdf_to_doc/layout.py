@@ -319,12 +319,12 @@ def _placeholder(image: PlacedImage, page: PageRows) -> Placeholder | None:
         image.x1 - image.x0 <= _SIGNATURE_MAX_WIDTH * page.width
         and image.bottom - image.top <= _SIGNATURE_MAX_HEIGHT * page.height
     )
-    if small and any(SIGNATURE_LINE.search(row.text) and _next_to(image, row) for row in page.rows):
+    if small and any(SIGNATURE_LINE.search(row.text) and next_to(image, row) for row in page.rows):
         return Placeholder("signature", image.kept_image)
     return Placeholder("image", image.kept_image)
 
 
-def _next_to(image: PlacedImage, row: Row) -> bool:
+def next_to(image: PlacedImage, row: Row) -> bool:
     """Whether the image and the row overlap across the page, and lie less than a row's height apart down it."""
     across = image.x0 < row.x1 and row.x0 < image.x1
     down = row.y0 - image.bottom <= row.size and image.top - row.y1 <= row.size

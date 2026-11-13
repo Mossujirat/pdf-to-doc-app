@@ -15,6 +15,7 @@ from pdf_builder import TOP, Drawn, Picture, Scan, Styled, pdf
 from pdf_to_doc import ModelsMissing, convert
 from pdf_to_doc.ocr_models import DETECTOR, THAI_RECOGNISER
 from pdf_to_doc.paddle import default_picture_finder
+from pdf_to_doc.pictures import NoPictures
 
 # Lines that both the PDF builder and the fake engine lay out.
 Line = str | Styled | Picture
@@ -191,6 +192,60 @@ def test_a_missing_layout_model_is_reported_as_missing_ocr_models_are(tmp_path: 
 
     with pytest.raises(ModelsMissing):
         default_picture_finder()
+
+
+# Coloured ink beside a row to sign on, which the finder missed
+
+
+def ink_markdown(*pages: Sequence[Line | Boxed]) -> list[str]:
+    """The Markdown of colour scans of the pages, read by an engine that reads their text, with a
+    finder that finds no picture, as the layout model misses a signature that touches its row."""
+    drawn = ([line for line in page if not isinstance(line, Boxed)] for page in pages)
+    source = pdf(*(Scan(lines, dpi=100, colour=True) for lines in drawn))
+    return page_texts(convert(source, ocr=FakeEngine(*pages), pictures=NoPictures()).output.decode("utf-8"))
+
+
+def test_a_blue_signature_beside_a_row_to_sign_on_the_finder_missed_is_a_signature() -> None:
+    assert ink_markdown(SIGNING_PAGE) == [SIGNED_PAGE]
+
+
+def test_a_red_stamp_beside_a_row_to_sign_on_the_finder_missed_is_a_stamp() -> None:
+    page: list[Line] = [*CLAUSES, "", SIGNATURE_LINE, Picture("stamp", 70, 70, x=330)]
+
+    assert ink_markdown(page) == ["".join(CLAUSES) + "\n\n" + SIGNATURE_LINE + "\n\n[ตราประทับ]"]
+
+
+def test_a_highlighted_row_to_sign_on_gets_no_placeholder() -> None:
+    # A highlighter's colour fills the row's box, and passes for ink but for the highlight test.
+    page: list[Line] = [*CLAUSES, "", Styled(SIGNATURE_LINE, highlight=(1.0, 0.95, 0.3))]
+
+    assert ink_markdown(page) == ["".join(CLAUSES) + "\n\n" + SIGNATURE_LINE]
+
+
+def test_a_heading_printed_in_colour_away_from_any_row_to_sign_on_gets_no_placeholder() -> None:
+    heading = "สัญญาให้ทุนโครงการ"
+    page: list[Line] = [Styled(heading, size=22, colour=(0.1, 0.2, 0.7)), "", *CLAUSES, "", SIGNATURE_LINE]
+
+    assert ink_markdown(page) == [f"{heading}\n\n" + "".join(CLAUSES) + "\n\n" + SIGNATURE_LINE]
+
+
+def test_a_signature_the_finder_found_gets_one_placeholder_not_two() -> None:
+    assert scan_markdown(SIGNING_PAGE) == [SIGNED_PAGE]
+
+
+def test_a_signature_inside_a_region_found_behind_the_text_is_still_a_signature() -> None:
+    # Seen on a sample's signing page: the layout model took the whole signature block, its rows of
+    # print and all, for one image. That is the page behind the text, which gets no placeholder, so the
+    # blue ink inside it is still a signature.
+    block: list[Line] = [*CLAUSES, "", SIGNATURE, SIGNATURE_LINE, "(นายสมชาย ใจดี)", "ตำแหน่ง ผู้อำนวยการ"]
+    behind = Picture("photo", 460, 130, y=TOP + 22 * len(CLAUSES) + 2)
+    finder = FakePictures([behind])
+    source = pdf(Scan(block, dpi=100, colour=True))
+
+    [page] = page_texts(convert(source, ocr=FakeEngine(block), pictures=finder).output.decode("utf-8"))
+
+    assert page.count("[ลายเซ็น]") == 1
+    assert "[รูปภาพ]" not in page
 
 
 def test_the_finder_is_asked_once_a_scan() -> None:

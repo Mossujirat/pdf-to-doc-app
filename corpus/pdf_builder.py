@@ -69,6 +69,9 @@ class Styled:
     # An absolute baseline position; the following lines continue below it.
     y: float | None = None
     centered: bool = False
+    colour: tuple[float, float, float] | None = None  # printed in this colour, RGB from 0 to 1, or black
+    # Marked with a highlighter of this colour, as a reader marks a passage on paper before scanning it.
+    highlight: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -498,9 +501,13 @@ def _draw_styled(page: pymupdf.Page, y: float, line: Styled, font_file: Path, in
     """Draw a styled line and return how far down the next line goes."""
     font_file = _weight(font_file, line.bold)
     x = line.x
+    width = _width(line.text, font_file, line.size)
     if line.centered:
-        x = (page.rect.width - _width(line.text, font_file, line.size)) / 2
-    _draw(page, x, y, line.text, font_file, line.size, invisible)
+        x = (page.rect.width - width) / 2
+    if line.highlight and not invisible:
+        mark = pymupdf.Rect(x - 2, y - 1.1 * line.size, x + width + 2, y + 0.4 * line.size)
+        page.draw_rect(mark * page.derotation_matrix, color=None, fill=line.highlight)
+    _draw(page, x, y, line.text, font_file, line.size, invisible, line.colour)
     return max(LINE_HEIGHT, line.size * 1.4)
 
 
@@ -606,7 +613,16 @@ def _width(text: str, font_file: Path, size: float) -> float:
     return width
 
 
-def _draw(page: pymupdf.Page, x: float, y: float, text: str, font_file: Path, size: float, invisible: bool) -> None:
+def _draw(
+    page: pymupdf.Page,
+    x: float,
+    y: float,
+    text: str,
+    font_file: Path,
+    size: float,
+    invisible: bool,
+    colour: tuple[float, float, float] | None = None,  # black
+) -> None:
     """Draw text whose baseline starts at (x, y) on the page as shown, reading upright."""
     point = pymupdf.Point(x, y) * page.derotation_matrix
     page.insert_text(
@@ -617,4 +633,5 @@ def _draw(page: pymupdf.Page, x: float, y: float, text: str, font_file: Path, si
         fontsize=size,
         rotate=page.rotation,
         render_mode=3 if invisible else 0,  # 3 draws nothing
+        color=colour,
     )

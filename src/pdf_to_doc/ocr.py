@@ -18,6 +18,7 @@ from pdf_to_doc.columns import printed_lines, reading_parts
 from pdf_to_doc.grids import Grid, GridCell, PartRules, Rules, ruled_tables
 from pdf_to_doc.layout import (
     COLUMN_GAP,
+    SIGNATURE_LINE,
     CellLine,
     PageRows,
     PlacedImage,
@@ -25,10 +26,11 @@ from pdf_to_doc.layout import (
     PlacedTable,
     RawCell,
     Row,
+    next_to,
     stands_in,
     with_marker_spaced,
 )
-from pdf_to_doc.pictures import FoundPicture, PictureFinder, a_picture, ring_in_colour
+from pdf_to_doc.pictures import FoundPicture, PictureFinder, a_picture, coloured_ink, ring_in_colour
 from pdf_to_doc.thai import UPPER_MARK
 from pdf_to_doc.uncertain import LOW_CONFIDENCE, Piece
 from pdf_to_doc.words import unknown_words, word_starts
@@ -103,6 +105,8 @@ _TICK_READINGS = frozenset("VvXx×√✓✔/口ロ□")
 # The engine's box is cut around a check box it took in at a word's start no more than this many
 # characters from where the check box lies: the box itself stands where a character or two would.
 _CUT_REACH = 3
+# A mark of coloured ink lies in a picture already found when this share of its box or more does.
+_IN_A_PICTURE = 0.5
 
 
 @dataclass(frozen=True)
@@ -170,7 +174,36 @@ def read_page(engine: OcrEngine, image: PageImage, text_layer: PageRows, finder:
         image = _turned(image, turn)
         boxes = engine.read(image, LANGUAGES)
     image, boxes = _read_upright(engine, image, boxes)
-    return _ocr_page(boxes, image, text_layer, finder.find(image) if finder else ())
+    found = finder.find(image) if finder else ()
+    ink = _ink_beside_rows_to_sign_on(image, boxes) if finder else ()
+    return _ocr_page(boxes, image, text_layer, found, ink)
+
+
+def _ink_beside_rows_to_sign_on(image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[FoundPicture, ...]:
+    """The marks of coloured ink beside a row to sign on, as near as page layout counts a signature
+    beside one (see `layout.next_to`): signatures in blue pen, as most are, which the finder may
+    miss. Coloured print elsewhere on the page is not looked at."""
+    texts = [box for box in boxes if box.text.strip()]
+    rows_to_sign_on = [line for line in printed_lines(tuple(texts)) if any(SIGNATURE_LINE.search(box.text) for box in line)]
+    if not rows_to_sign_on:
+        return ()
+    size = median(map(_height, texts)) / _BOX_HEIGHT_PER_FONT_SIZE
+    rows = [_row_in_pixels(line, size) for line in rows_to_sign_on]
+    return tuple(
+        FoundPicture(mark, "ink")
+        for mark in coloured_ink(_pixels(image), image.dpi)
+        if any(next_to(PlacedImage(*mark), row) for row in rows)
+    )
+
+
+def _row_in_pixels(line: list[TextBox], size: float) -> Row:
+    """The printed line as a row in the image's pixels, as `_row` sets it out in points."""
+    centre, half = median(map(_centre, line)), _ROW_HEIGHT_PER_FONT_SIZE * size / 2
+    return Row(" ".join(box.text for box in line), line[0].box[0], centre - half, line[-1].box[2], centre + half, size)
+
+
+def _box_area(box: Box) -> float:
+    return (box[2] - box[0]) * (box[3] - box[1])
 
 
 def _read_upright(engine: OcrEngine, image: PageImage, boxes: tuple[TextBox, ...]) -> tuple[PageImage, tuple[TextBox, ...]]:
@@ -267,7 +300,11 @@ def _confidence(boxes: tuple[TextBox, ...]) -> float:
 
 
 def _ocr_page(
-    boxes: tuple[TextBox, ...], image: PageImage, text_layer: PageRows, found: tuple[FoundPicture, ...] = ()
+    boxes: tuple[TextBox, ...],
+    image: PageImage,
+    text_layer: PageRows,
+    found: tuple[FoundPicture, ...] = (),
+    ink: tuple[FoundPicture, ...] = (),
 ) -> PageRows:
     """The page's rows, in PDF points: the text layer's rows, and what the engine read elsewhere.
 
@@ -299,21 +336,35 @@ def _ocr_page(
 
     The pictures `found` in a scan's image are pictures on the page (see `_scan_picture`). What the
     engine read in one unsurely is junk read in its ink, and is dropped; what it read surely there,
-    such as a signer's name printed under a signature, stays.
+    such as a signer's name printed under a signature, stays. The marks of coloured `ink` found
+    beside a row to sign on are pictures too, unless they lie in a picture found that a placeholder
+    stands for: not in one found behind the text, as a layout model took a sample's whole signature
+    block, rows of print and all, for one image.
     """
     width, height = (text_layer.height, text_layer.width) if image.turn % 180 else (text_layer.width, text_layer.height)
     scale = width / image.width
     # Each text-layer row, and where it lies on the image.
     layer = [(row, _turned_row(row, image.turn, text_layer)) for row in text_layer.rows]
-    found = tuple(picture for picture in found if a_picture(*_sides(picture.box, scale)))
-    placed = [_scan_picture(picture, image, scale) for picture in found]
+    on_image = [row for _, row in layer]
+
+    def standing(pictures: tuple[FoundPicture, ...]) -> list[tuple[FoundPicture, PlacedImage, bool]]:
+        """Each picture big enough to be one, where it lies on the page, and whether a placeholder stands for it."""
+        pictures = tuple(picture for picture in pictures if a_picture(*_sides(picture.box, scale)))
+        placed = [_scan_picture(picture, image, scale) for picture in pictures]
+        return [
+            (picture, on_page, stands_in(on_page, _rows_over(picture.box, boxes, on_image, scale)))
+            for picture, on_page in zip(pictures, placed)
+        ]
+
+    in_scan = standing(found)
+    held = [picture.box for picture, _, stands in in_scan if stands]
+    in_scan += standing(
+        tuple(mark for mark in ink if not any(_overlap(mark.box, box) >= _IN_A_PICTURE * _box_area(mark.box) for box in held))
+    )
+    placed = [on_page for _, on_page, _ in in_scan]
     # Junk goes first, so that it never stands in for a text-layer row typed over the picture; and only
     # from a picture that a placeholder will stand for, not one found behind the text.
-    placeheld = [
-        picture.box
-        for picture, on_page in zip(found, placed)
-        if stands_in(on_page, _rows_over(picture.box, boxes, [on_image for _, on_image in layer], scale))
-    ]
+    placeheld = [picture.box for picture, _, stands in in_scan if stands]
     boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, area) for area in placeheld))
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
