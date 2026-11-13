@@ -6,7 +6,7 @@
 
 **Blocked by:** 02, 03, 04
 
-**Status:** ready-for-human
+**Status:** done
 
 **Branch:** `feat/pictures-inside-scans`
 
@@ -21,7 +21,7 @@ On this machine only, without sub-agents. Record numbers only, and delete the ou
   - uncertain text before and after;
   - seconds per scanned page.
 - [x] **Text pages do not change:** their output is the same before and after, on every sample.
-- [ ] **Contact sheets** of every placeholder's region, for the user to look at on this machine before the merge. Only the user views them.
+- [x] **Contact sheets** of every placeholder's region, for the user to look at on this machine before the merge. Only the user views them.
 
 **Corpus and checks**
 - [x] The harness reports on the corpus's existing files as before.
@@ -115,3 +115,9 @@ On this machine only, without sub-agents. Record numbers only, and delete the ou
 - **Web:** the paragraph under "เก็บโครงสร้าง และไม่เดาสิ่งที่อ่านไม่ได้" now says placeholders stand for pictures on scans too, though the converter may miss some, such as signatures in black ink or some logos. It also says that initials repeated at the foot of pages are cut, like page numbers. The user chose this wording, which says what may be missed, over a shorter one.
 - **Left for the release:** the known limitation about pictures on scans still points to ticket 38, which stays open until then. The test that every known limitation stands for an open ticket needs that. When the release is written, the user rewords the limitation to point to ticket 47, and ticket 38 is closed.
 - **Status is `ready-for-human`** until the user has looked at the contact sheets. Then the outputs, the cache and the sheets are deleted.
+
+**2026-11-13, the user's look at the contact sheets**
+
+- **Every one of the 39 regions is a picture,** a signature or a logo, not text or a table. So the junk dropped in them was no text of the contract.
+- **Some signatures are labelled `[รูปภาพ]`,** not `[ลายเซ็น]`. They were not counted. This is the fault ticket 02 found: the model's box hugs the ink, so ticket 24's rules find it too far from its row. It goes to ticket 47 and does not hold up the merge, since no text is lost.
+- **Deleted:** the sheets, the cache of readings, and the scripts used to measure.

@@ -6,6 +6,7 @@
 - **Signatures in black ink** that the model misses. The coloured-ink rule cannot find them, because black ink looks the same as print.
 - **Coloured ink with print over it.** A signature under three rows of print or more is taken for the page behind the text, as a whole scan is.
 - **Logos, pictures and QR codes** that the model misses.
+- **Signatures labelled `[รูปภาพ]`.** The model finds them, but its box hugs the ink, so ticket 24's rules find it too far from its row to be a signature (ticket 02's comment of 2026-11-12).
 
 **Blocked by:** none
 
@@ -27,9 +28,10 @@
   - 2 in the 10-page contract;
   - 3 in the supplement.
 
-  The user checks the contact sheets of ticket 05 before the merge. Logos, pictures and QR codes the model missed are not counted yet; that check is where to count them.
+  The user checked the contact sheets of ticket 05: every region is a picture, a signature or a logo, none text. Some are signatures labelled `[รูปภาพ]`, not counted. Logos, pictures and QR codes the model missed were not on the sheets, so they are not counted either.
 
 **To decide at triage**
 - Whether to find signatures in black ink beside a row to sign on, and how to tell them from print: by stroke width, by OCR reading nothing surely there, or by a second model.
 - Whether coloured ink under rows of print is a signature when the rows are what OCR read in it.
+- How far a signature found by the model may lie from its row, since its box is tighter than a picture drawn in a PDF. Count the signatures labelled `[รูปภาพ]` on the samples first.
 - Whether a smaller or second layout model finds the logos and QR codes that plus-L misses, and at what cost per page.
