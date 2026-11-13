@@ -248,6 +248,70 @@ def test_a_signature_inside_a_region_found_behind_the_text_is_still_a_signature(
     assert "[รูปภาพ]" not in page
 
 
+# Initials at the foot of scans
+
+
+def initials(x: float, y: float, width: float, height: float) -> Picture:
+    """Initials at the foot of a scan."""
+    return Picture("signature", width, height, x=x, y=y)
+
+
+def with_junk(picture: Picture, letters: str) -> list[Picture | Boxed]:
+    """The initials, and what OCR reads in and under them: letters read surely in the ink, differently
+    on each page, and a row of dots, read unsurely, just under it."""
+    x, y = picture.x, picture.y or 0
+    return [
+        picture,
+        Boxed(letters, x + 20, y + 8, y + 24, confidence=0.95),
+        Boxed("....", x + 10, y + picture.height + 2, y + picture.height + 12, confidence=0.3),
+    ]
+
+
+# Each set a little different in size and place, as a hand initials page after page: on a sample
+# contract they differed by up to 4% in width, 10% in height and 6 points in place.
+FEET = [initials(420, 770, 120, 35), initials(424, 772, 116, 38), initials(417, 767, 124, 33)]
+INITIALLED = [with_junk(foot, letters) for foot, letters in zip(FEET, ["ลค", "กข", "ฉช"])]
+# The same body on every page, its first line clear of the top edge, where it would be page furniture.
+BODY: list[Line] = [Styled(CLAUSES[0], y=160), *CLAUSES[1:]]
+CLAUSES_READ = "".join(CLAUSES)
+
+
+def test_initials_at_the_foot_of_three_scans_leave_no_placeholder_and_no_junk() -> None:
+    pages = scan_markdown(*([*BODY, *foot] for foot in INITIALLED))
+
+    assert pages == [CLAUSES_READ] * 3
+
+
+def test_junk_left_where_the_finder_missed_one_pages_initials_goes_too() -> None:
+    # Seen on a sample contract: the layout model found the initials on seven pages, and not on one,
+    # where a letter OCR was unsure of was left at the foot.
+    lines = [[*BODY, *foot] for foot in INITIALLED]
+    missed: list[Line | Boxed] = [*BODY, Boxed("ค", 470, 780, 796, confidence=0.4)]
+    finder = FakePictures(*lines, BODY)
+
+    pages = scan_markdown(*lines, missed, pictures=finder)
+
+    assert pages == [CLAUSES_READ] * 4
+
+
+def test_a_signature_at_the_foot_of_one_scan_stays_a_signature() -> None:
+    signed: list[Line] = [*BODY, Picture("signature", 140, 45, x=130, y=740), Styled(SIGNATURE_LINE, y=792)]
+
+    pages = scan_markdown(signed, BODY, BODY)
+
+    assert pages == [CLAUSES_READ + "\n\n[ลายเซ็น]\n\n" + SIGNATURE_LINE, CLAUSES_READ, CLAUSES_READ]
+
+
+def test_text_pages_initialled_at_the_foot_give_what_they_gave_before() -> None:
+    # Each page's own word is typed over its initials: a text layer's text is exact, never junk.
+    words = ["ต้นฉบับ", "คู่ฉบับ", "สำเนา"]
+    pages = [[*BODY, foot, Styled(word, x=foot.x + 10, y=(foot.y or 0) + 25)] for foot, word in zip(FEET, words)]
+
+    result = convert(pdf(*pages), ocr=FakeEngine(), pictures=FakePictures())
+
+    assert page_texts(result.output.decode("utf-8")) == [f"{CLAUSES_READ}\n\n{word}" for word in words]
+
+
 def test_the_finder_is_asked_once_a_scan() -> None:
     finder = FakePictures(SIGNING_PAGE, SIGNING_PAGE)
     source = pdf(Scan(SIGNING_PAGE, dpi=100), ["หน้าที่มีข้อความ"], Scan(SIGNING_PAGE, dpi=100))

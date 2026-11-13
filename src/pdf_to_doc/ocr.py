@@ -461,7 +461,7 @@ def _scan_picture(found: FoundPicture, image: PageImage, scale: float) -> Placed
     right, bottom = min(image.width, max(left + 1, round(x1))), min(image.height, max(top + 1, round(y1)))
     rgb = _pixels(image)[top:bottom, left:right].astype(np.float64) / 255
     stamp = ring_in_colour(rgb, (right - left) / (bottom - top))
-    return PlacedImage(left * scale, top * scale, right * scale, bottom * scale, stamp_like=stamp)
+    return PlacedImage(left * scale, top * scale, right * scale, bottom * scale, stamp_like=stamp, in_scan=True)
 
 
 def _with_check_boxes(texts: list[TextBox], found: list[CheckBox]) -> list[TextBox]:

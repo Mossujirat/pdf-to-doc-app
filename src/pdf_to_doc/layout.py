@@ -214,6 +214,7 @@ class PlacedImage:
     bottom: float
     stamp_like: bool = False  # a ring in colour, as a stamp leaves
     kept_image: KeptImage | None = None  # the picture itself, with images kept
+    in_scan: bool = False  # found inside a scan's image, where OCR read its ink as junk
 
 
 @dataclass(frozen=True)
@@ -488,11 +489,19 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
     stays the same distance from the PDF's own page number. A row near the edge
     of only one page is kept, unless the whole row is a page counter. So is an
     image near the edge of only one page.
+
+    Pictures found in scans, such as initials at the foot of each page, go with what OCR read in
+    them (see `_read_in_furniture`).
     """
     keys = [[_furniture_key(row, page, number) for row in page.rows] for number, page in enumerate(pages, 1)]
     pages_per_key = Counter(key for page_keys in keys for key in set(page_keys) if key)
     read_alike = _furniture_read_alike(pages)
     images = [[(image, _edge(image.top, image.bottom, page)) for image in page.images] for page in pages]
+    furniture = [
+        [image for image, edge in page_images if edge and any(_repeats(image, edge, others) for others in images if others is not page_images)]
+        for page_images in images
+    ]
+    in_scans = [image for page_furniture in furniture for image in page_furniture if image.in_scan]
     return [
         replace(
             page,
@@ -501,15 +510,30 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
                 for row_index, (row, key) in enumerate(zip(page.rows, page_keys))
                 if not (key and (pages_per_key[key] >= 2 or _is_counter_only(row)))
                 and (page_index, row_index) not in read_alike
+                and not _read_in_furniture(row, [image for image in page_furniture if image.in_scan], in_scans)
             ),
-            images=tuple(
-                image
-                for image, edge in page_images
-                if not (edge and any(_repeats(image, edge, others) for others in images if others is not page_images))
-            ),
+            images=tuple(image for image in page.images if image not in page_furniture),
         )
-        for page_index, (page, page_keys, page_images) in enumerate(zip(pages, keys, images))
+        for page_index, (page, page_keys, page_furniture) in enumerate(zip(pages, keys, furniture))
     ]
+
+
+def _read_in_furniture(row: Row, own: list[PlacedImage], everywhere: list[PlacedImage]) -> bool:
+    """Whether the row is what OCR read in page furniture found in a scan, such as initials: text
+    whose middle lies in such a picture on its own page, however surely read; or a row OCR is sure
+    of nothing in, such as a row of dots or a stray letter, beside one (see `next_to`). Beside one on
+    any page will do, should the finder have missed the initials on the row's own: on a sample
+    contract it found them on seven pages and missed them on one."""
+    middle_x, middle_y = (row.x0 + row.x1) / 2, (row.y0 + row.y1) / 2
+    if any(image.x0 <= middle_x <= image.x1 and image.top <= middle_y <= image.bottom for image in own):
+        return True
+    return _nothing_sure(row) and any(next_to(image, row) for image in everywhere)
+
+
+def _nothing_sure(row: Row) -> bool:
+    """Whether OCR read the row and is sure of no letter or digit in it."""
+    sure = (piece.text for piece in row.pieces if piece.confidence is None or piece.confidence >= LOW_CONFIDENCE)
+    return bool(row.pieces) and not any(character.isalnum() for text in sure for character in text)
 
 
 def _repeats(image: PlacedImage, edge: str, others: list[tuple[PlacedImage, str | None]]) -> bool:
