@@ -42,10 +42,13 @@ _STAMP_BORDER_INK = 1.5  # how many times denser the band's ink is than the ink 
 _INK_DPI = 150
 # A pixel is clearly coloured, not black, grey or paper, when its brightest channel is this share of
 # white above its darkest: scanned black print, its edges tinted by the JPEG, stays well under it.
+# On the samples' signing scans in black alone, it found no mark (ticket 03).
 _INK_CHROMA = 0.2
 # Strokes this close, in points, are one mark, as a pen lifts and lands again within a signature.
+# A guess, not measured: the synthetic signature's loops come out as one mark.
 _INK_JOIN = 3.0
-# A mark holds at least this many coloured pixels at `_INK_DPI`; fewer is a speck.
+# A mark holds at least this many coloured pixels at `_INK_DPI`; fewer is a speck. Grilling counted
+# the samples' marks at this size (ticket 38, 2026-11-12).
 _INK_PIXELS = 1500
 # A highlight is no ink: a mark whose box is this share or more bright colour, a channel above
 # `_BRIGHT` and saturated above `_BRIGHT_SATURATION`, is the paper marked with a highlighter, and the

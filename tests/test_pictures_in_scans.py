@@ -294,6 +294,21 @@ def test_junk_left_where_the_finder_missed_one_pages_initials_goes_too() -> None
     assert pages == [CLAUSES_READ] * 4
 
 
+def test_a_note_typed_over_initials_on_scans_stays() -> None:
+    # Found in review: a text layer's row is exact text, not what OCR read in the ink, though it lies
+    # in the initials as a date stamped over them would.
+    words = ["ต้นฉบับ", "คู่ฉบับ", "สำเนา"]
+    lines = [[*BODY, *foot] for foot in INITIALLED]
+    scans = [
+        Scan([line for line in page if not isinstance(line, Boxed)], overlay=[Styled(word, x=foot.x + 30, y=(foot.y or 0) + 22)], dpi=100, colour=True)
+        for page, foot, word in zip(lines, FEET, words)
+    ]
+
+    result = convert(pdf(*scans), ocr=FakeEngine(*lines), pictures=FakePictures(*lines))
+
+    assert page_texts(result.output.decode("utf-8")) == [f"{CLAUSES_READ}\n\n{word}" for word in words]
+
+
 def test_a_signature_at_the_foot_of_one_scan_stays_a_signature() -> None:
     signed: list[Line] = [*BODY, Picture("signature", 140, 45, x=130, y=740), Styled(SIGNATURE_LINE, y=792)]
 

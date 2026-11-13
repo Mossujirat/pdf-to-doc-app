@@ -92,3 +92,17 @@
 
   - **Added wrongly:** none known. The one added placeholder goes on the contact sheets of ticket 05 for the user to check.
   - **Left to the new ticket in 05:** the supplement's signing page, signed in black or not at all.
+
+**2026-11-13, after code review (two axes, with tickets 04 and 05)**
+
+- **Spec: a row to sign on was matched box by box,** while page layout matches a row's whole text.
+  - **Not a fault in practice:** `_row` joins boxes with a space. A signing word boxed in two, "ลง" and "ชื่อ", matches neither way.
+  - **Changed anyway,** so that both tests read the same text: the ink is looked for beside rows that `_row` itself sets out, at one point a pixel. That also drops `_row_in_pixels`, which copied `_row`.
+- **Spec: "not twice" checks ink only against pictures a placeholder stands for,** and ink under three rows of print or more gets none. Both are left as they are, from the sample page above, and ticket 47 takes the second.
+- **Standards:**
+  - **Constants:** `_IN_A_PICTURE`, `_INK_CHROMA`, `_INK_JOIN` and `_INK_PIXELS` now say where their values come from. Two say plainly that they were not measured.
+  - **Names:** in `_ocr_page`, the list of found pictures is `scan_pictures`, no longer `in_scan`, the name of `PlacedImage`'s field.
+  - **Left as they are:**
+    - the triples of picture, place and whether it stands in, which are only used inside `_ocr_page`;
+    - "row to sign on" missing from GLOSSARY.md: it is a name in the code, as `SIGNATURE_LINE`, not a word readers use.
+- **The samples' outputs** are byte for byte the same after these changes.

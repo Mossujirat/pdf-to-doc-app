@@ -67,3 +67,12 @@
     - No picture was found there.
     - Being one letter, they are too short for ticket 22's match by what OCR read.
   - **The other samples' outputs** are unchanged by this ticket.
+
+**2026-11-13, after code review (two axes, with tickets 03 and 05)**
+
+- **Spec found a real fault:** a text layer's row whose middle lay in the initials was dropped with what OCR read there, such as a note typed over them.
+  - **The fix:** only rows OCR read go now. A text layer's text is exact, never junk.
+  - **A new test** of a note typed over each scan's initials fails without the fix.
+- **Spec: rows beside furniture on another page** go beyond "touch it". This is kept, from the sample page where the finder missed the initials.
+- **Spec: no test of a printed footer beside the initials.** Ticket 22's own tests cover the footer. Here, only rows whose middle lies in the picture go, so a footer line running beside it stays. On the 10-page contract, nothing but one junk letter changed.
+- **Standards:** the pictures found in scans are filtered once a page, no longer once a row.

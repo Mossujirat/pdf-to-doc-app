@@ -105,7 +105,9 @@ _TICK_READINGS = frozenset("VvXx×√✓✔/口ロ□")
 # The engine's box is cut around a check box it took in at a word's start no more than this many
 # characters from where the check box lies: the box itself stands where a character or two would.
 _CUT_REACH = 3
-# A mark of coloured ink lies in a picture already found when this share of its box or more does.
+# A mark of coloured ink lies in a picture already found when this share of its box or more does:
+# half, as a lost line's boxes are counted (see `paddle._INSIDE_A_LOST_LINE`). Not measured: on the
+# samples, no mark lay in a picture a placeholder stood for (ticket 03).
 _IN_A_PICTURE = 0.5
 
 
@@ -184,22 +186,18 @@ def _ink_beside_rows_to_sign_on(image: PageImage, boxes: tuple[TextBox, ...]) ->
     beside one (see `layout.next_to`): signatures in blue pen, as most are, which the finder may
     miss. Coloured print elsewhere on the page is not looked at."""
     texts = [box for box in boxes if box.text.strip()]
-    rows_to_sign_on = [line for line in printed_lines(tuple(texts)) if any(SIGNATURE_LINE.search(box.text) for box in line)]
-    if not rows_to_sign_on:
+    if not texts:
         return ()
     size = median(map(_height, texts)) / _BOX_HEIGHT_PER_FONT_SIZE
-    rows = [_row_in_pixels(line, size) for line in rows_to_sign_on]
+    # Each printed line as a row in the image's pixels, as `_row` sets it out in points; at a scale of
+    # one point a pixel, so that page layout's own tests can judge it.
+    rows = [_row(line, 1.0, size) for line in printed_lines(tuple(texts))]
+    rows = [row for row in rows if SIGNATURE_LINE.search(row.text)]
     return tuple(
         FoundPicture(mark, "ink")
         for mark in coloured_ink(_pixels(image), image.dpi)
         if any(next_to(PlacedImage(*mark), row) for row in rows)
     )
-
-
-def _row_in_pixels(line: list[TextBox], size: float) -> Row:
-    """The printed line as a row in the image's pixels, as `_row` sets it out in points."""
-    centre, half = median(map(_centre, line)), _ROW_HEIGHT_PER_FONT_SIZE * size / 2
-    return Row(" ".join(box.text for box in line), line[0].box[0], centre - half, line[-1].box[2], centre + half, size)
 
 
 def _box_area(box: Box) -> float:
@@ -356,16 +354,19 @@ def _ocr_page(
             for picture, on_page in zip(pictures, placed)
         ]
 
-    in_scan = standing(found)
-    held = [picture.box for picture, _, stands in in_scan if stands]
-    in_scan += standing(
+    def placeheld(pictures: list[tuple[FoundPicture, PlacedImage, bool]]) -> list[Box]:
+        return [picture.box for picture, _, stands in pictures if stands]
+
+    scan_pictures = standing(found)
+    held = placeheld(scan_pictures)
+    scan_pictures += standing(
         tuple(mark for mark in ink if not any(_overlap(mark.box, box) >= _IN_A_PICTURE * _box_area(mark.box) for box in held))
     )
-    placed = [on_page for _, on_page, _ in in_scan]
+    placed = [on_page for _, on_page, _ in scan_pictures]
     # Junk goes first, so that it never stands in for a text-layer row typed over the picture; and only
     # from a picture that a placeholder will stand for, not one found behind the text.
-    placeheld = [picture.box for picture, _, stands in in_scan if stands]
-    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, area) for area in placeheld))
+    held = placeheld(scan_pictures)
+    boxes = tuple(box for box in boxes if box.confidence >= LOW_CONFIDENCE or not any(_centred_in(box, area) for area in held))
     kept = [(row, on_image) for row, on_image in layer if not _reads_better(boxes, on_image, scale)]
     read = tuple(box for box in boxes if not any(_overlaps(box, on_image, scale) for _, on_image in kept))
     texts = [box for box in read if box.text.strip()]

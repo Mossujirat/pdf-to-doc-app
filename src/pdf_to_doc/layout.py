@@ -501,7 +501,8 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
         [image for image, edge in page_images if edge and any(_repeats(image, edge, others) for others in images if others is not page_images)]
         for page_images in images
     ]
-    in_scans = [image for page_furniture in furniture for image in page_furniture if image.in_scan]
+    in_scans = [[image for image in page_furniture if image.in_scan] for page_furniture in furniture]
+    everywhere = [image for page_in_scans in in_scans for image in page_in_scans]
     return [
         replace(
             page,
@@ -510,20 +511,23 @@ def remove_page_furniture(pages: list[PageRows]) -> list[PageRows]:
                 for row_index, (row, key) in enumerate(zip(page.rows, page_keys))
                 if not (key and (pages_per_key[key] >= 2 or _is_counter_only(row)))
                 and (page_index, row_index) not in read_alike
-                and not _read_in_furniture(row, [image for image in page_furniture if image.in_scan], in_scans)
+                and not _read_in_furniture(row, own, everywhere)
             ),
             images=tuple(image for image in page.images if image not in page_furniture),
         )
-        for page_index, (page, page_keys, page_furniture) in enumerate(zip(pages, keys, furniture))
+        for page_index, (page, page_keys, page_furniture, own) in enumerate(zip(pages, keys, furniture, in_scans))
     ]
 
 
 def _read_in_furniture(row: Row, own: list[PlacedImage], everywhere: list[PlacedImage]) -> bool:
     """Whether the row is what OCR read in page furniture found in a scan, such as initials: text
-    whose middle lies in such a picture on its own page, however surely read; or a row OCR is sure
-    of nothing in, such as a row of dots or a stray letter, beside one (see `next_to`). Beside one on
-    any page will do, should the finder have missed the initials on the row's own: on a sample
-    contract it found them on seven pages and missed them on one."""
+    OCR read whose middle lies in such a picture on its own page, however surely; or a row OCR is
+    sure of nothing in, such as a row of dots or a stray letter, beside one (see `next_to`). Beside
+    one on any page will do, should the finder have missed the initials on the row's own: on a
+    sample contract it found them on seven pages and missed them on one. A text layer's rows are
+    exact text, never what OCR read in the ink, and stay."""
+    if not (row.pieces and all(piece.confidence is not None for piece in row.pieces)):
+        return False
     middle_x, middle_y = (row.x0 + row.x1) / 2, (row.y0 + row.y1) / 2
     if any(image.x0 <= middle_x <= image.x1 and image.top <= middle_y <= image.bottom for image in own):
         return True
@@ -531,9 +535,9 @@ def _read_in_furniture(row: Row, own: list[PlacedImage], everywhere: list[Placed
 
 
 def _nothing_sure(row: Row) -> bool:
-    """Whether OCR read the row and is sure of no letter or digit in it."""
-    sure = (piece.text for piece in row.pieces if piece.confidence is None or piece.confidence >= LOW_CONFIDENCE)
-    return bool(row.pieces) and not any(character.isalnum() for text in sure for character in text)
+    """Whether OCR is sure of no letter or digit in the row it read."""
+    sure = (piece.text for piece in row.pieces if piece.confidence is not None and piece.confidence >= LOW_CONFIDENCE)
+    return not any(character.isalnum() for text in sure for character in text)
 
 
 def _repeats(image: PlacedImage, edge: str, others: list[tuple[PlacedImage, str | None]]) -> bool:
